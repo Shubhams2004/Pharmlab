@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FlaskConical, Calculator, Scale, Droplet, RefreshCw, CheckCircle2, BookOpen, AlertTriangle } from 'lucide-react';
+import { FlaskConical, Calculator, Scale, Droplet, RefreshCw, CheckCircle2, BookOpen, AlertTriangle, Activity } from 'lucide-react';
 
 export default function PharmaceuticsModule() {
   const [activeTab, setActiveTab] = useState('alligation');
@@ -21,11 +21,15 @@ export default function PharmaceuticsModule() {
   const [suppositoryMouldSize, setSuppositoryMouldSize] = useState(2.0);
   const [numSuppositories, setNumSuppositories] = useState(10);
 
+  // Isotonicity Adjustment State (NaCl Equivalent Method)
+  const [isoDrugGrams, setIsoDrugGrams] = useState(1.0); // e.g., 1% w/v
+  const [isoVolumeMl, setIsoVolumeMl] = useState(100);   // e.g., 100 mL
+  const [eValue, setEValue] = useState(0.22);            // e.g., E-value for Pilocarpine nitrate or Boric acid (~0.5)
+
   // Prescription & Latin Translator State
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDrug, setSelectedDrug] = useState('Paracetamol');
   const [prescribedDose, setPrescribedDose] = useState(500);
-  const [frequency, setFrequency] = useState('b.i.d.');
 
   // Latin Terms Dictionary (PCI Syllabus)
   const latinDictionary = [
@@ -70,6 +74,11 @@ export default function PharmaceuticsModule() {
   const totalDisplacement = drugWeight * displacementValue * numSuppositories;
   const totalBaseNeeded = (suppositoryMouldSize * numSuppositories) - totalDisplacement;
 
+  // Isotonicity calculations (0.9% NaCl is isotonic = 0.9 g per 100 mL)
+  const naclNeededForIsotonic = (0.9 / 100) * isoVolumeMl;
+  const naclEquivalentOfDrug = isoDrugGrams * eValue;
+  const additionalNaclNeeded = naclNeededForIsotonic - naclEquivalentOfDrug;
+
   const filteredLatin = latinDictionary.filter(item => 
     item.term.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.meaning.toLowerCase().includes(searchTerm.toLowerCase())
@@ -81,7 +90,7 @@ export default function PharmaceuticsModule() {
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">PCI B.Pharm • General Pharmacy (Practical) • BP107P</span>
         <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">General Pharmacy Laboratory & Dispensing Suite</h2>
-        <p className="text-slate-400 text-sm mt-1">Interactive compounding calculators, alligation matrices, Latin prescription parsing, and dose safety verification.</p>
+        <p className="text-slate-400 text-sm mt-1">Interactive compounding calculators, alligation matrices, Latin prescription parsing, and isotonicity adjustments.</p>
       </div>
 
       {/* Navigation Tabs */}
@@ -90,6 +99,7 @@ export default function PharmaceuticsModule() {
           { id: 'alligation', label: '⚖️ Alligation Calculator' },
           { id: 'alcohol', label: '🧪 Alcohol Dilution' },
           { id: 'suppository', label: '💊 Suppository Displacement' },
+          { id: 'isotonicity', label: '💧 Isotonicity Adjustment' },
           { id: 'prescription', label: '📝 Prescription & Latin Decoder' }
         ].map((tab) => (
           <button
@@ -292,6 +302,66 @@ export default function PharmaceuticsModule() {
         </div>
       )}
 
+      {/* ISOTONICITY ADJUSTMENT TAB */}
+      {activeTab === 'isotonicity' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
+            <Activity className="w-5 h-5 text-emerald-400" />
+            <div>
+              <h3 className="text-lg font-bold text-white">Isotonicity Adjustment (Sodium Chloride Equivalent Method)</h3>
+              <p className="text-xs text-slate-400">Calculate supplementary sodium chloride required to render ophthalmic or parenteral solutions isotonic.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Formulation Parameters</span>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Drug Quantity in Prescription (g)</label>
+                <input type="number" step="0.1" value={isoDrugGrams} onChange={e => setIsoDrugGrams(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Total Volume of Solution (mL)</label>
+                <input type="number" value={isoVolumeMl} onChange={e => setIsoVolumeMl(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Sodium Chloride Equivalent (E-value)</label>
+                <input type="number" step="0.01" value={eValue} onChange={e => setEValue(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono" />
+              </div>
+            </div>
+
+            <div className="lg:col-span-7 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-6 space-y-6">
+              <div className="space-y-4">
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Isotonicity Audit Output</span>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase">NaCl Needed for 0.9% Isotonicity</span>
+                    <p className="text-xl font-bold text-blue-400 mt-1">{naclNeededForIsotonic.toFixed(3)} g</p>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase">NaCl Equivalent of Drug</span>
+                    <p className="text-xl font-bold text-emerald-400 mt-1">{naclEquivalentOfDrug.toFixed(3)} g</p>
+                  </div>
+                </div>
+                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 space-y-2">
+                  <div className="flex justify-between border-b border-slate-800 pb-2">
+                    <span>Additional NaCl Required:</span>
+                    <span className="font-bold text-amber-400 font-mono text-sm">{Math.max(0, additionalNaclNeeded).toFixed(3)} g</span>
+                  </div>
+                  <div className="pt-1">
+                    <span><strong>Dispensing Directive:</strong> {additionalNaclNeeded > 0 ? `Dissolve the drug and add exactly ${additionalNaclNeeded.toFixed(3)} g of sodium chloride to make up ${isoVolumeMl} mL of isotonic solution.` : 'The drug solution is already hypertonic; no sodium chloride adjustment needed.'}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-xl p-3 flex items-center space-x-2.5 text-xs text-emerald-300">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Prevents tissue trauma and hemolysis upon instillation or injection.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PRESCRIPTION TRANSLATOR & DOSE SAFETY CHECKER TAB */}
       {activeTab === 'prescription' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
@@ -304,13 +374,11 @@ export default function PharmaceuticsModule() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Dose Safety Checker Box */}
             <div className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
               <span className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center space-x-2">
                 <Calculator className="w-4 h-4" />
                 <span>Adult Therapeutic Dose Safety Audit</span>
               </span>
-
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Select Drug</label>
                 <select value={selectedDrug} onChange={e => setSelectedDrug(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
@@ -319,12 +387,10 @@ export default function PharmaceuticsModule() {
                   ))}
                 </select>
               </div>
-
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Prescribed Single Dose ({currentDrugInfo.unit})</label>
                 <input type="number" value={prescribedDose} onChange={e => setPrescribedDose(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono" />
               </div>
-
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Max Adult Single Dose:</span>
@@ -343,7 +409,6 @@ export default function PharmaceuticsModule() {
               </div>
             </div>
 
-            {/* Latin Term Search & Dictionary */}
             <div className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Latin Prescription Abbreviations</span>
@@ -355,7 +420,6 @@ export default function PharmaceuticsModule() {
                   className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1 text-xs text-white w-40"
                 />
               </div>
-
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 h-56 overflow-y-auto space-y-2">
                 {filteredLatin.map((item, idx) => (
                   <div key={idx} className="bg-slate-950 border border-slate-800/60 rounded-lg p-2.5 flex items-center justify-between text-xs">
