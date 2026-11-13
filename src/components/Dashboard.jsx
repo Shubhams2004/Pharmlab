@@ -7,9 +7,9 @@ export default function Dashboard({ setActiveModule }) {
   const modules = [
     {
       id: 'python',
-      title: 'Python Programming',
+      title: 'Python for Pharmaceutical Sciences',
       code: 'BP101T',
-      desc: 'BMI calculator and Young\'s Rule pediatric dosage computational tools.',
+      desc: '5-Unit PCI curriculum hub: syntax guides, pharma functions, NumPy, Pandas & Matplotlib.',
       icon: Code,
       color: 'from-blue-500/20 to-indigo-500/20 text-blue-400 border-blue-500/30'
     },
