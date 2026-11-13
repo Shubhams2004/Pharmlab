@@ -11,85 +11,22 @@ export default function PythonModule() {
   const [runtimeStatus, setRuntimeStatus] = useState('Initializing Python 3.11 WebAssembly...');
 
   // Editable Code States for Each Unit
-  const [codeUnit12, setCodeUnit12] = useState(`# BP101T Unit II: Modular Pediatric Dosing Function
-def calculate_pediatric_dose(age_yrs, weight_kg, adult_mg):
-    # Young's Rule for Children (1-12 years)
-    dose = (age_yrs / (age_yrs + 12)) * adult_mg
-    return round(dose, 2)
+  const [codeUnit12, setCodeUnit12] = useState(`# BP101T Unit II: Modular Pediatric Dosing Function\ndef calculate_pediatric_dose(age_yrs, weight_kg, adult_mg):\n    # Young\'s Rule for Children (1-12 years)\n    dose = (age_yrs / (age_yrs + 12)) * adult_mg\n    return round(dose, 2)\n\nprint("Calculated Pediatric Dose:", calculate_pediatric_dose(6, 20, 500), "mg")`);
 
-print("Calculated Pediatric Dose:", calculate_pediatric_dose(6, 20, 500), "mg")`);
+  const [codeUnit3, setCodeUnit3] = useState(`# BP101T Unit III: NumPy Tablet Weight Variation QC\nimport numpy as np\n\n# Tablet batch weights in mg (IP Limit: +/- 7.5%)\nweights = np.array([149.2, 150.5, 150.1, 149.8, 151.0, 149.5, 150.2, 150.0, 149.7, 150.3])\nmean_w = np.mean(weights)\nmax_dev = np.max(np.abs(weights - mean_w) / mean_w) * 100\n\nprint(f"Batch Mean Weight: {mean_w:.2f} mg")\nprint(f"Maximum Deviation: {max_dev:.2f}%")\nprint("Quality Control Status: PASS" if max_dev <= 7.5 else "Quality Control Status: FAIL")`);
 
-  const [codeUnit3, setCodeUnit3] = useState(`# BP101T Unit III: NumPy Tablet Weight Variation QC
-import numpy as np
+  const [codeUnit4, setCodeUnit4] = useState(`# BP101T Unit IV: Pandas ADR Clinical Dataset Management\nimport pandas as pd\n\nadr_data = {\n    'ID': ['ADR-101', 'ADR-102', 'ADR-103', 'ADR-104'],\n    'Drug': ['Paracetamol', 'Amlodipine', 'Metformin', 'Amlodipine'],\n    'Age': [45, 68, 52, 71],\n    'Severity': ['Mild', 'Severe', 'Moderate', 'Severe'],\n    'Reaction': ['Nausea', 'Edema', 'Gastric Distress', 'Hypotension']\n}\n\ndf = pd.DataFrame(adr_data)\nsevere_cases = df[df['Severity'] == 'Severe']\nprint("Severe ADR Cases:\\n", severe_cases.to_string(index=False))`);
 
-# Tablet batch weights in mg (IP Limit: +/- 7.5%)
-weights = np.array([149.2, 150.5, 150.1, 149.8, 151.0, 149.5, 150.2, 150.0, 149.7, 150.3])
-mean_w = np.mean(weights)
-max_dev = np.max(np.abs(weights - mean_w) / mean_w) * 100
+  const [codeUnit5, setCodeUnit5] = useState(`# BP101T Unit V: Pharmacokinetic Plasma Concentration Profile\nimport numpy as np\n\ntime_hrs = np.linspace(0, 24, 10)\ndose = 500\nvd = 25\nke = 0.15\n\n# One-compartment oral absorption model approximation\nconc = (dose / vd) * np.exp(-ke * time_hrs)\nfor t, c in zip(time_hrs, conc):\n    print(f"Time: {t:4.1f}h | Plasma Conc: {max(0, c):6.2f} mg/L")`);
 
-print(f"Batch Mean Weight: {mean_w:.2f} mg")
-print(f"Maximum Deviation: {max_dev:.2f}%")
-print("Quality Control Status: PASS" if max_dev <= 7.5 else "Quality Control Status: FAIL")`);
+  const [codePractical5, setCodePractical5] = useState(`# BP101T Practical 5: Accelerated Stability & Arrhenius Shelf-Life\nimport numpy as np\n\ntemps_c = np.array([40.0, 50.0, 60.0])\ntemps_k = temps_c + 273.15\ninv_temp = 1.0 / temps_k\nk_vals = np.array([0.00012, 0.00045, 0.00150])\nlog_k = np.log(k_vals)\n\nslope, intercept = np.polyfit(inv_temp, log_k, 1)\nR = 1.987\nEa_kcal = (-slope * R * 2.303 * 1000) / 1000.0\n\nroom_k = np.exp(slope * (1.0 / (25.0 + 273.15)) + intercept)\nt90_years = (0.1053 / room_k) / 365.25\n\nprint(f"Activation Energy (Ea): {Ea_kcal:.2f} kcal/mol")\nprint(f"Shelf-Life at 25°C (t90): {t90_years:.2f} years")`);
 
-  const [codeUnit4, setCodeUnit4] = useState(`# BP101T Unit IV: Pandas ADR Clinical Dataset Management
-import pandas as pd
+  const [codeSandbox, setCodeSandbox] = useState(`# Custom Python Sandbox\nimport numpy as np\nprint("NumPy version:", np.__version__)\narr = np.linspace(0, 10, 5)\nprint("Generated Array:", arr)`);
 
-adr_data = {
-    'ID': ['ADR-101', 'ADR-102', 'ADR-103', 'ADR-104'],
-    'Drug': ['Paracetamol', 'Amlodipine', 'Metformin', 'Amlodipine'],
-    'Age': [45, 68, 52, 71],
-    'Severity': ['Mild', 'Severe', 'Moderate', 'Severe'],
-    'Reaction': ['Nausea', 'Edema', 'Gastric Distress', 'Hypotension']
-}
-
-df = pd.DataFrame(adr_data)
-severe_cases = df[df['Severity'] == 'Severe']
-print("Severe ADR Cases:\n", severe_cases.to_string(index=False))`);
-
-  const [codeUnit5, setCodeUnit5] = useState(`# BP101T Unit V: Pharmacokinetic Plasma Concentration Profile
-import numpy as np
-
-time_hrs = np.linspace(0, 24, 10)
-dose = 500
-vd = 25
-ke = 0.15
-
-# One-compartment oral absorption model approximation
-conc = (dose / vd) * np.exp(-ke * time_hrs)
-for t, c in zip(time_hrs, conc):
-    print(f"Time: {t:4.1f}h | Plasma Conc: {max(0, c):6.2f} mg/L")`);
-
-  const [codePractical5, setCodePractical5] = useState(`# BP101T Practical 5: Accelerated Stability & Arrhenius Shelf-Life
-import numpy as np
-
-temps_c = np.array([40.0, 50.0, 60.0])
-temps_k = temps_c + 273.15
-inv_temp = 1.0 / temps_k
-k_vals = np.array([0.00012, 0.00045, 0.00150])
-log_k = np.log(k_vals)
-
-slope, intercept = np.polyfit(inv_temp, log_k, 1)
-R = 1.987
-Ea_kcal = (-slope * R * 2.303 * 1000) / 1000.0
-
-room_k = np.exp(slope * (1.0 / (25.0 + 273.15)) + intercept)
-t90_years = (0.1053 / room_k) / 365.25
-
-print(f"Activation Energy (Ea): {Ea_kcal:.2f} kcal/mol")
-print(f"Shelf-Life at 25°C (t90): {t90_years:.2f} years")`);
-
-  const [codeSandbox, setCodeSandbox] = useState(`# Custom Python Sandbox
-import numpy as np
-print("NumPy version:", np.__version__)
-arr = np.linspace(0, 10, 5)
-print("Generated Array:", arr)`);
-
-  // Active Terminal Output State
   const [consoleOutput, setConsoleOutput] = useState([
     '>>> PharmLab WebAssembly Python 3.11 Environment Loading...'
   ]);
 
-  // Load Pyodide on mount
   useEffect(() => {
     let isMounted = true;
     async function loadPyodideEnvironment() {
@@ -132,7 +69,6 @@ print("Generated Array:", arr)`);
     return () => { isMounted = false; };
   }, []);
 
-  // Generic Runner for any code snippet using Pyodide
   const executeCode = async (codeToRun) => {
     if (!pyodide) {
       alert("Python runtime is still initializing. Please wait a moment.");
@@ -166,7 +102,6 @@ print("Generated Array:", arr)`);
     }
   };
 
-  // Helper to get current active code
   const getCurrentCode = () => {
     if (activeUnit === 'unit1-2') return codeUnit12;
     if (activeUnit === 'unit3') return codeUnit3;
@@ -187,14 +122,12 @@ print("Generated Array:", arr)`);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-100 pb-12">
-      {/* Header */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <span className="text-xs font-bold tracking-widest text-blue-400 uppercase">PCI B.Pharm • BP101T</span>
         <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">Basics of Python Programming for Pharmaceutical Sciences</h2>
         <p className="text-slate-400 text-sm mt-1">Interactive curriculum studio with live WebAssembly Python execution across all units.</p>
       </div>
 
-      {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-2">
         {[
           { id: 'unit1-2', label: 'Unit I & II: Syntax & Functions' },
@@ -218,7 +151,6 @@ print("Generated Array:", arr)`);
         ))}
       </div>
 
-      {/* ACTIVE WORKSPACE CONTAINER */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div className="flex items-center space-x-2.5">
@@ -245,9 +177,7 @@ print("Generated Array:", arr)`);
           )}
         </div>
 
-        {/* Workspace Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Editable Code Editor */}
           <div className="lg:col-span-7 flex flex-col space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
@@ -273,7 +203,6 @@ print("Generated Array:", arr)`);
             </button>
           </div>
 
-          {/* Terminal Console Output */}
           <div className="lg:col-span-5 flex flex-col space-y-3">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
               Console Output
