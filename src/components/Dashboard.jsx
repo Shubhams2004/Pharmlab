@@ -1,90 +1,85 @@
 import React from 'react';
-import { Code, FlaskConical, Activity, Leaf, Atom, ArrowRight } from 'lucide-react';
+import { Code, FlaskConical, Activity, Microscope, ArrowRight } from 'lucide-react';
 
-export default function Dashboard({ onSelectModule }) {
+export default function Dashboard({ setActiveModule }) {
   const modules = [
     {
       id: 'python',
+      title: 'Python Programming',
       code: 'BP101T',
-      title: 'Python for Pharmaceutical Sciences',
-      desc: 'Interactive Python playground, NumPy/Pandas data handlers, and concentration-time curve plotter.',
+      desc: 'BMI calculator and Young\'s Rule pediatric dosage computational tools.',
       icon: Code,
-      color: 'from-blue-500 to-indigo-600',
+      color: 'from-blue-500/20 to-indigo-500/20 text-blue-400 border-blue-500/30'
     },
     {
       id: 'general-pharmacy',
+      title: 'General Pharmacy',
       code: 'BP102T / BP107P',
-      title: 'General Pharmacy & Compounding',
-      desc: 'Pharmaceutical calculation engine for alligation, proof spirit, isotonicity, and dosage forms.',
+      desc: 'Alligation method calculations and C1V1 = C2V2 solution dilution engine.',
       icon: FlaskConical,
-      color: 'from-emerald-500 to-teal-600',
+      color: 'from-emerald-500/20 to-teal-500/20 text-emerald-400 border-emerald-500/30'
     },
     {
       id: 'anatomy',
+      title: 'Human Anatomy & Physiology',
       code: 'BP104T / BP109P',
-      title: 'Human Anatomy & Physiology I',
-      desc: 'Hemocytometry calculator, blood cell differential analyzer, and physiological parameter tracker.',
+      desc: 'Hemocytometry WBC count analyzer and Hemoglobin clinical diagnostic evaluator.',
       icon: Activity,
-      color: 'from-rose-500 to-pink-600',
+      color: 'from-amber-500/20 to-orange-500/20 text-amber-400 border-amber-500/30'
     },
     {
       id: 'pharmacognosy',
+      title: 'Pharmacognosy & Phytochemistry',
       code: 'BP105T / BP110P',
-      title: 'Introduction to Pharmacognosy',
-      desc: 'Crude drug powder microscopy database, stomatal index calculator, and morphological guides.',
-      icon: Leaf,
-      color: 'from-amber-500 to-orange-600',
-    },
-    {
-      id: 'chemistry',
-      code: 'BP106T / BP111P',
-      title: 'Inorganic & Analytical Chemistry',
-      desc: 'Volumetric titration simulators, limit test protocols (Chloride, Sulphate, Iron), and assay calculators.',
-      icon: Atom,
-      color: 'from-purple-500 to-violet-600',
-    },
+      desc: 'Crude drug quantitative microscopy, stomatal index, and leaf constant tools.',
+      icon: Microscope,
+      color: 'from-purple-500/20 to-pink-500/20 text-purple-400 border-purple-500/30'
+    }
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-12">
-      <header className="max-w-6xl mx-auto mb-12">
-        <div className="inline-block px-3 py-1 mb-4 text-xs font-semibold tracking-wider text-teal-400 uppercase bg-teal-950/50 border border-teal-800/50 rounded-full">
-          B.Pharm Semester I Virtual Laboratory
-        </div>
-        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4 bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-          PharmLab Studio
-        </h1>
-        <p className="text-slate-400 text-lg max-w-2xl">
-          Your integrated computational and practical laboratory platform aligned with curriculum guidelines. Select a module below to begin.
+    <div className="space-y-8">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+        <span className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-full uppercase tracking-wider">
+          Semester I Virtual Lab
+        </span>
+        <h2 className="text-3xl md:text-4xl font-extrabold text-white mt-4 mb-3">
+          Welcome to PharmLab Studio
+        </h2>
+        <p className="text-slate-400 max-w-2xl text-sm md:text-base">
+          Select an interactive laboratory module below to execute pharmaceutical calculations, analyze diagnostic metrics, and explore curriculum-aligned practical workflows.
         </p>
-      </header>
+      </div>
 
-      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {modules.map((m) => {
-          const Icon = m.icon;
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {modules.map((mod) => {
+          const Icon = mod.icon;
           return (
             <div
-              key={m.id}
-              onClick={() => onSelectModule(m.id)}
-              className="group relative bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xl hover:shadow-2xl hover:-translate-y-1"
+              key={mod.id}
+              onClick={() => setActiveModule(mod.id)}
+              className="group bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all cursor-pointer flex flex-col justify-between"
             >
               <div>
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${m.color} flex items-center justify-center mb-6 shadow-md group-hover:scale-110 transition-transform duration-300`}>
-                  <Icon className="w-6 h-6 text-white" />
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`p-3 rounded-xl border ${mod.color}`}>
+                    <Icon className="w-6 h-6" />
+                  </div>
+                  <span className="text-xs font-mono font-semibold px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg">
+                    {mod.code}
+                  </span>
                 </div>
-                <span className="text-xs font-bold tracking-widest text-teal-400 uppercase">
-                  {m.code}
-                </span>
-                <h3 className="text-xl font-bold text-white mt-1 mb-3 group-hover:text-teal-300 transition-colors">
-                  {m.title}
+                <h3 className="text-xl font-bold text-white group-hover:text-emerald-400 transition-colors">
+                  {mod.title}
                 </h3>
-                <p className="text-slate-400 text-sm leading-relaxed mb-6">
-                  {m.desc}
+                <p className="text-slate-400 text-sm mt-2">
+                  {mod.desc}
                 </p>
               </div>
-              <div className="flex items-center text-sm font-semibold text-teal-400 group-hover:text-teal-300">
-                <span>Launch Laboratory</span>
-                <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              <div className="flex items-center space-x-2 text-sm font-semibold text-emerald-400 mt-6 pt-4 border-t border-slate-800/60 group-hover:translate-x-1 transition-transform">
+                <span>Launch Laboratory Module</span>
+                <ArrowRight className="w-4 h-4" />
               </div>
             </div>
           );
