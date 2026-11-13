@@ -41,7 +41,7 @@ export default function PharmaceuticsModule() {
     <div className="max-w-6xl mx-auto space-y-6 text-slate-100 pb-12">
       {/* Header */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">PCI B.Pharm • BP103T / BP107P</span>
+        <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">PCI B.Pharm • General Pharmacy (Practical) • BP107P</span>
         <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">Pharmaceutics I: Dispensing Pharmacy Laboratory</h2>
         <p className="text-slate-400 text-sm mt-1">Interactive calculators for compounding, alligation mixing, alcohol dilutions, and suppository calculations.</p>
       </div>
