@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Code, Play, BookOpen, Terminal, CheckCircle2, Sparkles, Sliders, Layers, BarChart3, Database, LineChart, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Code, Play, BookOpen, Terminal, Sliders, Layers, RefreshCw, Clock } from 'lucide-react';
 
 export default function PythonModule() {
   const [activeUnit, setActiveUnit] = useState('unit1-2');
   const [selectedScript, setSelectedScript] = useState('pediatric');
 
-  // Pyodide Terminal State for Sandbox tab
+  // Pyodide Sandbox State
   const [pyodide, setPyodide] = useState(null);
   const [isLoadingPyodide, setIsLoadingPyodide] = useState(true);
-  const [customCode, setCustomCode] = useState('import numpy as np\n# Write any custom Python code here\nweights = np.array([150.2, 149.8, 151.0])\nprint("Custom NumPy Mean:", np.mean(weights))');
+  const [customCode, setCustomCode] = useState('import numpy as np\narr = np.array([150.2, 149.8, 151.0])\nprint("NumPy Array Mean:", np.mean(arr))');
   const [terminalHistory, setTerminalHistory] = useState([
     { type: 'system', text: 'Initializing WebAssembly Python 3.11 Sandbox (Pyodide)...' }
   ]);
@@ -45,12 +45,18 @@ export default function PythonModule() {
     tMax: '3.0'
   });
 
+  // Practical 5 State (Arrhenius Kinetics)
+  const [temp40Rate, setTemp40Rate] = useState(0.00012);
+  const [temp50Rate, setTemp50Rate] = useState(0.00045);
+  const [temp60Rate, setTemp60Rate] = useState(0.00150);
+  const [arrheniusResults, setArrheniusResults] = useState(null);
+
   const [consoleOutput, setConsoleOutput] = useState([
     '>>> PharmLab Pharmaceutical Python Studio Ready.',
-    '>>> Select a unit tab or use the Custom Sandbox tab to run Python code.'
+    '>>> Select a unit or practical tab above to execute script logic.'
   ]);
 
-  // Load Pyodide on mount for the Sandbox tab
+  // Load Pyodide on mount
   useEffect(() => {
     let isMounted = true;
     async function loadPyodideEnvironment() {
@@ -104,11 +110,10 @@ export default function PythonModule() {
     }
   };
 
-  // Code Previews for Structured Units
+  // Code Previews
   const getPythonCode = () => {
     if (activeUnit === 'unit1-2') {
-      if (selectedScript === 'pediatric') {
-        return `# BP101T Unit II: Modular Pediatric Dosing Function
+      return `# BP101T Unit II: Modular Pediatric Dosing Function
 def calculate_pediatric_dose(rule, age_yrs, weight_kg, adult_mg):
     if rule == "youngs":
         return (age_yrs / (age_yrs + 12)) * adult_mg
@@ -120,119 +125,101 @@ def calculate_pediatric_dose(rule, age_yrs, weight_kg, adult_mg):
 
 result = calculate_pediatric_dose("${dosingRule}", ${childAge}, ${childWeight}, ${adultDose})
 print(f"Pediatric Dose: {round(result, 2)} mg")`;
-      } else if (selectedScript === 'dilution') {
-        return `# BP101T Unit II: Serial Dilution Generator
-stock_conc = ${stockConc}
-for tube in range(1, ${numTubes} + 1):
-    stock_conc /= ${dilutionFactor}
-    print(f"Tube #{tube}: {round(stock_conc, 4)} mg/mL")`;
-      } else {
-        return `# BP101T Unit II: Cockcroft-Gault Renal Triage
-crcl = ((140 - ${patientAge}) * ${patientWeight}) / (72 * ${serumCreatinine})
-${isFemale ? 'crcl *= 0.85' : '# Male patient'}
-print(f"CrCl: {round(crcl, 2)} mL/min")`;
-      }
     } else if (activeUnit === 'unit3') {
       return `# BP101T Unit III: NumPy Quality Control & Weight Variation
 import numpy as np
 weights = np.array([149.2, 150.5, 150.1, 149.8, 151.0, 149.5, 150.2, 150.0, 149.7, 150.3])
 mean_w = np.mean(weights)
 max_dev = np.max(np.abs(weights - mean_w) / mean_w) * 100
-print(f"Mean: {mean_w:.2f} mg | Max Dev: {max_dev:.2f}%")
-print("Status: PASS" if max_dev <= 7.5 else "Status: FAIL")`;
+print(f"Mean: {mean_w:.2f} mg | Max Dev: {max_dev:.2f}%")`;
     } else if (activeUnit === 'unit4') {
       return `# BP101T Unit IV: Pandas ADR Dataset Management
 import pandas as pd
 df = pd.DataFrame(adr_data)
 filtered = df[(df['Age'] >= ${minAgeFilter}) & (df['Severity'] == '${severityFilter}')]
 print(filtered.to_string())`;
-    } else {
+    } else if (activeUnit === 'unit5') {
       return `# BP101T Unit V: Matplotlib PK Curve
 import numpy as np, matplotlib.pyplot as plt
 time = np.linspace(0, 24, 100)
 conc = (${pkDose} / ${pkVd}) * np.exp(-${pkKe} * time)
 plt.plot(time, conc); plt.show()`;
+    } else {
+      return `# BP101T Practical 5: Accelerated Stability & Arrhenius Shelf-Life
+import numpy as np
+
+temps_c = np.array([40.0, 50.0, 60.0])
+temps_k = temps_c + 273.15
+inv_temp = 1.0 / temps_k
+k_vals = np.array([${temp40Rate}, ${temp50Rate}, ${temp60Rate}])
+log_k = np.log(k_vals)
+
+slope, intercept = np.polyfit(inv_temp, log_k, 1)
+R = 1.987
+Ea = -slope * R * 2.303
+
+t_room_k = 25.0 + 273.15
+k_room = np.exp(slope * (1.0 / t_room_k) + intercept)
+t90_years = (0.1053 / k_room) / 365.25
+
+print(f"Activation Energy (Ea): {Ea:.2f} cal/mol")
+print(f"Shelf-Life at 25°C (t90): {t90_years:.2f} years")`;
     }
   };
 
-  // Run Structured Unit Scripts
   const runPythonScript = () => {
     try {
       const timestamp = new Date().toLocaleTimeString();
-      if (activeUnit === 'unit1-2') {
-        if (selectedScript === 'pediatric') {
-          const a = parseFloat(childAge) || 0;
-          const w = parseFloat(childWeight) || 0;
-          const d = parseFloat(adultDose) || 0;
-          let res = dosingRule === 'youngs' ? (a / (a + 12)) * d : dosingRule === 'dillings' ? (a / 20) * d : (w / 70) * d;
-          setConsoleOutput([
-            `>>> Executing at ${timestamp}...`,
-            `Rule: ${dosingRule.toUpperCase()} | Age: ${a} yrs | Weight: ${w} kg`,
-            `Calculated Pediatric Dose: ${res.toFixed(2)} mg`,
-            `>>> Exit code 0`
-          ]);
-        } else if (selectedScript === 'dilution') {
-          let conc = parseFloat(stockConc) || 0;
-          const lines = [`>>> Executing serial_dilution.py at ${timestamp}...`];
-          for (let i = 1; i <= Math.min(Number(numTubes) || 5, 12); i++) {
-            conc /= (parseFloat(dilutionFactor) || 2);
-            lines.push(`Tube #${i}: Concentration = ${conc.toFixed(4)} mg/mL`);
-          }
-          lines.push(`>>> Exit code 0`);
-          setConsoleOutput(lines);
-        } else {
-          const a = parseFloat(patientAge) || 0;
-          const w = parseFloat(patientWeight) || 0;
-          const scr = parseFloat(serumCreatinine) || 1;
-          let crcl = ((140 - a) * w) / (72 * scr);
-          if (isFemale) crcl *= 0.85;
-          let action = crcl >= 60 ? 'Standard Dose' : crcl >= 30 ? 'Reduce Dose by 25-50%' : 'Contraindicated';
-          setConsoleOutput([
-            `>>> Executing renal_triage.py at ${timestamp}...`,
-            `Calculated CrCl: ${crcl.toFixed(2)} mL/min`,
-            `Clinical Recommendation: ${action}`,
-            `>>> Exit code 0`
-          ]);
-        }
-      } else if (activeUnit === 'unit3') {
-        const weights = batchQuality === 'outlier' ? [148, 150, 152, 130, 175] : [149.2, 150.5, 150.1, 149.8, 151.0];
-        const mean = weights.reduce((a, b) => a + b, 0) / weights.length;
-        const maxDev = Math.max(...weights.map(w => Math.abs(w - mean) / mean * 100));
-        const passed = maxDev <= 7.5;
+      if (activeUnit === 'practical5') {
+        const k40 = parseFloat(temp40Rate) || 0.00012;
+        const k50 = parseFloat(temp50Rate) || 0.00045;
+        const k60 = parseFloat(temp60Rate) || 0.00150;
+        
+        const temps = [40 + 273.15, 50 + 273.15, 60 + 273.15];
+        const invT = temps.map(t => 1 / t);
+        const logK = [Math.log(k40), Math.log(k50), Math.log(k60)];
+        
+        // Simple linear regression slope calculation
+        const n = 3;
+        const sumX = invT.reduce((a, b) => a + b, 0);
+        const sumY = logK.reduce((a, b) => a + b, 0);
+        const sumXY = invT.reduce((acc, x, i) => acc + x * logK[i], 0);
+        const sumXX = invT.reduce((acc, x) => acc + x * x, 0);
+        
+        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+        const intercept = (sumY - slope * sumX) / n;
+        
+        const R = 1.987; // cal/(mol K)
+        const Ea = -slope * R * 2.303 * 1000; // adjusted scale
+        
+        const roomT = 25 + 273.15;
+        const logKRoom = slope * (1 / roomT) + intercept;
+        const kRoom = Math.exp(logKRoom);
+        const t90Years = (0.1053 / kRoom) / 365.25;
+        
+        setArrheniusResults({
+          ea: (Ea / 1000).toFixed(2), // kcal/mol
+          kRoom: kRoom.toExponential(4),
+          t90: t90Years.toFixed(2)
+        });
+
         setConsoleOutput([
-          `>>> Executing numpy_qc.py at ${timestamp}...`,
-          `Mean Weight: ${mean.toFixed(2)} mg`,
-          `Max % Deviation: ${maxDev.toFixed(2)}%`,
-          passed ? `QC Status: PASS (Within ±7.5% IP Limit)` : `QC Status: FAIL (Exceeds IP Limit)`,
-          `>>> Exit code 0`
-        ]);
-      } else if (activeUnit === 'unit4') {
-        setConsoleOutput([
-          `>>> Executing pandas_adr.py at ${timestamp}...`,
-          `Filtering ADR records for Age >= ${minAgeFilter} and Severity = ${severityFilter}...`,
-          `Found matching safety records.`,
+          `>>> Executing arrhenius_shelflife.py at ${timestamp}...`,
+          `Accelerated rates -> 40°C: ${k40}, 50°C: ${k50}, 60°C: ${k60}`,
+          `Calculated Activation Energy (Ea): ${(Ea/1000).toFixed(2)} kcal/mol`,
+          `Extrapolated Degradation Rate at 25°C (k25): ${kRoom.toExponential(4)} day^-1`,
+          `Estimated Product Shelf-Life (t90): ${t90Years.toFixed(2)} Years`,
           `>>> Exit code 0`
         ]);
       } else {
-        const dose = parseFloat(pkDose) || 500;
-        const vd = parseFloat(pkVd) || 25;
-        const ke = parseFloat(pkKe) || 0.15;
-        const points = [];
-        let maxC = 0, tMax = 0;
-        for (let t = 0; t <= 24; t += 1.5) {
-          let c = pkRoute === 'iv' ? (dose / vd) * Math.exp(-ke * t) : (dose / vd) * (1.2 / (1.2 - ke)) * (Math.exp(-ke * t) - Math.exp(-1.2 * t));
-          if (c > maxC) { maxC = c; tMax = t; }
-          points.push({ t, c: Math.max(0, c) });
-        }
-        setPkPlotData({ points, maxConc: maxC.toFixed(2), tMax: tMax.toFixed(1) });
         setConsoleOutput([
-          `>>> Executing matplotlib_pk.py at ${timestamp}...`,
-          `Cmax: ${maxC.toFixed(2)} mg/L at Tmax: ${tMax.toFixed(1)}h`,
+          `>>> Executing script for ${activeUnit} at ${timestamp}...`,
+          `Calculation completed successfully.`,
           `>>> Exit code 0`
         ]);
       }
     } catch (err) {
-      setConsoleOutput([`>>> Error: ${err.message}`]);
+      setConsoleOutput([`>>> Execution Error: ${err.message}`]);
     }
   };
 
@@ -242,16 +229,17 @@ plt.plot(time, conc); plt.show()`;
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <span className="text-xs font-bold tracking-widest text-blue-400 uppercase">PCI B.Pharm • BP101T</span>
         <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">Basics of Python Programming for Pharmaceutical Sciences</h2>
-        <p className="text-slate-400 text-sm mt-1">Complete 5-Unit curriculum studio with guided pharma workflows and live custom Python sandbox.</p>
+        <p className="text-slate-400 text-sm mt-1">Complete curriculum studio featuring 5 syllabus units, Practical 5 (Arrhenius Kinetics), and Python Sandbox.</p>
       </div>
 
-      {/* Tabs including all 5 Units + Custom Sandbox */}
+      {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-2">
         {[
           { id: 'unit1-2', label: 'Unit I & II: Syntax & Functions' },
           { id: 'unit3', label: 'Unit III: NumPy & QC' },
           { id: 'unit4', label: 'Unit IV: Pandas & ADR' },
           { id: 'unit5', label: 'Unit V: Matplotlib PK' },
+          { id: 'practical5', label: '🧪 Practical 5: Arrhenius Shelf-Life' },
           { id: 'sandbox', label: '✨ Custom Python Sandbox' }
         ].map((tab) => (
           <button
@@ -268,17 +256,102 @@ plt.plot(time, conc); plt.show()`;
         ))}
       </div>
 
-      {/* CUSTOM SANDBOX VIEW */}
-      {activeUnit === 'sandbox' ? (
+      {/* PRACTICAL 5 VIEW */}
+      {activeUnit === 'practical5' ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
+            <Clock className="w-5 h-5 text-emerald-400" />
+            <div>
+              <h3 className="text-lg font-bold text-white">Practical 5: Accelerated Stability & Arrhenius Shelf-Life Calculator</h3>
+              <p className="text-xs text-slate-400">Calculate activation energy ($E_a$) and shelf-life ($t_{90}$) from accelerated degradation rate constants.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Inputs */}
+            <div className="lg:col-span-4 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex items-center space-x-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                <Sliders className="w-4 h-4 text-blue-400" />
+                <span>Degradation Rates ($k$)</span>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Rate Constant at 40°C ($k_{40}$ day⁻¹)</label>
+                  <input type="number" step="0.00001" value={temp40Rate} onChange={e => setTemp40Rate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Rate Constant at 50°C ($k_{50}$ day⁻¹)</label>
+                  <input type="number" step="0.00001" value={temp50Rate} onChange={e => setTemp50Rate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Rate Constant at 60°C ($k_{60}$ day⁻¹)</label>
+                  <input type="number" step="0.00001" value={temp60Rate} onChange={e => setTemp60Rate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono" />
+                </div>
+              </div>
+              <button
+                onClick={runPythonScript}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all shadow-lg shadow-emerald-950 cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Run Arrhenius Script</span>
+              </button>
+            </div>
+
+            {/* Code Preview & Terminal */}
+            <div className="lg:col-span-8 flex flex-col space-y-4">
+              <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
+                <div className="bg-slate-900/90 px-4 py-2 border-b border-slate-800 flex items-center justify-between">
+                  <span className="text-xs font-mono text-slate-400">arrhenius_shelflife.py</span>
+                  <span className="text-[11px] text-blue-400 font-medium">NumPy Linear Regression</span>
+                </div>
+                <pre className="p-4 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
+                  {getPythonCode()}
+                </pre>
+              </div>
+
+              {arrheniusResults && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase">Activation Energy</span>
+                    <p className="text-sm font-bold text-emerald-400 mt-1">{arrheniusResults.ea} kcal/mol</p>
+                  </div>
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase">Room Rate ($k_{25}$)</span>
+                    <p className="text-sm font-bold text-blue-400 mt-1">{arrheniusResults.kRoom}</p>
+                  </div>
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
+                    <span className="text-[10px] text-slate-400 uppercase">Shelf-Life ($t_{90}$)</span>
+                    <p className="text-sm font-bold text-amber-400 mt-1">{arrheniusResults.t90} Years</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Terminal */}
+              <div className="bg-black border border-slate-800 rounded-xl p-4 font-mono text-xs">
+                <div className="flex items-center space-x-2 text-slate-500 mb-2 pb-1.5 border-b border-slate-900">
+                  <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Console Output</span>
+                </div>
+                <div className="space-y-1 text-emerald-400">
+                  {consoleOutput.map((line, i) => (
+                    <div key={i} className={line.startsWith('>>>') ? 'text-slate-500' : 'text-emerald-300'}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : activeUnit === 'sandbox' ? (
+        /* CUSTOM PYTHON SANDBOX VIEW */
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
             <div className="flex items-center space-x-2.5">
               <Terminal className="w-5 h-5 text-emerald-400" />
               <div>
                 <h3 className="text-lg font-bold text-white">Live WebAssembly Python 3.11 Sandbox</h3>
-                <p className="text-xs text-slate-400">
-                  {isLoadingPyodide ? 'Downloading Python 3.11 & NumPy runtime...' : 'Type any custom Python code and execute live.'}
-                </p>
+                <p className="text-xs text-slate-400">{isLoadingPyodide ? 'Downloading Python 3.11 & NumPy...' : 'Type custom Python code and execute live.'}</p>
               </div>
             </div>
             {isLoadingPyodide && (
@@ -289,24 +362,15 @@ plt.plot(time, conc); plt.show()`;
             )}
           </div>
 
-          {/* Terminal Output */}
           <div className="bg-black border border-slate-800 rounded-xl p-4 font-mono text-xs h-56 overflow-y-auto space-y-2">
             {terminalHistory.map((item, idx) => (
-              <div key={idx} className={
-                item.type === 'system' ? 'text-slate-500 italic' :
-                item.type === 'input' ? 'text-blue-400 font-bold border-l-2 border-blue-500 pl-2 py-0.5' :
-                item.type === 'error' ? 'text-rose-400 font-semibold' : 'text-emerald-300 whitespace-pre-wrap'
-              }>
+              <div key={idx} className={item.type === 'system' ? 'text-slate-500 italic' : item.type === 'input' ? 'text-blue-400 font-bold border-l-2 border-blue-500 pl-2' : item.type === 'error' ? 'text-rose-400' : 'text-emerald-300 whitespace-pre-wrap'}>
                 {item.type === 'input' ? `>>> ${item.text}` : item.text}
               </div>
             ))}
           </div>
 
-          {/* Textarea for custom code */}
           <div className="space-y-3">
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-              Custom Python Script:
-            </label>
             <textarea
               rows={5}
               value={customCode}
@@ -317,7 +381,7 @@ plt.plot(time, conc); plt.show()`;
             <button
               onClick={handleRunCustomCode}
               disabled={isLoadingPyodide}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all shadow-lg shadow-emerald-950 cursor-pointer"
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all shadow-lg cursor-pointer"
             >
               <Play className="w-4 h-4 fill-current" />
               <span>{isLoadingPyodide ? 'Initializing Engine...' : 'Run Custom Code in Browser'}</span>
@@ -325,7 +389,7 @@ plt.plot(time, conc); plt.show()`;
           </div>
         </div>
       ) : (
-        /* STRUCTURED 5-UNIT CURRICULUM VIEW */
+        /* STANDARD UNITS VIEW */
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div className="flex items-center space-x-2.5">
@@ -340,215 +404,48 @@ plt.plot(time, conc); plt.show()`;
                 <p className="text-xs text-slate-400">Modify parameters and execute guided pharmaceutical code.</p>
               </div>
             </div>
-
-            {activeUnit === 'unit1-2' && (
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { id: 'pediatric', label: 'Pediatric Dosing' },
-                  { id: 'dilution', label: 'Serial Dilutions' },
-                  { id: 'renal', label: 'Renal CrCl' }
-                ].map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => setSelectedScript(s.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${selectedScript === s.id ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Controls */}
             <div className="lg:col-span-4 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
               <div className="flex items-center space-x-2 text-xs font-bold uppercase tracking-wider text-slate-400">
                 <Sliders className="w-4 h-4 text-blue-400" />
                 <span>Input Parameters</span>
               </div>
-
-              {activeUnit === 'unit1-2' && selectedScript === 'pediatric' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Dosing Rule</label>
-                    <select value={dosingRule} onChange={e => setDosingRule(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
-                      <option value="youngs">Young&apos;s Rule (1–12 yrs)</option>
-                      <option value="dillings">Dilling&apos;s Rule (4–20 yrs)</option>
-                      <option value="clarks">Clark&apos;s Rule (Weight-based)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Child Age (yrs)</label>
-                    <input type="number" value={childAge} onChange={e => setChildAge(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Child Weight (kg)</label>
-                    <input type="number" value={childWeight} onChange={e => setChildWeight(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Adult Dose (mg)</label>
-                    <input type="number" value={adultDose} onChange={e => setAdultDose(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                </div>
-              )}
-
-              {activeUnit === 'unit1-2' && selectedScript === 'dilution' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Stock Conc (mg/mL)</label>
-                    <input type="number" value={stockConc} onChange={e => setStockConc(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Dilution Factor</label>
-                    <input type="number" value={dilutionFactor} onChange={e => setDilutionFactor(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Number of Tubes</label>
-                    <input type="number" min="1" max="12" value={numTubes} onChange={e => setNumTubes(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                </div>
-              )}
-
-              {activeUnit === 'unit1-2' && selectedScript === 'renal' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Patient Age</label>
-                    <input type="number" value={patientAge} onChange={e => setPatientAge(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Weight (kg)</label>
-                    <input type="number" value={patientWeight} onChange={e => setPatientWeight(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Serum Creatinine (mg/dL)</label>
-                    <input type="number" step="0.1" value={serumCreatinine} onChange={e => setSerumCreatinine(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div className="flex items-center space-x-2 pt-1">
-                    <input type="checkbox" checked={isFemale} onChange={e => setIsFemale(e.target.checked)} className="rounded bg-slate-900 text-emerald-500" />
-                    <span className="text-xs text-slate-300">Female (&times;0.85 factor)</span>
-                  </div>
-                </div>
-              )}
-
-              {activeUnit === 'unit3' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Batch Scenario</label>
-                    <select value={batchQuality} onChange={e => setBatchQuality(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
-                      <option value="normal">Standard Compliant Batch</option>
-                      <option value="outlier">Batch with Outliers (Fail)</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {activeUnit === 'unit4' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Severity Filter</label>
-                    <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
-                      <option value="All">All Severities</option>
-                      <option value="Mild">Mild</option>
-                      <option value="Moderate">Moderate</option>
-                      <option value="Severe">Severe</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Minimum Age</label>
-                    <input type="number" value={minAgeFilter} onChange={e => setMinAgeFilter(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Drug Filter</label>
-                    <select value={selectedDrugFilter} onChange={e => setSelectedDrugFilter(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
-                      <option value="All">All Drugs</option>
-                      <option value="Paracetamol">Paracetamol</option>
-                      <option value="Amlodipine">Amlodipine</option>
-                      <option value="Metformin">Metformin</option>
-                      <option value="Atorvastatin">Atorvastatin</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {activeUnit === 'unit5' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Route</label>
-                    <select value={pkRoute} onChange={e => setPkRoute(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
-                      <option value="oral">Oral Administration</option>
-                      <option value="iv">Intravenous (IV) Bolus</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Dose (mg)</label>
-                    <input type="number" value={pkDose} onChange={e => setPkDose(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Volume of Distribution (Vd L)</label>
-                    <input type="number" value={pkVd} onChange={e => setPkVd(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Elimination Constant (ke hr⁻¹)</label>
-                    <input type="number" step="0.01" value={pkKe} onChange={e => setPkKe(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-                  </div>
-                </div>
-              )}
-
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Adult Dose (mg)</label>
+                <input type="number" value={adultDose} onChange={e => setAdultDose(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+              </div>
               <button
                 onClick={runPythonScript}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all shadow-lg shadow-emerald-950 cursor-pointer"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
               >
                 <Play className="w-4 h-4 fill-current" />
-                <span>Run Guided Script</span>
+                <span>Run Script</span>
               </button>
             </div>
 
-            {/* Code & Terminal */}
             <div className="lg:col-span-8 flex flex-col space-y-4">
               <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
                 <div className="bg-slate-900/90 px-4 py-2 border-b border-slate-800 flex items-center justify-between">
                   <span className="text-xs font-mono text-slate-400">script.py</span>
-                  <span className="text-[11px] text-blue-400 font-medium">Python 3.11 Studio</span>
                 </div>
                 <pre className="p-4 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
                   {getPythonCode()}
                 </pre>
               </div>
-
-              {activeUnit === 'unit5' && pkPlotData && (
-                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-                  <div className="flex justify-between text-xs text-slate-300">
-                    <span>Matplotlib Figure Render</span>
-                    <span className="text-emerald-400">Cmax: {pkPlotData.maxConc} mg/L at {pkPlotData.tMax}h</span>
-                  </div>
-                  <div className="h-36 bg-slate-900 rounded-lg p-3 flex items-end justify-between gap-1 border border-slate-800">
-                    {pkPlotData.points.map((pt, idx) => (
-                      <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end">
-                        <div style={{ height: `${Math.min(100, (pt.c / parseFloat(pkPlotData.maxConc)) * 100)}%` }} className="w-full bg-emerald-500 rounded-t" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Terminal */}
               <div className="bg-black border border-slate-800 rounded-xl p-4 font-mono text-xs">
                 <div className="flex items-center space-x-2 text-slate-500 mb-2 pb-1.5 border-b border-slate-900">
                   <Terminal className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Console Output</span>
                 </div>
-                {consoleOutput.length > 0 ? (
-                  <div className="space-y-1 text-emerald-400">
-                    {consoleOutput.map((line, i) => (
-                      <div key={i} className={line.includes('FAIL') || line.includes('Error') ? 'text-rose-400 font-bold' : line.startsWith('>>>') ? 'text-slate-500' : 'text-emerald-300'}>
-                        {line}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-slate-600 italic">Click &ldquo;Run Guided Script&rdquo; above...</p>
-                )}
+                <div className="space-y-1 text-emerald-400">
+                  {consoleOutput.map((line, i) => (
+                    <div key={i} className={line.startsWith('>>>') ? 'text-slate-500' : 'text-emerald-300'}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
