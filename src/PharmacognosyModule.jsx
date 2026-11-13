@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 
 export default function PharmacognosyModule() {
-  // Stomatal Index state
   const [stomataCount, setStomataCount] = useState('');
   const [epidermalCount, setEpidermalCount] = useState('');
   const [stomatalIndexResult, setStomatalIndexResult] = useState(null);
 
-  // Leaf Constant state
   const [veinCount, setVeinCount] = useState('');
   const [areaCount, setAreaCount] = useState('');
   const [veinletResult, setVeinletResult] = useState(null);
@@ -17,7 +15,6 @@ export default function PharmacognosyModule() {
     const eCells = parseFloat(epidermalCount);
 
     if (s >= 0 && eCells > 0) {
-      // Formula: I = (S / (E + S)) * 100
       const index = (s / (eCells + s)) * 100;
       setStomatalIndexResult(index.toFixed(2));
     } else {
@@ -49,7 +46,6 @@ export default function PharmacognosyModule() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Stomatal Index Calculator */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
           <h3 className="text-lg font-bold text-emerald-300 mb-2">1. Stomatal Index Calculator</h3>
           <p className="text-xs text-slate-400 mb-4">Calculates percentage proportion of stomata to total epidermal cells.</p>
@@ -90,10 +86,9 @@ export default function PharmacognosyModule() {
           )}
         </div>
 
-        {/* Vein-let Termination Number Calculator */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
           <h3 className="text-lg font-bold text-emerald-300 mb-2">2. Vein-let Termination Number</h3>
-          <p className="text-xs text-slate-400 mb-4">Number of vein-let terminations per unit area ($1 mm^2$).</p>
+          <p className="text-xs text-slate-400 mb-4">Number of vein-let terminations per unit area (1 mm²).</p>
           <form onSubmit={calculateVeinlet} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Total Vein-let Terminations counted</label>
@@ -108,7 +103,7 @@ export default function PharmacognosyModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Total Area Examined ($mm^2$)</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Total Area Examined (mm²)</label>
               <input
                 type="number"
                 step="any"
@@ -126,11 +121,11 @@ export default function PharmacognosyModule() {
           {veinletResult !== null && (
             <div className="mt-4 p-4 bg-slate-950 rounded-xl border border-emerald-900/50 text-center">
               <span className="text-sm text-slate-400">Vein-let Termination Number: </span>
-              <span className="text-xl font-bold text-emerald-400">{veinletResult} per $mm^2$</span>
+              <span className="text-xl font-bold text-emerald-400">{veinletResult} per mm²</span>
             </div>
           )}
         </div>
       </div>
     </div>
   );
-}
+};
