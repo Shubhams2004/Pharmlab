@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { Code, Play, BookOpen, Terminal, CheckCircle2, Sparkles, Sliders, Layers, BarChart3, AlertCircle } from 'lucide-react';
+import { Code, Play, BookOpen, Terminal, CheckCircle2, Sparkles, Sliders, Layers, BarChart3, Database } from 'lucide-react';
 
 export default function PythonModule() {
-  const [activeUnit, setActiveUnit] = useState('unit3');
-  const [selectedScript, setSelectedScript] = useState('numpy_qc');
+  const [activeUnit, setActiveUnit] = useState('unit4');
 
-  // Unit I & II State
+  // Unit I & II / III State variables...
   const [childAge, setChildAge] = useState(6);
   const [childWeight, setChildWeight] = useState(20);
   const [adultDose, setAdultDose] = useState(500);
@@ -17,161 +16,147 @@ export default function PythonModule() {
   const [patientWeight, setPatientWeight] = useState(70);
   const [serumCreatinine, setSerumCreatinine] = useState(1.8);
   const [isFemale, setIsFemale] = useState(false);
+  const [avgTabWeight, setAvgTabWeight] = useState(150);
+  const [batchQuality, setBatchQuality] = useState('normal');
 
-  // Unit III State (NumPy QC & Weight Variation)
-  const [avgTabWeight, setAvgTabWeight] = useState(150); // mg
-  const [batchQuality, setBatchQuality] = useState('normal'); // normal, outlier, substandard
-  const [qcResults, setQcResults] = useState(null);
+  // Unit IV State (Pandas ADR Datasets)
+  const [severityFilter, setSeverityFilter] = useState('All');
+  const [minAgeFilter, setMinAgeFilter] = useState(18);
+  const [selectedDrugFilter, setSelectedDrugFilter] = useState('All');
+  const [pandasOutput, setPandasOutput] = useState(null);
 
   const [consoleOutput, setConsoleOutput] = useState([]);
 
-  // Syntax & Concept Cards for Unit III
-  const numpySyntaxCards = [
-    {
-      unit: 'Unit III',
-      title: 'NumPy Array Creation & Slicing',
-      code: `import numpy as np
+  // Mock ADR dataset for interactive simulation
+  const mockADRDatabase = [
+    { id: 'ADR-101', drug: 'Paracetamol', age: 45, severity: 'Mild', reaction: 'Nausea', outcome: 'Recovered' },
+    { id: 'ADR-102', drug: 'Amlodipine', age: 68, severity: 'Severe', reaction: 'Peripheral Edema', outcome: 'Hospitalized' },
+    { id: 'ADR-103', drug: 'Metformin', age: 52, severity: 'Moderate', reaction: 'Gastric Distress', outcome: 'Recovered' },
+    { id: 'ADR-104', drug: 'Amlodipine', age: 71, severity: 'Severe', reaction: 'Hypotension', outcome: 'Recovered' },
+    { id: 'ADR-105', drug: 'Atorvastatin', age: 60, severity: 'Moderate', reaction: 'Myalgia', outcome: 'Recovered' },
+    { id: 'ADR-106', drug: 'Paracetamol', age: 22, severity: 'Mild', reaction: 'Rash', outcome: 'Recovered' },
+    { id: 'ADR-107', drug: 'Metformin', age: 65, severity: 'Severe', reaction: 'Lactic Acidosis', outcome: 'Critical' },
+    { id: 'ADR-108', drug: 'Atorvastatin', age: 58, severity: 'Severe', reaction: 'Hepatic Enzyme Elevation', outcome: 'Recovered' }
+  ];
 
-# Convert list of tablet weights to NumPy array
-weights = np.array([148.2, 151.0, 149.5, 150.1, 152.0])
-print(weights[0:3])  # Slicing first 3 weights`,
-      note: 'NumPy arrays are vectorized, highly optimized, and consume less memory than standard Python lists.'
-    },
+  // Syntax & Concept Cards for Unit IV
+  const pandasSyntaxCards = [
     {
-      unit: 'Unit III',
-      title: 'Statistical QC Functions',
-      code: `mean_wt = np.mean(weights)
-std_dev = np.std(weights)
-min_val = np.min(weights)
-max_val = np.max(weights)`,
-      note: 'Essential for evaluating batch uniformity and standard deviation across manufacturing runs.'
-    },
-    {
-      unit: 'Unit III',
-      title: 'Boolean Masking & Filtering',
-      code: `# Find tablets violating ±7.5% IP limit
-limit_upper = mean_wt * 1.075
-limit_lower = mean_wt * 0.925
-failures = weights[(weights > limit_upper) | (weights < limit_lower)]`,
-      note: 'Boolean masks allow lightning-fast filtering of out-of-specification (OOS) clinical or QC records.'
-    },
-    {
-      unit: 'Unit III',
-      title: 'CSV File Handling with Python',
-      code: `import csv
+      unit: 'Unit IV',
+      title: 'Loading DataFrames & Inspection',
+      code: `import pandas as pd
 
-with open('batch_log.csv', mode='r') as file:
-    reader = csv.DictReader(file)
-    for row in reader:
-        print(row['BatchID'], row['Status'])`,
-      note: 'Built-in file input/output for parsing raw laboratory and instrument log files.'
+# Load CSV clinical dataset
+df = pd.read_csv('adr_reports.csv')
+print(df.head())
+print(df.info())`,
+      note: 'Pandas DataFrames organize tabular healthcare data into rows and named columns with built-in data type tracking.'
+    },
+    {
+      unit: 'Unit IV',
+      title: 'Conditional Boolean Filtering',
+      code: `# Filter severe ADR cases in elderly patients
+severe_elderly = df[(df['Severity'] == 'Severe') & (df['Age'] > 60)]
+print(severe_elderly.describe())`,
+      note: 'Combine multiple conditions using bitwise operators (& for AND, | for OR) to isolate clinical safety signals.'
+    },
+    {
+      unit: 'Unit IV',
+      title: 'Handling Missing Data (Nulls)',
+      code: `# Check and clean missing lab values
+missing_counts = df.isnull().sum()
+df_clean = df.dropna(subset=['SerumCreatinine'])`,
+      note: 'Crucial for cleaning messy real-world electronic health records (EHR) before statistical analysis.'
+    },
+    {
+      unit: 'Unit IV',
+      title: 'Groupby & Aggregation',
+      code: `# Count total ADR reports grouped by drug
+drug_summary = df.groupby('DrugName')['Reaction'].count()
+print(drug_summary.sort_values(ascending=False))`,
+      note: 'Enables quick epidemiological tabulation of adverse events across therapeutic drug classes.'
     }
   ];
 
-  // Generate Dynamic Python Code Preview for Unit III
+  // Generate Python Code Preview for Unit IV
   const getPythonCode = () => {
-    if (activeUnit === 'unit1-2') {
-      return `# BP101T Unit I & II Script Template
-rule_selected = "${dosingRule}"
-age = ${childAge}
-weight = ${childWeight}
-adult_dose = ${adultDose}
-print(f"Rule: {rule_selected}, Dose: {adult_dose} mg")`;
-    }
+    return `# BP101T Unit IV: Pandas ADR Dataset Management
+import pandas as pd
 
-    return `# BP101T Unit III: NumPy Quality Control & Weight Variation
-import numpy as np
+# Load clinical Adverse Drug Reaction (ADR) dataset
+data = {
+    'ReportID': ['ADR-101', 'ADR-102', 'ADR-103', 'ADR-104', 'ADR-105', 'ADR-106', 'ADR-107', 'ADR-108'],
+    'DrugName': ['Paracetamol', 'Amlodipine', 'Metformin', 'Amlodipine', 'Atorvastatin', 'Paracetamol', 'Metformin', 'Atorvastatin'],
+    'Age': [45, 68, 52, 71, 60, 22, 65, 58],
+    'Severity': ['Mild', 'Severe', 'Moderate', 'Severe', 'Moderate', 'Mild', 'Severe', 'Severe'],
+    'Reaction': ['Nausea', 'Edema', 'Gastric', 'Hypotension', 'Myalgia', 'Rash', 'Acidosis', 'Hepatic']
+}
+df = pd.DataFrame(data)
 
-# Simulate 10 tablet weights (mg) for the batch
-target_avg = ${avgTagWeight || avgTabWeight}
-np.random.seed(42)
-if "${batchQuality}" == "outlier":
-    weights = np.array([148, 150, 152, 149, 130, 151, 148, 175, 150, 149]) # Has outliers
-elif "${batchQuality}" == "substandard":
-    weights = np.array([135, 138, 140, 136, 139, 137, 138, 140, 136, 139]) # Consistently low
-else:
-    weights = np.array([149.2, 150.5, 150.1, 149.8, 151.0, 149.5, 150.2, 150.0, 149.7, 150.3])
+# --- Apply User Filters ---
+sev_filter = "${severityFilter}"
+min_age = ${minAgeFilter}
+drug_filter = "${selectedDrugFilter}"
 
-# Statistical Analysis via NumPy
-mean_weight = np.mean(weights)
-std_dev = np.std(weights, ddof=1)
-max_dev_pct = np.max(np.abs(weights - mean_weight) / mean_weight) * 100
+# Filtering DataFrame
+filtered_df = df[df['Age'] >= min_age]
+if sev_filter != 'All':
+    filtered_df = filtered_df[filtered_df['Severity'] == sev_filter]
+if drug_filter != 'All':
+    filtered_df = filtered_df[filtered_df['DrugName'] == drug_filter]
 
-print(f"Batch Sample Size : {len(weights)} tablets")
-print(f"Mean Weight       : {round(mean_weight, 2)} mg")
-print(f"Standard Dev (SD) : {round(std_dev, 2)} mg")
-print(f"Max % Deviation   : {round(max_dev_pct, 2)}%")
+print(f"Total Records Matching Filter: {len(filtered_df)}")
+print(filtered_df.to_string(index=False))
 
-# Indian Pharmacopoeia (IP) Compliance Check (For 80mg - 250mg tablets: ±7.5%)
-if max_dev_pct <= 7.5:
-    print("QC Status: PASS (Complies with IP Weight Variation Limits)")
-else:
-    print("QC Status: FAIL (Exceeds ±7.5% IP Limit - Batch Rejected)")`;
+# Groupby Summary: ADR Count by Drug
+summary = filtered_df.groupby('DrugName').size()
+print("\n--- ADR Count by Drug Class ---")
+print(summary)`;
   };
 
-  // Run NumPy QC Simulation
+  // Run Pandas Script Simulation
   const runPythonScript = () => {
     const timestamp = new Date().toLocaleTimeString();
-    if (activeUnit === 'unit1-2') {
-      const a = parseFloat(childAge) || 0;
-      const w = parseFloat(childWeight) || 0;
-      const d = parseFloat(adultDose) || 0;
-      let res = 0;
-      if (dosingRule === 'youngs') res = (a / (a + 12)) * d;
-      else if (dosingRule === 'dillings') res = (a / 20) * d;
-      else if (dosingRule === 'clarks') res = (w / 70) * d;
-
-      setConsoleOutput([
-        `>>> Executing pediatric_dosing.py at ${timestamp}...`,
-        `Rule Applied  : ${dosingRule.toUpperCase()}`,
-        `Patient Info  : ${a} yrs | ${w} kg`,
-        `Pediatric Dose: ${res.toFixed(2)} mg`,
-        `>>> Process finished with exit code 0`
-      ]);
-    } else {
-      // NumPy QC simulation logic
-      let weights = [149.2, 150.5, 150.1, 149.8, 151.0, 149.5, 150.2, 150.0, 149.7, 150.3];
-      if (batchQuality === 'outlier') {
-        weights = [148, 150, 152, 149, 130, 151, 148, 175, 150, 149];
-      } else if (batchQuality === 'substandard') {
-        weights = [135, 138, 140, 136, 139, 137, 138, 140, 136, 139];
-      }
-
-      const n = weights.length;
-      const mean = weights.reduce((a, b) => a + b, 0) / n;
-      const variance = weights.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1);
-      const sd = Math.sqrt(variance);
-      
-      let maxDev = 0;
-      weights.forEach(w => {
-        const dev = Math.abs(w - mean) / mean * 100;
-        if (dev > maxDev) maxDev = dev;
-      });
-
-      const passed = maxDev <= 7.5;
-
-      setQcResults({
-        weights,
-        mean: mean.toFixed(2),
-        sd: sd.toFixed(2),
-        maxDev: maxDev.toFixed(2),
-        passed
-      });
-
-      setConsoleOutput([
-        `>>> Executing numpy_qc_batch.py at ${timestamp}...`,
-        `Importing numpy as np ... [OK]`,
-        `Batch Sample Size : ${n} tablets`,
-        `Mean Weight       : ${mean.toFixed(2)} mg`,
-        `Standard Dev (SD) : ${sd.toFixed(2)} mg`,
-        `Max % Deviation   : ${maxDev.toFixed(2)}%`,
-        `----------------------------------------`,
-        passed 
-          ? `QC Status: PASS (Complies with IP ±7.5% Weight Variation Limit)` 
-          : `QC Status: FAIL (Exceeds ±7.5% IP Limit - Batch Rejected)`,
-        `>>> Process finished with exit code 0`
-      ]);
+    
+    let filtered = mockADRDatabase.filter(r => r.age >= parseInt(minAgeFilter));
+    if (severityFilter !== 'All') {
+      filtered = filtered.filter(r => r.severity === severityFilter);
     }
+    if (selectedDrugFilter !== 'All') {
+      filtered = filtered.filter(r => r.drug === selectedDrugFilter);
+    }
+
+    // Groupby summary
+    const summaryMap = {};
+    filtered.forEach(r => {
+      summaryMap[r.drug] = (summaryMap[r.drug] || 0) + 1;
+    });
+
+    setPandasOutput(filtered);
+
+    const logLines = [
+      `>>> Executing pandas_adr_analysis.py at ${timestamp}...`,
+      `Importing pandas as pd ... [OK]`,
+      `Loaded ADR database: 8 total records.`,
+      `Applied filters -> Min Age: ${minAgeFilter}, Severity: ${severityFilter}, Drug: ${selectedDrugFilter}`,
+      `Total Records Matching Filter: ${filtered.length}`,
+      `----------------------------------------------------------------`,
+      `ReportID   | DrugName     | Age | Severity  | Reaction`,
+      `----------------------------------------------------------------`
+    ];
+
+    filtered.forEach(r => {
+      logLines.push(`${r.id.padEnd(10)} | ${r.drug.padEnd(12)} | ${String(r.age).padEnd(3)} | ${r.severity.padEnd(9)} | ${r.reaction}`);
+    });
+
+    logLines.push(`----------------------------------------------------------------`);
+    logLines.push(`--- ADR Count by Drug Class (groupby result) ---`);
+    Object.entries(summaryMap).forEach(([drug, count]) => {
+      logLines.push(`${drug}: ${count} report(s)`);
+    });
+    logLines.push(`>>> Process finished with exit code 0`);
+
+    setConsoleOutput(logLines);
   };
 
   return (
@@ -200,9 +185,9 @@ else:
       {/* 5-Unit PCI Syllabus Navigation Bar */}
       <div className="flex flex-wrap gap-2">
         {[
-          { id: 'unit1-2', label: 'Unit I & II: Syntax & Pharma Functions' },
-          { id: 'unit3', label: 'Unit III: NumPy & IP Quality Control' },
-          { id: 'unit4', label: 'Unit IV: Pandas & ADR Datasets (Next)' },
+          { id: 'unit1-2', label: 'Unit I & II: Syntax & Functions' },
+          { id: 'unit3', label: 'Unit III: NumPy & QC' },
+          { id: 'unit4', label: 'Unit IV: Pandas & ADR Datasets' },
           { id: 'unit5', label: 'Unit V: Matplotlib PK Curves (Next)' }
         ].map((tab) => (
           <button
@@ -219,19 +204,19 @@ else:
         ))}
       </div>
 
-      {/* UNIT III CONTENT */}
-      {activeUnit === 'unit3' ? (
+      {/* UNIT IV CONTENT */}
+      {activeUnit === 'unit4' ? (
         <div className="space-y-8">
-          {/* Section 1: NumPy Syntax Reference Cards */}
+          {/* Section 1: Pandas Syntax Reference Cards */}
           <div>
             <div className="flex items-center space-x-2 mb-4">
               <BookOpen className="w-5 h-5 text-blue-400" />
               <h3 className="text-lg font-bold text-white">
-                Unit III: NumPy Arrays & Statistical QC Reference
+                Unit IV: Pandas DataFrames & Clinical Filtering Reference
               </h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {numpySyntaxCards.map((card, idx) => (
+              {pandasSyntaxCards.map((card, idx) => (
                 <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between mb-2">
@@ -253,15 +238,15 @@ else:
             </div>
           </div>
 
-          {/* Section 2: Interactive NumPy QC Scripting Studio */}
+          {/* Section 2: Interactive Pandas ADR Scripting Studio */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
               <div className="flex items-center space-x-2.5">
-                <BarChart3 className="w-5 h-5 text-emerald-400" />
+                <Database className="w-5 h-5 text-emerald-400" />
                 <div>
-                  <h3 className="text-lg font-bold text-white">NumPy Tablet Weight Variation QC Simulator</h3>
+                  <h3 className="text-lg font-bold text-white">Pandas Clinical ADR Dataset Filter Studio</h3>
                   <p className="text-xs text-slate-400">
-                    Test manufacturing batch compliance against Indian Pharmacopoeia (IP) standards using NumPy array statistics.
+                    Query and filter patient adverse drug reaction logs using Pandas DataFrame Boolean indexing and groupby grouping.
                   </p>
                 </div>
               </div>
@@ -273,41 +258,46 @@ else:
               <div className="lg:col-span-4 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
                 <div className="flex items-center space-x-2 text-xs font-bold uppercase tracking-wider text-slate-400">
                   <Sliders className="w-4 h-4 text-blue-400" />
-                  <span>Batch Simulation Parameters</span>
+                  <span>DataFrame Filter Parameters</span>
                 </div>
 
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Batch Profile / Quality Scenario</label>
+                    <label className="block text-xs text-slate-400 mb-1">Filter by Severity (`Severity`)</label>
                     <select
-                      value={batchQuality}
-                      onChange={(e) => setBatchQuality(e.target.value)}
+                      value={severityFilter}
+                      onChange={(e) => setSeverityFilter(e.target.value)}
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white"
                     >
-                      <option value="normal">Standard Compliant Batch (Uniform)</option>
-                      <option value="outlier">Batch with Weight Outliers (Contains 130mg & 175mg)</option>
-                      <option value="substandard">Substandard Batch (Consistently Underweight)</option>
+                      <option value="All">All Severities</option>
+                      <option value="Mild">Mild</option>
+                      <option value="Moderate">Moderate</option>
+                      <option value="Severe">Severe</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Target Mean Weight (`target_avg` mg)</label>
+                    <label className="block text-xs text-slate-400 mb-1">Minimum Patient Age (`Age &gt;= min`)</label>
                     <input
                       type="number"
-                      value={avgTabWeight}
-                      onChange={(e) => setAvgTabWeight(e.target.value)}
+                      value={minAgeFilter}
+                      onChange={(e) => setMinAgeFilter(e.target.value)}
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white"
                     />
                   </div>
-                </div>
-
-                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300 space-y-1">
-                  <div className="font-bold flex items-center space-x-1">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>IP Standard Rule</span>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Filter by Drug (`DrugName`)</label>
+                    <select
+                      value={selectedDrugFilter}
+                      onChange={(e) => setSelectedDrugFilter(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white"
+                    >
+                      <option value="All">All Drugs</option>
+                      <option value="Paracetamol">Paracetamol</option>
+                      <option value="Amlodipine">Amlodipine</option>
+                      <option value="Metformin">Metformin</option>
+                      <option value="Atorvastatin">Atorvastatin</option>
+                    </select>
                   </div>
-                  <p className="text-[11px] text-blue-200">
-                    For tablets weighing between 80mg and 250mg, the maximum permitted percentage deviation is &plusmn;7.5%.
-                  </p>
                 </div>
 
                 <button
@@ -315,7 +305,7 @@ else:
                   className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs flex items-center justify-center space-x-2 transition-colors shadow-lg shadow-emerald-950"
                 >
                   <Play className="w-4 h-4 fill-current" />
-                  <span>Run NumPy QC Script</span>
+                  <span>Run Pandas ADR Script</span>
                 </button>
               </div>
 
@@ -323,8 +313,8 @@ else:
               <div className="lg:col-span-8 flex flex-col space-y-4">
                 <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
                   <div className="bg-slate-900/90 px-4 py-2 border-b border-slate-800 flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-400">numpy_qc_batch.py</span>
-                    <span className="text-[11px] text-blue-400 font-medium">NumPy Vectorized Statistics</span>
+                    <span className="text-xs font-mono text-slate-400">pandas_adr_analysis.py</span>
+                    <span className="text-[11px] text-blue-400 font-medium">Pandas DataFrame Indexing</span>
                   </div>
                   <pre className="p-4 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
                     {getPythonCode()}
@@ -340,14 +330,14 @@ else:
                   {consoleOutput.length > 0 ? (
                     <div className="space-y-1 text-emerald-400">
                       {consoleOutput.map((line, i) => (
-                        <div key={i} className={line.includes('FAIL') ? 'text-rose-400 font-bold' : line.includes('PASS') ? 'text-emerald-400 font-bold' : line.startsWith('>>>') ? 'text-slate-500' : 'text-emerald-300'}>
+                        <div key={i} className={line.startsWith('>>>') ? 'text-slate-500' : line.includes('Severe') ? 'text-rose-400 font-semibold' : 'text-emerald-300'}>
                           {line || ' '}
                         </div>
                       ))}
                     </div>
                   ) : (
                     <p className="text-slate-600 italic">
-                      Click &ldquo;Run NumPy QC Script&rdquo; to execute batch statistical analysis...
+                      Click &ldquo;Run Pandas ADR Script&rdquo; to execute dataset filtering...
                     </p>
                   )}
                 </div>
@@ -359,15 +349,15 @@ else:
         /* Fallback for other units */
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center space-y-3">
           <Layers className="w-10 h-10 text-blue-400 mx-auto" />
-          <h3 className="text-xl font-bold text-white">Unit I &amp; II Syntax & Pharma Functions</h3>
+          <h3 className="text-xl font-bold text-white">Unit IV: Pandas Clinical Data Management</h3>
           <p className="text-slate-400 text-sm max-w-xl mx-auto">
-            Switch to Unit III tab above to explore NumPy arrays and quality control statistics.
+            Switch to Unit IV tab above to explore Pandas DataFrames and Adverse Drug Reaction datasets.
           </p>
           <button
-            onClick={() => setActiveUnit('unit3')}
+            onClick={() => setActiveUnit('unit4')}
             className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold"
           >
-            Go to Unit III Studio
+            Go to Unit IV Studio
           </button>
         </div>
       )}
