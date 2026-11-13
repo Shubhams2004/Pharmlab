@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FlaskConical, Calculator, Scale, Droplet, RefreshCw, CheckCircle2, BookOpen, AlertTriangle, Activity } from 'lucide-react';
+import { FlaskConical, Calculator, Scale, Droplet, CheckCircle2, BookOpen, Activity } from 'lucide-react';
 
 export default function PharmaceuticsModule() {
   const [activeTab, setActiveTab] = useState('alligation');
@@ -21,17 +21,16 @@ export default function PharmaceuticsModule() {
   const [suppositoryMouldSize, setSuppositoryMouldSize] = useState(2.0);
   const [numSuppositories, setNumSuppositories] = useState(10);
 
-  // Isotonicity Adjustment State (NaCl Equivalent Method)
-  const [isoDrugGrams, setIsoDrugGrams] = useState(1.0); // e.g., 1% w/v
-  const [isoVolumeMl, setIsoVolumeMl] = useState(100);   // e.g., 100 mL
-  const [eValue, setEValue] = useState(0.22);            // e.g., E-value for Pilocarpine nitrate or Boric acid (~0.5)
+  // Isotonicity Adjustment State
+  const [isoDrugGrams, setIsoDrugGrams] = useState(1.0);
+  const [isoVolumeMl, setIsoVolumeMl] = useState(100);
+  const [eValue, setEValue] = useState(0.22);
 
   // Prescription & Latin Translator State
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDrug, setSelectedDrug] = useState('Paracetamol');
   const [prescribedDose, setPrescribedDose] = useState(500);
 
-  // Latin Terms Dictionary (PCI Syllabus)
   const latinDictionary = [
     { term: 'b.i.d. (bis in die)', meaning: 'Twice a day', category: 'Frequency' },
     { term: 't.i.d. (ter in die)', meaning: 'Three times a day', category: 'Frequency' },
@@ -42,17 +41,13 @@ export default function PharmaceuticsModule() {
     { term: 'sig. (signa)', meaning: 'Write on label / Instructions', category: 'Direction' },
     { term: 'a.c. (ante cibum)', meaning: 'Before meals', category: 'Timing' },
     { term: 'p.c. (post cibum)', meaning: 'After meals', category: 'Timing' },
-    { term: 'gtt. (gutta)', meaning: 'Drop(s)', category: 'Form' },
-    { term: 'ft. (fiat)', meaning: 'Let it be made', category: 'Compounding' },
-    { term: 'ung. (unguentum)', meaning: 'Ointment', category: 'Form' }
+    { term: 'gtt. (gutta)', meaning: 'Drop(s)', category: 'Form' }
   ];
 
-  // Standard Max Adult Doses for Safety Check
   const drugDatabase = {
     'Paracetamol': { maxSingle: 1000, maxDaily: 4000, unit: 'mg' },
     'Aspirin': { maxSingle: 1000, maxDaily: 4000, unit: 'mg' },
-    'Ibuprofen': { maxSingle: 800, maxDaily: 3200, unit: 'mg' },
-    'Chlorpheniramine': { maxSingle: 8, maxDaily: 24, unit: 'mg' }
+    'Ibuprofen': { maxSingle: 800, maxDaily: 3200, unit: 'mg' }
   };
 
   const currentDrugInfo = drugDatabase[selectedDrug] || { maxSingle: 1000, maxDaily: 4000, unit: 'mg' };
@@ -65,16 +60,16 @@ export default function PharmaceuticsModule() {
   const highVolume = totalParts > 0 ? (highParts / totalParts) * totalVolume : 0;
   const lowVolume = totalParts > 0 ? (lowParts / totalParts) * totalVolume : 0;
 
-  // Alcohol dilution calculations
+  // Alcohol dilution
   const volumeOfStock = targetAlcohol && finalVolumeMl ? (targetAlcohol * finalVolumeMl) / stockAlcohol : 0;
   const volumeOfWater = finalVolumeMl - volumeOfStock;
 
-  // Suppository calculations
+  // Suppository
   const totalDrugNeeded = drugWeight * numSuppositories;
   const totalDisplacement = drugWeight * displacementValue * numSuppositories;
   const totalBaseNeeded = (suppositoryMouldSize * numSuppositories) - totalDisplacement;
 
-  // Isotonicity calculations (0.9% NaCl is isotonic = 0.9 g per 100 mL)
+  // Isotonicity
   const naclNeededForIsotonic = (0.9 / 100) * isoVolumeMl;
   const naclEquivalentOfDrug = isoDrugGrams * eValue;
   const additionalNaclNeeded = naclNeededForIsotonic - naclEquivalentOfDrug;
@@ -86,14 +81,12 @@ export default function PharmaceuticsModule() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-100 pb-12">
-      {/* Header */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">PCI B.Pharm • General Pharmacy (Practical) • BP107P</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">General Pharmacy Laboratory & Dispensing Suite</h2>
+        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">General Pharmacy Laboratory Suite</h2>
         <p className="text-slate-400 text-sm mt-1">Interactive compounding calculators, alligation matrices, Latin prescription parsing, and isotonicity adjustments.</p>
       </div>
 
-      {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-2">
         {[
           { id: 'alligation', label: '⚖️ Alligation Calculator' },
@@ -116,20 +109,11 @@ export default function PharmaceuticsModule() {
         ))}
       </div>
 
-      {/* ALLIGATION TAB */}
       {activeTab === 'alligation' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
-            <Scale className="w-5 h-5 text-emerald-400" />
-            <div>
-              <h3 className="text-lg font-bold text-white">Alligation Medial / Alternate Calculator</h3>
-              <p className="text-xs text-slate-400">Calculate exact volumes of higher and lower concentration stocks required to compound a target strength.</p>
-            </div>
-          </div>
-
+          <h3 className="text-lg font-bold text-white">Alligation Medial / Alternate Calculator</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Compounding Parameters</span>
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Higher Concentration Stock (%)</label>
                 <input type="number" value={highConc} onChange={e => setHighConc(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
@@ -147,287 +131,132 @@ export default function PharmaceuticsModule() {
                 <input type="number" value={totalVolume} onChange={e => setTotalVolume(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
             </div>
-
             <div className="lg:col-span-7 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-6 space-y-6">
               <div className="space-y-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Alligation Matrix Results</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Results</span>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">Parts of Higher ({highConc}%)</span>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{highParts} parts</p>
-                    <p className="text-xs text-slate-300 mt-1">= {highVolume.toFixed(2)} mL</p>
+                    <span className="text-[10px] text-slate-400 uppercase">Higher Parts</span>
+                    <p className="text-xl font-bold text-emerald-400 mt-1">{highParts} parts ({highVolume.toFixed(1)} mL)</p>
                   </div>
                   <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">Parts of Lower ({lowConc}%)</span>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{lowParts} parts</p>
-                    <p className="text-xs text-slate-300 mt-1">= {lowVolume.toFixed(2)} mL</p>
+                    <span className="text-[10px] text-slate-400 uppercase">Lower Parts</span>
+                    <p className="text-xl font-bold text-emerald-400 mt-1">{lowParts} parts ({lowVolume.toFixed(1)} mL)</p>
                   </div>
                 </div>
-                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 space-y-2 text-xs text-slate-300">
-                  <div className="flex justify-between border-b border-slate-800 pb-2">
-                    <span>Total Proportion Parts:</span>
-                    <span className="font-bold text-white">{totalParts} parts</span>
-                  </div>
-                  <div className="flex justify-between pt-1">
-                    <span>Dispensing Instruction:</span>
-                    <span className="font-medium text-emerald-400">Mix {highVolume.toFixed(1)} mL of {highConc}% with {lowVolume.toFixed(1)} mL of {lowConc}% to yield {totalVolume} mL of {targetConc}%.</span>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-xl p-3 flex items-center space-x-2.5 text-xs text-emerald-300">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Validated against Indian Pharmacopoeia dispensing guidelines.</span>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ALCOHOL DILUTION TAB */}
       {activeTab === 'alcohol' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
-            <Droplet className="w-5 h-5 text-emerald-400" />
-            <div>
-              <h3 className="text-lg font-bold text-white">Alcohol Strength & Dilution Calculator (C₁V₁ = C₂V₂)</h3>
-              <p className="text-xs text-slate-400">Determine exact volumes of strong spirit and purified water required to prepare lower alcoholic strengths.</p>
-            </div>
-          </div>
-
+          <h3 className="text-lg font-bold text-white">Alcohol Strength & Dilution Calculator</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Dilution Parameters</span>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Stock Alcohol Strength (C₁ % v/v)</label>
+                <label className="block text-xs text-slate-400 mb-1">Stock Strength (%)</label>
                 <input type="number" value={stockAlcohol} onChange={e => setStockAlcohol(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Desired Target Strength (C₂ % v/v)</label>
+                <label className="block text-xs text-slate-400 mb-1">Target Strength (%)</label>
                 <input type="number" value={targetAlcohol} onChange={e => setTargetAlcohol(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Desired Final Volume (V₂ mL)</label>
+                <label className="block text-xs text-slate-400 mb-1">Final Volume (mL)</label>
                 <input type="number" value={finalVolumeMl} onChange={e => setFinalVolumeMl(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
             </div>
-
-            <div className="lg:col-span-7 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-6 space-y-6">
-              <div className="space-y-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Compounding Prescription Output</span>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">Volume of Stock Alcohol</span>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{volumeOfStock.toFixed(2)} mL</p>
-                  </div>
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">Purified Water to Add</span>
-                    <p className="text-xl font-bold text-blue-400 mt-1">{Math.max(0, volumeOfWater).toFixed(2)} mL</p>
-                  </div>
-                </div>
-                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-xs text-slate-300">
-                  <p><strong>Dispensing Protocol:</strong> Measure exactly <span className="text-emerald-400">{volumeOfStock.toFixed(1)} mL</span> of {stockAlcohol}% stock alcohol, add sufficient purified water with continuous stirring to make up the final calibrated volume to <span className="text-blue-400">{finalVolumeMl} mL</span>.</p>
-                </div>
-              </div>
-              <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-xl p-3 flex items-center space-x-2.5 text-xs text-emerald-300">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Accounts for apparent contraction on mixing where applicable.</span>
-              </div>
+            <div className="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col justify-center">
+              <p className="text-sm text-emerald-400 font-bold">Volume of Stock Alcohol: {volumeOfStock.toFixed(2)} mL</p>
+              <p className="text-sm text-blue-400 font-bold mt-2">Water to Add: {Math.max(0, volumeOfWater).toFixed(2)} mL</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* SUPPOSITORY DISPLACEMENT TAB */}
       {activeTab === 'suppository' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
-            <FlaskConical className="w-5 h-5 text-emerald-400" />
-            <div>
-              <h3 className="text-lg font-bold text-white">Suppository Displacement Value Calculator</h3>
-              <p className="text-xs text-slate-400">Calculate exact quantity of base (e.g., Theobroma oil) displaced by active pharmaceutical ingredients.</p>
-            </div>
-          </div>
-
+          <h3 className="text-lg font-bold text-white">Suppository Displacement Value Calculator</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Formulation Variables</span>
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Drug Weight per Suppository (g)</label>
                 <input type="number" step="0.1" value={drugWeight} onChange={e => setDrugWeight(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Displacement Value (DV) of Drug</label>
+                <label className="block text-xs text-slate-400 mb-1">Displacement Value (DV)</label>
                 <input type="number" step="0.05" value={displacementValue} onChange={e => setDisplacementValue(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Mould Capacity / Nominal Size (g)</label>
+                <label className="block text-xs text-slate-400 mb-1">Mould Size (g)</label>
                 <input type="number" step="0.1" value={suppositoryMouldSize} onChange={e => setSuppositoryMouldSize(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Number of Suppositories Required</label>
+                <label className="block text-xs text-slate-400 mb-1">Number of Suppositories</label>
                 <input type="number" value={numSuppositories} onChange={e => setNumSuppositories(parseInt(e.target.value) || 1)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
             </div>
-
-            <div className="lg:col-span-7 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-6 space-y-6">
-              <div className="space-y-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Compounding Batch Quantities</span>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">Total Active Drug Needed</span>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{totalDrugNeeded.toFixed(2)} g</p>
-                  </div>
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">Total Cocoa Butter Base</span>
-                    <p className="text-xl font-bold text-amber-400 mt-1">{Math.max(0, totalBaseNeeded).toFixed(2)} g</p>
-                  </div>
-                </div>
-                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Total Base Displacement:</span>
-                    <span className="font-bold text-white">{totalDisplacement.toFixed(2)} g</span>
-                  </div>
-                  <div className="flex justify-between pt-1">
-                    <span>Mould Capacity Check:</span>
-                    <span className="text-emerald-400">Correctly adjusted for density & displacement value.</span>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-xl p-3 flex items-center space-x-2.5 text-xs text-emerald-300">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Ensures exact dosage accuracy per suppository unit.</span>
-              </div>
+            <div className="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col justify-center">
+              <p className="text-sm text-emerald-400 font-bold">Total Active Drug: {totalDrugNeeded.toFixed(2)} g</p>
+              <p className="text-sm text-amber-400 font-bold mt-2">Total Cocoa Butter Base: {Math.max(0, totalBaseNeeded).toFixed(2)} g</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* ISOTONICITY ADJUSTMENT TAB */}
       {activeTab === 'isotonicity' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
-            <Activity className="w-5 h-5 text-emerald-400" />
-            <div>
-              <h3 className="text-lg font-bold text-white">Isotonicity Adjustment (Sodium Chloride Equivalent Method)</h3>
-              <p className="text-xs text-slate-400">Calculate supplementary sodium chloride required to render ophthalmic or parenteral solutions isotonic.</p>
-            </div>
-          </div>
-
+          <h3 className="text-lg font-bold text-white">Isotonicity Adjustment (NaCl Equivalent Method)</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Formulation Parameters</span>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Drug Quantity in Prescription (g)</label>
+                <label className="block text-xs text-slate-400 mb-1">Drug Quantity (g)</label>
                 <input type="number" step="0.1" value={isoDrugGrams} onChange={e => setIsoDrugGrams(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Total Volume of Solution (mL)</label>
+                <label className="block text-xs text-slate-400 mb-1">Total Volume (mL)</label>
                 <input type="number" value={isoVolumeMl} onChange={e => setIsoVolumeMl(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Sodium Chloride Equivalent (E-value)</label>
-                <input type="number" step="0.01" value={eValue} onChange={e => setEValue(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono" />
+                <label className="block text-xs text-slate-400 mb-1">E-value</label>
+                <input type="number" step="0.01" value={eValue} onChange={e => setEValue(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
               </div>
             </div>
-
-            <div className="lg:col-span-7 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-6 space-y-6">
-              <div className="space-y-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Isotonicity Audit Output</span>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">NaCl Needed for 0.9% Isotonicity</span>
-                    <p className="text-xl font-bold text-blue-400 mt-1">{naclNeededForIsotonic.toFixed(3)} g</p>
-                  </div>
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">NaCl Equivalent of Drug</span>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{naclEquivalentOfDrug.toFixed(3)} g</p>
-                  </div>
-                </div>
-                <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 space-y-2">
-                  <div className="flex justify-between border-b border-slate-800 pb-2">
-                    <span>Additional NaCl Required:</span>
-                    <span className="font-bold text-amber-400 font-mono text-sm">{Math.max(0, additionalNaclNeeded).toFixed(3)} g</span>
-                  </div>
-                  <div className="pt-1">
-                    <span><strong>Dispensing Directive:</strong> {additionalNaclNeeded > 0 ? `Dissolve the drug and add exactly ${additionalNaclNeeded.toFixed(3)} g of sodium chloride to make up ${isoVolumeMl} mL of isotonic solution.` : 'The drug solution is already hypertonic; no sodium chloride adjustment needed.'}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-xl p-3 flex items-center space-x-2.5 text-xs text-emerald-300">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Prevents tissue trauma and hemolysis upon instillation or injection.</span>
-              </div>
+            <div className="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col justify-center">
+              <p className="text-sm text-blue-400 font-bold">NaCl Needed for 0.9%: {naclNeededForIsotonic.toFixed(3)} g</p>
+              <p className="text-sm text-emerald-400 font-bold mt-2">NaCl Equivalent of Drug: {naclEquivalentOfDrug.toFixed(3)} g</p>
+              <p className="text-sm text-amber-400 font-bold mt-2">Additional NaCl Required: {Math.max(0, additionalNaclNeeded).toFixed(3)} g</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* PRESCRIPTION TRANSLATOR & DOSE SAFETY CHECKER TAB */}
       {activeTab === 'prescription' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
-            <BookOpen className="w-5 h-5 text-emerald-400" />
-            <div>
-              <h3 className="text-lg font-bold text-white">Prescription Latin Decoder & Dose Safety Checker</h3>
-              <p className="text-xs text-slate-400">Translate traditional dispensing abbreviations and verify patient dose against standard therapeutic limits.</p>
-            </div>
-          </div>
-
+          <h3 className="text-lg font-bold text-white">Prescription Latin Decoder & Dose Safety Checker</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-blue-400 flex items-center space-x-2">
-                <Calculator className="w-4 h-4" />
-                <span>Adult Therapeutic Dose Safety Audit</span>
-              </span>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Select Drug</label>
-                <select value={selectedDrug} onChange={e => setSelectedDrug(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
-                  {Object.keys(drugDatabase).map(drug => (
-                    <option key={drug} value={drug}>{drug}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Prescribed Single Dose ({currentDrugInfo.unit})</label>
-                <input type="number" value={prescribedDose} onChange={e => setPrescribedDose(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono" />
-              </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Max Adult Single Dose:</span>
-                  <span className="font-mono text-white">{currentDrugInfo.maxSingle} {currentDrugInfo.unit}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Max Adult Daily Dose:</span>
-                  <span className="font-mono text-white">{currentDrugInfo.maxDaily} {currentDrugInfo.unit}</span>
-                </div>
-                <div className="border-t border-slate-800 pt-2 mt-2 flex items-center justify-between">
-                  <span className="font-bold text-slate-300">Safety Status:</span>
-                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${isDoseSafe ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-rose-950 text-rose-400 border border-rose-800'}`}>
-                    {isDoseSafe ? '✓ SAFE (Within Limits)' : '⚠ WARNING: Exceeds Single Dose!'}
-                  </span>
-                </div>
-              </div>
+              <label className="block text-xs text-slate-400 mb-1">Select Drug</label>
+              <select value={selectedDrug} onChange={e => setSelectedDrug(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
+                {Object.keys(drugDatabase).map(drug => (
+                  <option key={drug} value={drug}>{drug}</option>
+                ))}
+              </select>
+              <label className="block text-xs text-slate-400 mb-1">Prescribed Single Dose (mg)</label>
+              <input type="number" value={prescribedDose} onChange={e => setPrescribedDose(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+              <p className={`text-xs font-bold mt-2 ${isDoseSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {isDoseSafe ? '✓ SAFE (Within Limits)' : '⚠ WARNING: Exceeds Single Dose!'}
+              </p>
             </div>
-
             <div className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Latin Prescription Abbreviations</span>
-                <input 
-                  type="text" 
-                  placeholder="Search term..." 
-                  value={searchTerm} 
-                  onChange={e => setSearchTerm(e.target.value)}
-                  className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1 text-xs text-white w-40"
-                />
-              </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 h-56 overflow-y-auto space-y-2">
-                {filteredLatin.map((item, idx) => (
-                  <div key={idx} className="bg-slate-950 border border-slate-800/60 rounded-lg p-2.5 flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-mono font-bold text-blue-400">{item.term}</span>
-                      <p className="text-slate-300 mt-0.5">{item.meaning}</p>
-                    </div>
-                    <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-800">{item.category}</span>
+              <input type="text" placeholder="Search Latin term..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mb-2" />
+              <div className="h-44 overflow-y-auto space-y-2">
+                {filteredLatin.map((item, i) => (
+                  <div key={i} className="bg-slate-900 p-2 rounded text-xs flex justify-between">
+                    <span className="font-mono text-blue-400">{item.term}</span>
+                    <span className="text-slate-300">{item.meaning}</span>
                   </div>
                 ))}
               </div>
