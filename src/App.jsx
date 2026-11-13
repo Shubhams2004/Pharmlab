@@ -4,6 +4,7 @@ import PythonModule from './modules/python/PythonModule';
 import GeneralPharmacyModule from './modules/general-pharmacy/GeneralPharmacyModule';
 import AnatomyModule from './modules/anatomy/AnatomyModule';
 import PharmacognosyModule from './modules/pharmacognosy/PharmacognosyModule';
+import InorganicChemistryModule from './modules/inorganic-chemistry/InorganicChemistryModule';
 import { ArrowLeft, Beaker } from 'lucide-react';
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
         {activeModule === 'general-pharmacy' && <GeneralPharmacyModule />}
         {activeModule === 'anatomy' && <AnatomyModule />}
         {activeModule === 'pharmacognosy' && <PharmacognosyModule />}
+        {activeModule === 'inorganic-chemistry' && <InorganicChemistryModule />}
       </main>
 
       <footer className="border-t border-slate-800 py-6 text-center text-xs text-slate-500">

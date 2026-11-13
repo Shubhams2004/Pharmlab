@@ -1,5 +1,5 @@
 import React from 'react';
-import { Code, FlaskConical, Activity, Microscope, ArrowRight } from 'lucide-react';
+import { Code, FlaskConical, Activity, Microscope, TestTube, ArrowRight } from 'lucide-react';
 
 export default function Dashboard({ setActiveModule }) {
   const modules = [
@@ -34,6 +34,14 @@ export default function Dashboard({ setActiveModule }) {
       desc: 'Crude drug quantitative microscopy, stomatal index, and leaf constant tools.',
       icon: Microscope,
       color: 'from-purple-500/20 to-pink-500/20 text-purple-400 border-purple-500/30'
+    },
+    {
+      id: 'inorganic-chemistry',
+      title: 'Inorganic & Analytical Chemistry',
+      code: 'BP106T / BP111P',
+      desc: 'Acid-base titration stoichiometry and limit test protocol checklists.',
+      icon: TestTube,
+      color: 'from-cyan-500/20 to-blue-500/20 text-cyan-400 border-cyan-500/30'
     }
   ];
 
