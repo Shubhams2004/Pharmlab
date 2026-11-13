@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Dashboard from './components/Dashboard';
 import PythonModule from './modules/python/PythonModule';
+import GeneralPharmacyModule from './modules/general-pharmacy/GeneralPharmacyModule';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState(null);
@@ -21,6 +22,8 @@ export default function App() {
           <Dashboard onSelectModule={(moduleId) => setActiveModule(moduleId)} />
         ) : activeModule === 'python' ? (
           <PythonModule />
+        ) : activeModule === 'general-pharmacy' ? (
+          <GeneralPharmacyModule />
         ) : (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center shadow-xl">
             <h2 className="text-3xl font-bold text-white mb-4">
