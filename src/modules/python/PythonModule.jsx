@@ -73,8 +73,8 @@ for tube in range(1, ${numTubes} + 1):
       } else {
         return `# BP101T Unit II: Cockcroft-Gault Renal Triage
 crcl = ((140 - ${patientAge}) * ${patientWeight}) / (72 * ${serumCreatinine})
-${isFemale ? 'crcl *= 0.85
-' : ''}print(f"CrCl: {round(crcl, 2)} mL/min")`;
+${isFemale ? 'crcl *= 0.85' : '# Male patient'}
+print(f"CrCl: {round(crcl, 2)} mL/min")`;
       }
     } else if (activeUnit === 'unit3') {
       return `# BP101T Unit III: NumPy Quality Control & Weight Variation
