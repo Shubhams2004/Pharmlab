@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 
 export default function GeneralPharmacyModule() {
-  // State for Alligation Rule Calculator (Mixing two strengths)
   const [higherStrength, setHigherStrength] = useState('');
   const [lowerStrength, setLowerStrength] = useState('');
   const [desiredStrength, setDesiredStrength] = useState('');
   const [totalVolume, setTotalVolume] = useState('');
   const [alligationResult, setAlligationResult] = useState(null);
 
-  // State for Simple Dilution Calculator (C1V1 = C2V2)
   const [c1, setC1] = useState('');
   const [v1, setV1] = useState('');
   const [c2, setC2] = useState('');
@@ -132,12 +130,12 @@ export default function GeneralPharmacyModule() {
           )}
         </div>
 
-        {/* Dilution Calculator Card (C1V1 = C2V2) */}
+        {/* Dilution Calculator Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-          <h3 className="text-lg font-bold text-emerald-300 mb-4">2. Solution Dilution ($C_1V_1 = C_2V_2$)</h3>
+          <h3 className="text-lg font-bold text-emerald-300 mb-4">2. Solution Dilution (C<sub>1</sub>V<sub>1</sub> = C<sub>2</sub>V<sub>2</sub>)</h3>
           <form onSubmit={calculateDilution} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Initial Concentration ($C_1$, %)</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Initial Concentration (C<sub>1</sub>, %)</label>
               <input
                 type="number"
                 step="any"
@@ -149,7 +147,7 @@ export default function GeneralPharmacyModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Initial Volume ($V_1$, ml)</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Initial Volume (V<sub>1</sub>, ml)</label>
               <input
                 type="number"
                 step="any"
@@ -161,7 +159,7 @@ export default function GeneralPharmacyModule() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Target Concentration ($C_2$, %)</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Target Concentration (C<sub>2</sub>, %)</label>
               <input
                 type="number"
                 step="any"
@@ -178,7 +176,7 @@ export default function GeneralPharmacyModule() {
           </form>
           {v2Result && (
             <div className="mt-4 p-4 bg-slate-950 rounded-xl border border-emerald-900/50 text-center">
-              <span className="text-sm text-slate-400">Total Final Volume ($V_2$): </span>
+              <span className="text-sm text-slate-400">Total Final Volume (V<sub>2</sub>): </span>
               <span className="text-xl font-bold text-emerald-400">{v2Result} ml</span>
             </div>
           )}
