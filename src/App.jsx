@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import Dashboard from './components/Dashboard';
-import PythonModule from './PythonModule';
-import GeneralPharmacyModule from './GeneralPharmacyModule';
-import AnatomyModule from './AnatomyModule';
-import PharmacognosyModule from './PharmacognosyModule';
+import PythonModule from './modules/python/PythonModule';
+import GeneralPharmacyModule from './modules/general-pharmacy/GeneralPharmacyModule';
+import AnatomyModule from './modules/anatomy/AnatomyModule';
+import PharmacognosyModule from './modules/pharmacognosy/PharmacognosyModule';
 import { ArrowLeft, Beaker } from 'lucide-react';
 
 export default function App() {
@@ -11,7 +11,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* Global Header */}
       <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveModule('dashboard')}>
           <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
@@ -33,7 +32,6 @@ export default function App() {
         )}
       </header>
 
-      {/* Main Content Router */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8">
         {activeModule === 'dashboard' && <Dashboard setActiveModule={setActiveModule} />}
         {activeModule === 'python' && <PythonModule />}
@@ -42,7 +40,6 @@ export default function App() {
         {activeModule === 'pharmacognosy' && <PharmacognosyModule />}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
         PharmLab &bull; Academic Virtual Laboratory Suite for B.Pharm Semester I
       </footer>

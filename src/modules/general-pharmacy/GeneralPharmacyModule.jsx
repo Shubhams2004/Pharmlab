@@ -23,7 +23,6 @@ export default function GeneralPharmacyModule() {
       const partsHigher = d - l;
       const partsLower = h - d;
       const totalParts = partsHigher + partsLower;
-
       const volumeHigher = (partsHigher / totalParts) * v;
       const volumeLower = (partsLower / totalParts) * v;
 
@@ -33,8 +32,6 @@ export default function GeneralPharmacyModule() {
         volumeHigher: volumeHigher.toFixed(2),
         volumeLower: volumeLower.toFixed(2),
       });
-    } else {
-      alert("Invalid values! Ensure Higher Strength > Desired Strength > Lower Strength.");
     }
   };
 
@@ -61,68 +58,29 @@ export default function GeneralPharmacyModule() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Alligation Method Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
           <h3 className="text-lg font-bold text-emerald-300 mb-4">1. Alligation Method Calculator</h3>
           <form onSubmit={calculateAlligation} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Higher Strength (%)</label>
-              <input
-                type="number"
-                step="any"
-                value={higherStrength}
-                onChange={(e) => setHigherStrength(e.target.value)}
-                placeholder="e.g., 10"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
+              <input type="number" step="any" value={higherStrength} onChange={(e) => setHigherStrength(e.target.value)} placeholder="e.g., 10" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500" required />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Lower Strength (%)</label>
-              <input
-                type="number"
-                step="any"
-                value={lowerStrength}
-                onChange={(e) => setLowerStrength(e.target.value)}
-                placeholder="e.g., 2"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
+              <input type="number" step="any" value={lowerStrength} onChange={(e) => setLowerStrength(e.target.value)} placeholder="e.g., 2" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500" required />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Desired Strength (%)</label>
-              <input
-                type="number"
-                step="any"
-                value={desiredStrength}
-                onChange={(e) => setDesiredStrength(e.target.value)}
-                placeholder="e.g., 5"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
+              <input type="number" step="any" value={desiredStrength} onChange={(e) => setDesiredStrength(e.target.value)} placeholder="e.g., 5" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500" required />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Total Desired Volume (ml)</label>
-              <input
-                type="number"
-                step="any"
-                value={totalVolume}
-                onChange={(e) => setTotalVolume(e.target.value)}
-                placeholder="e.g., 1000"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
+              <input type="number" step="any" value={totalVolume} onChange={(e) => setTotalVolume(e.target.value)} placeholder="e.g., 1000" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500" required />
             </div>
-            <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors">
-              Calculate Alligation
-            </button>
+            <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors">Calculate Alligation</button>
           </form>
           {alligationResult && (
             <div className="mt-4 p-4 bg-slate-950 rounded-xl border border-emerald-900/50 space-y-2 text-sm">
-              <p className="text-emerald-400 font-bold">Parts required:</p>
-              <p className="text-slate-300">Higher Strength parts: {alligationResult.partsHigher}</p>
-              <p className="text-slate-300">Lower Strength parts: {alligationResult.partsLower}</p>
-              <hr className="border-slate-800 my-2" />
               <p className="text-emerald-400 font-bold">Volumes required:</p>
               <p className="text-slate-300">Higher volume: {alligationResult.volumeHigher} ml</p>
               <p className="text-slate-300">Lower volume: {alligationResult.volumeLower} ml</p>
@@ -130,49 +88,22 @@ export default function GeneralPharmacyModule() {
           )}
         </div>
 
-        {/* Dilution Calculator Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
           <h3 className="text-lg font-bold text-emerald-300 mb-4">2. Solution Dilution (C<sub>1</sub>V<sub>1</sub> = C<sub>2</sub>V<sub>2</sub>)</h3>
           <form onSubmit={calculateDilution} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Initial Concentration (C<sub>1</sub>, %)</label>
-              <input
-                type="number"
-                step="any"
-                value={c1}
-                onChange={(e) => setC1(e.target.value)}
-                placeholder="e.g., 20"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
+              <input type="number" step="any" value={c1} onChange={(e) => setC1(e.target.value)} placeholder="e.g., 20" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500" required />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Initial Volume (V<sub>1</sub>, ml)</label>
-              <input
-                type="number"
-                step="any"
-                value={v1}
-                onChange={(e) => setV1(e.target.value)}
-                placeholder="e.g., 50"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
+              <input type="number" step="any" value={v1} onChange={(e) => setV1(e.target.value)} placeholder="e.g., 50" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500" required />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Target Concentration (C<sub>2</sub>, %)</label>
-              <input
-                type="number"
-                step="any"
-                value={c2}
-                onChange={(e) => setC2(e.target.value)}
-                placeholder="e.g., 5"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                required
-              />
+              <input type="number" step="any" value={c2} onChange={(e) => setC2(e.target.value)} placeholder="e.g., 5" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500" required />
             </div>
-            <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors">
-              Calculate Final Volume
-            </button>
+            <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors">Calculate Final Volume</button>
           </form>
           {v2Result && (
             <div className="mt-4 p-4 bg-slate-950 rounded-xl border border-emerald-900/50 text-center">
