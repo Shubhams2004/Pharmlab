@@ -26,7 +26,7 @@ export default function InorganicModule() {
 
   const currentPH = calculatePH(titrantVolume);
   const isEndpointReached = titrantVolume >= 24.8 && titrantVolume <= 25.2;
-  const isOver-titrated = titrantVolume > 25.2;
+  const isOverTitrated = titrantVolume > 25.2;
   
   // Progressive color transition for phenolphthalein indicator
   const getFlaskColor = () => {
@@ -136,7 +136,7 @@ export default function InorganicModule() {
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Indicator Status</span>
                 <span className={`text-xs font-bold font-mono ${isEndpointReached ? 'text-pink-400' : 'text-sky-400'}`}>
-                  {isEndpointReached ? 'Optimal Pink' : (isOver-titrated ? 'Dark Magenta' : 'Colorless')}
+                  {isEndpointReached ? 'Optimal Pink' : (isOverTitrated ? 'Dark Magenta' : 'Colorless')}
                 </span>
               </div>
             </div>
@@ -169,7 +169,7 @@ export default function InorganicModule() {
               <h3 className="text-base font-bold text-white">Live Virtual Lab Bench</h3>
             </div>
             <span className={`text-xs font-mono px-3 py-1 rounded-full border ${isEndpointReached ? 'bg-pink-500/10 text-pink-400 border-pink-500/30 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>
-              {isEndpointReached ? 'Endpoint Reached (Stop Titration!)' : (isOver-titrated ? 'Over-titrated (Too Basic)' : 'Titration in Progress')}
+              {isEndpointReached ? 'Endpoint Reached (Stop Titration!)' : (isOverTitrated ? 'Over-titrated (Too Basic)' : 'Titration in Progress')}
             </span>
           </div>
 
