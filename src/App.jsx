@@ -1,3 +1,4 @@
+import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import React, { useState } from 'react';
 import Dashboard from './components/Dashboard';
 import PandasModule from './modules/bp101t-python/PandasModule';
