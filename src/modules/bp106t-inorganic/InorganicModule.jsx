@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { FlaskConical, Droplet, RefreshCcw, CheckCircle2, Sliders, Info } from 'lucide-react';
+import { FlaskConical, Droplet, RefreshCcw, CheckCircle2, Sliders, Info, PlusCircle, BookmarkCheck } from 'lucide-react';
 
 export default function InorganicModule() {
   const [titrantVolume, setTitrantVolume] = useState(0); // mL added from burette
+  const [trials, setTrials] = useState([]);
   const equivalencePoint = 25.0; // mL where neutralization occurs
 
   // Calculate simulated pH based on volume of NaOH added to 25ml of 0.1N HCl
@@ -24,39 +25,63 @@ export default function InorganicModule() {
   };
 
   const currentPH = calculatePH(titrantVolume);
-  const isEndpointReached = titrantVolume >= equivalencePoint;
+  const isEndpointReached = titrantVolume >= 24.8 && titrantVolume <= 25.2;
+  const isOver-titrated = titrantVolume > 25.2;
   
+  // Progressive color transition for phenolphthalein indicator
   const getFlaskColor = () => {
-    if (titrantVolume < 24.5) return 'bg-sky-500/10 border-sky-400/30 text-sky-300';
-    if (titrantVolume >= 24.5 && titrantVolume <= 25.5) return 'bg-pink-500/20 border-pink-500/50 text-pink-300 shadow-[0_0_20px_rgba(236,72,153,0.3)]';
-    return 'bg-fuchsia-600/30 border-fuchsia-500/60 text-fuchsia-200';
+    if (titrantVolume < 24.0) return 'bg-sky-500/10 border-sky-400/30 text-sky-300';
+    if (titrantVolume >= 24.0 && titrantVolume < 24.8) return 'bg-pink-400/15 border-pink-400/30 text-pink-200';
+    if (titrantVolume >= 24.8 && titrantVolume <= 25.2) return 'bg-pink-500/30 border-pink-500/60 text-pink-100 shadow-[0_0_25px_rgba(236,72,153,0.4)]';
+    return 'bg-fuchsia-600/40 border-fuchsia-500/80 text-white shadow-[0_0_30px_rgba(217,70,239,0.6)]';
+  };
+
+  const addDrop = () => {
+    if (titrantVolume < 50) {
+      setTitrantVolume(prev => parseFloat(Math.min(50, prev + 0.1).toFixed(1)));
+    }
   };
 
   const resetTitration = () => {
     setTitrantVolume(0);
   };
 
+  const saveTrial = () => {
+    if (trials.length >= 3) return;
+    const newTrial = {
+      id: trials.length + 1,
+      volume: titrantVolume.toFixed(1),
+      status: Math.abs(titrantVolume - 25.0) <= 0.2 ? 'Accurate Endpoint' : (titrantVolume < 25 ? 'Under-titrated' : 'Over-titrated')
+    };
+    setTrials([...trials, newTrial]);
+  };
+
+  // Burette liquid height percentage (empties as volume increases)
+  const buretteLevel = Math.max(0, 100 - (titrantVolume / 50) * 100);
+
   return (
     <div className="space-y-8 max-w-6xl mx-auto pb-12">
+      {/* Header Banner */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
         <div className="flex items-center space-x-3 mb-3">
           <span className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-full uppercase tracking-wider">
-            BP106T &bull; Unit III
+            BP106T &bull; Advanced Volumetric Lab
           </span>
           <span className="px-3 py-1 bg-slate-800 border border-slate-700 text-slate-300 text-xs font-mono rounded-full">
-            Volumetric Analysis Lab
+            Interactive Titration Simulator
           </span>
         </div>
         <h2 className="text-3xl font-extrabold text-white mb-2">
-          Acid-Base Titration &amp; Endpoint Simulator
+          Acid-Base Titration &amp; Endpoint Lab
         </h2>
         <p className="text-slate-400 text-sm md:text-base max-w-3xl">
-          Simulate a standard acid-base neutralization titration. Add NaOH titrant to HCl acid using the interactive slider and observe the phenolphthalein color transition at the equivalence point (pH 7.0).
+          Perform a high-precision digital titration. Control stopcock flow, add drop-by-drop near the equivalence point, and record your trials for your practical records.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Controls & Metrics Panel */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6 lg:col-span-1">
           <div className="flex items-center justify-between pb-4 border-b border-slate-800">
             <div className="flex items-center space-x-3">
@@ -64,8 +89,8 @@ export default function InorganicModule() {
                 <Sliders className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Burette Stopcock</h3>
-                <p className="text-xs text-slate-400">Control titrant flow</p>
+                <h3 className="text-base font-bold text-white">Burette Controls</h3>
+                <p className="text-xs text-slate-400">Manage titrant delivery</p>
               </div>
             </div>
             <button 
@@ -94,70 +119,116 @@ export default function InorganicModule() {
               />
             </div>
 
+            {/* Precision Drop Button */}
+            <button
+              onClick={addDrop}
+              className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-all flex items-center justify-center space-x-2 shadow"
+            >
+              <Droplet className="w-4 h-4 text-emerald-400" />
+              <span>Add 1 Drop (+0.1 mL)</span>
+            </button>
+
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Current pH</span>
                 <span className="text-xl font-extrabold text-white font-mono">{currentPH}</span>
               </div>
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-center">
-                <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Indicator State</span>
+                <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Indicator Status</span>
                 <span className={`text-xs font-bold font-mono ${isEndpointReached ? 'text-pink-400' : 'text-sky-400'}`}>
-                  {isEndpointReached ? 'Pink (Basic)' : 'Colorless (Acid)'}
+                  {isEndpointReached ? 'Optimal Pink' : (isOver-titrated ? 'Dark Magenta' : 'Colorless')}
                 </span>
               </div>
             </div>
+
+            <button
+              onClick={saveTrial}
+              disabled={trials.length >= 3}
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2"
+            >
+              <BookmarkCheck className="w-4 h-4" />
+              <span>Record Trial Result ({trials.length}/3)</span>
+            </button>
           </div>
 
           <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 flex items-start space-x-3">
             <Info className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <p className="text-xs text-slate-300 leading-relaxed">
-              <strong>Lab Note:</strong> Phenolphthalein remains colorless in acidic solutions (pH less than 8.2) and turns pale pink at the stoichiometric equivalence point (pH 7.0).
+              <strong>Pro Tip:</strong> Use the "Add 1 Drop" button when you reach 24.5 mL to carefully catch the exact moment the pale pink endpoint appears without over-titrating.
             </p>
           </div>
         </div>
 
+        {/* Visual Laboratory Bench Simulation */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl lg:col-span-2 flex flex-col items-center justify-between relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-950/20 to-slate-950/60 pointer-events-none"></div>
 
           <div className="w-full flex items-center justify-between pb-4 border-b border-slate-800 z-10">
             <div className="flex items-center space-x-2">
               <FlaskConical className="w-5 h-5 text-emerald-400" />
-              <h3 className="text-base font-bold text-white">Virtual Titration Bench</h3>
+              <h3 className="text-base font-bold text-white">Live Virtual Lab Bench</h3>
             </div>
-            <span className={`text-xs font-mono px-3 py-1 rounded-full border ${isEndpointReached ? 'bg-pink-500/10 text-pink-400 border-pink-500/30' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>
-              {isEndpointReached ? 'Endpoint Reached (Equivalence)' : 'Titration in Progress...'}
+            <span className={`text-xs font-mono px-3 py-1 rounded-full border ${isEndpointReached ? 'bg-pink-500/10 text-pink-400 border-pink-500/30 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>
+              {isEndpointReached ? 'Endpoint Reached (Stop Titration!)' : (isOver-titrated ? 'Over-titrated (Too Basic)' : 'Titration in Progress')}
             </span>
           </div>
 
-          <div className="my-8 flex flex-col items-center z-10 relative">
-            <div className="w-2 h-8 bg-slate-700 rounded-b"></div>
+          {/* Visual Glassware Setup */}
+          <div className="my-6 flex flex-col items-center z-10 relative">
+            {/* Burette Glass Tube */}
+            <div className="w-6 h-36 bg-slate-950 border-2 border-slate-700 rounded-t-lg relative overflow-hidden flex flex-col justify-start">
+              {/* Burette Graduations */}
+              <div className="absolute inset-0 flex flex-col justify-between py-2 px-1 pointer-events-none opacity-40">
+                <div className="w-full border-t border-slate-500 text-[8px] text-right font-mono text-slate-400">0</div>
+                <div className="w-full border-t border-slate-500 text-[8px] text-right font-mono text-slate-400">10</div>
+                <div className="w-full border-t border-slate-500 text-[8px] text-right font-mono text-slate-400">20</div>
+                <div className="w-full border-t border-slate-500 text-[8px] text-right font-mono text-slate-400">30</div>
+                <div className="w-full border-t border-slate-500 text-[8px] text-right font-mono text-slate-400">40</div>
+                <div className="w-full border-t border-slate-500 text-[8px] text-right font-mono text-slate-400">50</div>
+              </div>
+              {/* Dynamic Burette Liquid Level */}
+              <div 
+                className="w-full bg-emerald-400/30 border-b border-emerald-400/50 transition-all duration-200"
+                style={{ height: `${buretteLevel}%` }}
+              ></div>
+            </div>
+
+            {/* Stopcock & Droplet Animation */}
+            <div className="w-3 h-4 bg-slate-700"></div>
             {titrantVolume > 0 && titrantVolume < 50 && (
               <div className="w-1.5 h-3 bg-emerald-400 rounded-full animate-bounce my-1"></div>
             )}
 
-            <div className="w-48 h-48 border-2 border-slate-600 rounded-b-[40px] rounded-t-lg relative flex flex-col justify-end p-3 overflow-hidden bg-slate-950/40 backdrop-blur">
+            {/* Conical Flask Container */}
+            <div className="w-48 h-48 border-2 border-slate-600 rounded-b-[40px] rounded-t-lg relative flex flex-col justify-end p-3 overflow-hidden bg-slate-950/50 backdrop-blur shadow-2xl">
               <div 
                 className={`w-full transition-all duration-300 rounded-b-[36px] border-t-2 flex items-center justify-center ${getFlaskColor()}`}
                 style={{ height: '70%' }}
               >
                 <div className="text-center">
-                  <span className="text-xs font-mono font-bold block">HCl + NaOH</span>
-                  <span className="text-[10px] font-mono opacity-80">Volume: {25 + titrantVolume} mL</span>
+                  <span className="text-xs font-mono font-bold block">HCl (25 mL) + NaOH</span>
+                  <span className="text-[10px] font-mono opacity-90">Burette: {titrantVolume.toFixed(1)} mL</span>
                 </div>
               </div>
             </div>
             <div className="w-56 h-3 bg-slate-800 rounded-full mt-2 shadow-lg"></div>
           </div>
 
-          <div className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between z-10">
-            <div className="flex items-center space-x-3">
-              <div className={`w-3 h-3 rounded-full ${isEndpointReached ? 'bg-pink-500 animate-pulse' : 'bg-sky-400'}`}></div>
-              <span className="text-xs font-mono text-slate-300">
-                {isEndpointReached ? 'Permanent faint pink color observed. Stop titration!' : 'Solution is clear. Continue adding titrant.'}
-              </span>
+          {/* Trials Record Log */}
+          {trials.length > 0 && (
+            <div className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 z-10 space-y-2">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Practical Journal Records</span>
+              <div className="grid grid-cols-3 gap-2">
+                {trials.map((t) => (
+                  <div key={t.id} className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-center">
+                    <span className="text-[10px] text-slate-400 block">Trial {t.id}</span>
+                    <strong className="text-xs font-mono text-emerald-400">{t.volume} mL</strong>
+                    <span className="text-[9px] text-slate-400 block mt-0.5">{t.status}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <span className="text-xs font-bold font-mono text-emerald-400">Target: 25.0 mL</span>
-          </div>
+          )}
         </div>
       </div>
     </div>
