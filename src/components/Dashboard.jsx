@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Code, FlaskConical, Activity, Microscope, TestTube, ArrowRight, Search } from 'lucide-react';
 
-export default function Dashboard({ setActiveModule }) {
+export default function Dashboard({ onSelectModule }) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const modules = [
@@ -14,7 +14,7 @@ export default function Dashboard({ setActiveModule }) {
       color: 'from-blue-500/20 to-indigo-500/20 text-blue-400 border-blue-500/30'
     },
     {
-      id: 'general-pharmacy',
+      id: 'general_pharmacy',
       title: 'General Pharmacy',
       code: 'BP102T / BP107P',
       desc: 'Alligation method calculations and C1V1 = C2V2 solution dilution engine.',
@@ -38,7 +38,7 @@ export default function Dashboard({ setActiveModule }) {
       color: 'from-purple-500/20 to-pink-500/20 text-purple-400 border-purple-500/30'
     },
     {
-      id: 'inorganic-chemistry',
+      id: 'inorganic',
       title: 'Inorganic & Analytical Chemistry',
       code: 'BP106T / BP111P',
       desc: 'Acid-base titration stoichiometry and limit test protocol checklists.',
@@ -77,7 +77,7 @@ export default function Dashboard({ setActiveModule }) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by module name, subject code, or keyword (e.g., BP101T, BMI, Titration)..."
+            placeholder="Search by module name, subject code, or keyword..."
             className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 shadow-inner transition-colors"
           />
         </div>
@@ -91,7 +91,7 @@ export default function Dashboard({ setActiveModule }) {
             return (
               <div
                 key={mod.id}
-                onClick={() => setActiveModule(mod.id)}
+                onClick={() => onSelectModule(mod.id)}
                 className="group bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 shadow-lg hover:shadow-2xl transition-all cursor-pointer flex flex-col justify-between"
               >
                 <div>
