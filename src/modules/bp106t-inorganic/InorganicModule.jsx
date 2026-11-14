@@ -52,7 +52,7 @@ export default function InorganicModule() {
           Acid-Base Titration &amp; Endpoint Simulator
         </h2>
         <p className="text-slate-400 text-sm md:text-base max-w-3xl">
-          Simulate a standard acid-base neutralization titration. Add NaOH titrant to HCl acid using the interactive slider and observe the phenolphthalein color transition at the equivalence point ($pH = 7.0$).
+          Simulate a standard acid-base neutralization titration. Add NaOH titrant to HCl acid using the interactive slider and observe the phenolphthalein color transition at the equivalence point (pH 7.0).
         </p>
       </div>
 
@@ -111,7 +111,7 @@ export default function InorganicModule() {
           <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 flex items-start space-x-3">
             <Info className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
             <p className="text-xs text-slate-300 leading-relaxed">
-              <strong>Lab Note:</strong> Phenolphthalein remains colorless in acidic solutions ($pH < 8.2$) and turns pale pink at the stoichiometric equivalence point ($pH = 7.0$).
+              <strong>Lab Note:</strong> Phenolphthalein remains colorless in acidic solutions (pH less than 8.2) and turns pale pink at the stoichiometric equivalence point (pH 7.0).
             </p>
           </div>
         </div>
