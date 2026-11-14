@@ -1,4 +1,3 @@
-import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import React, { useState } from 'react';
 import Dashboard from './components/Dashboard';
 import PandasModule from './modules/bp101t-python/PandasModule';
@@ -6,14 +5,13 @@ import PythonModule from './modules/bp101t-python/PythonModule';
 import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyModule';
 import AnatomyModule from './modules/bp104t-anatomy/AnatomyModule';
 import GeneralPharmacyModule from './modules/bp102t-general-pharmacy/GeneralPharmacyModule';
-import InorganicChemistryModule from './modules/bp106t-inorganic-analysis/InorganicChemistryModule';
+import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
-      {/* Sidebar / Navigation */}
       <aside className="w-full md:w-64 bg-slate-900 border-r border-slate-800 p-6 flex flex-col justify-between shrink-0">
         <div className="space-y-6">
           <div>
@@ -82,7 +80,7 @@ export default function App() {
                 activeModule === 'inorganic' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              BP106T Inorganic Chemistry
+              BP106T Inorganic Chemistry Lab
             </button>
           </nav>
         </div>
@@ -92,7 +90,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 p-6 md:p-10 overflow-y-auto">
         {activeModule === 'dashboard' && <Dashboard onSelectModule={setActiveModule} />}
         {activeModule === 'pandas' && <PandasModule />}
@@ -100,7 +97,7 @@ export default function App() {
         {activeModule === 'pharmacognosy' && <PharmacognosyModule />}
         {activeModule === 'anatomy' && <AnatomyModule />}
         {activeModule === 'general_pharmacy' && <GeneralPharmacyModule />}
-        {activeModule === 'inorganic' && <InorganicChemistryModule />}
+        {activeModule === 'inorganic' && <InorganicModule />}
       </main>
     </div>
   );
