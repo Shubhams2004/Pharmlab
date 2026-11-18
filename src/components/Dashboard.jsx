@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Code, FlaskConical, Activity, Microscope, TestTube, ArrowRight, Search } from 'lucide-react';
+import { Code, FlaskConical, Activity, Microscope, TestTube, ArrowRight, Search, MessageSquareHeart } from 'lucide-react';
 
 export default function Dashboard({ onSelectModule }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -9,7 +9,7 @@ export default function Dashboard({ onSelectModule }) {
       id: 'python',
       title: 'Python for Pharmaceutical Sciences',
       code: 'BP101T',
-      desc: '5-Unit PCI curriculum hub: syntax guides, pharma functions, NumPy, Pandas & Matplotlib.',
+      desc: '5-Unit PCI curriculum hub: BMI & pediatric dosing, NumPy QC, Pandas PK/ADR analysis, Matplotlib curves & Arrhenius stability.',
       icon: Code,
       color: 'from-blue-500/20 to-indigo-500/20 text-blue-400 border-blue-500/30'
     },
@@ -17,37 +17,45 @@ export default function Dashboard({ onSelectModule }) {
       id: 'general_pharmacy',
       title: 'General Pharmacy',
       code: 'BP102T / BP107P',
-      desc: 'Alligation method calculations and C1V1 = C2V2 solution dilution engine.',
+      desc: 'All 15 official IP/BPC/WHO preparations (Solutions, Syrups, ORS, Suppositories, Semisolids, Gargles), Alligation & Isotonicity.',
       icon: FlaskConical,
       color: 'from-emerald-500/20 to-teal-500/20 text-emerald-400 border-emerald-500/30'
     },
     {
+      id: 'psychology',
+      title: 'Healthcare Psychology & Communication Skills',
+      code: 'BP103T / BP108P',
+      desc: 'Clinical role-plays (SPIKES, chronic care, crisis listening), primary care case studies, SBAR handover, IEC designer & reflection logs.',
+      icon: MessageSquareHeart,
+      color: 'from-rose-500/20 to-pink-500/20 text-rose-400 border-rose-500/30'
+    },
+    {
       id: 'anatomy',
-      title: 'Human Anatomy & Physiology',
+      title: 'Human Anatomy, Physiology & Pathophysiology I',
       code: 'BP104T / BP109P',
-      desc: 'Hemocytometry WBC count analyzer and Hemoglobin clinical diagnostic evaluator.',
+      desc: 'All 17 practicals: Microscopy, histology, axial/appendicular bones, WBC/DLC/RBC, BT/CT, Hb, ABO/Rh blood group, ESR, BP, ECG & case files.',
       icon: Activity,
       color: 'from-amber-500/20 to-orange-500/20 text-amber-400 border-amber-500/30'
     },
     {
       id: 'pharmacognosy',
-      title: 'Pharmacognosy & Phytochemistry',
+      title: 'Introduction to Pharmacognosy',
       code: 'BP105T / BP110P',
-      desc: 'Crude drug quantitative microscopy, stomatal index, and leaf constant tools.',
+      desc: 'All 14 practicals: 20 Unit V medicinal plants, powder microscopy, leaf constants, eyepiece micrometry, Lycopodium purity, ash/swelling/LOD & vouchers.',
       icon: Microscope,
       color: 'from-purple-500/20 to-pink-500/20 text-purple-400 border-purple-500/30'
     },
     {
       id: 'inorganic',
-      title: 'Inorganic & Analytical Chemistry',
+      title: 'Pharmaceutical Inorganic & Analytical Chemistry',
       code: 'BP106T / BP111P',
-      desc: 'Acid-base titration stoichiometry and limit test protocol checklists.',
+      desc: 'All 18 practicals: Live burette assays (Acid-Base, Cerimetry, Iodometry, EDTA, KMnO4, Non-aqueous, Volhard), Limit Tests, Preparations & Purity.',
       icon: TestTube,
       color: 'from-cyan-500/20 to-blue-500/20 text-cyan-400 border-cyan-500/30'
     }
   ];
 
-  const filteredModules = modules.filter((mod) => 
+  const filteredModules = modules.filter((mod) =>
     mod.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     mod.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
     mod.desc.toLowerCase().includes(searchQuery.toLowerCase())

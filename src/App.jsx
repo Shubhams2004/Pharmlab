@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import Dashboard from './components/Dashboard';
 import PandasModule from './modules/bp101t-python/PandasModule';
 import PythonModule from './modules/bp101t-python/PythonModule';
-import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyModule';
-import AnatomyModule from './modules/bp104t-anatomy/AnatomyModule';
 import GeneralPharmacyModule from './modules/bp102t-general-pharmacy/GeneralPharmacyModule';
+import PsychologyCommunicationModule from './modules/bp103t-psychology/PsychologyCommunicationModule';
+import AnatomyModule from './modules/bp104t-anatomy/AnatomyModule';
+import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyModule';
 import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 
 export default function App() {
@@ -31,7 +32,7 @@ export default function App() {
               Dashboard Home
             </button>
 
-            <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase px-3 pt-4 pb-1">BP101T Computer Applications</div>
+            <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase px-3 pt-4 pb-1">BP101T Python &amp; Data Science</div>
             <button
               onClick={() => setActiveModule('pandas')}
               className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all ${
@@ -51,12 +52,20 @@ export default function App() {
 
             <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase px-3 pt-4 pb-1">Core B.Pharm Subjects</div>
             <button
-              onClick={() => setActiveModule('pharmacognosy')}
+              onClick={() => setActiveModule('general_pharmacy')}
               className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all ${
-                activeModule === 'pharmacognosy' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                activeModule === 'general_pharmacy' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              BP105T Pharmacognosy
+              BP102T / BP107P General Pharmacy
+            </button>
+            <button
+              onClick={() => setActiveModule('psychology')}
+              className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all ${
+                activeModule === 'psychology' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+              }`}
+            >
+              BP103T / BP108P Psychology &amp; Comm.
             </button>
             <button
               onClick={() => setActiveModule('anatomy')}
@@ -64,15 +73,15 @@ export default function App() {
                 activeModule === 'anatomy' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              BP104T Human Anatomy & Physiology
+              BP104T / BP109P Human Anatomy
             </button>
             <button
-              onClick={() => setActiveModule('general_pharmacy')}
+              onClick={() => setActiveModule('pharmacognosy')}
               className={`w-full text-left px-3.5 py-2.5 rounded-xl transition-all ${
-                activeModule === 'general_pharmacy' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                activeModule === 'pharmacognosy' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              BP102T General Pharmacy
+              BP105T / BP110P Pharmacognosy
             </button>
             <button
               onClick={() => setActiveModule('inorganic')}
@@ -80,7 +89,7 @@ export default function App() {
                 activeModule === 'inorganic' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              BP106T Inorganic Chemistry Lab
+              BP106T / BP111P Inorganic Chemistry
             </button>
           </nav>
         </div>
@@ -94,9 +103,10 @@ export default function App() {
         {activeModule === 'dashboard' && <Dashboard onSelectModule={setActiveModule} />}
         {activeModule === 'pandas' && <PandasModule />}
         {activeModule === 'python' && <PythonModule />}
-        {activeModule === 'pharmacognosy' && <PharmacognosyModule />}
-        {activeModule === 'anatomy' && <AnatomyModule />}
         {activeModule === 'general_pharmacy' && <GeneralPharmacyModule />}
+        {activeModule === 'psychology' && <PsychologyCommunicationModule />}
+        {activeModule === 'anatomy' && <AnatomyModule />}
+        {activeModule === 'pharmacognosy' && <PharmacognosyModule />}
         {activeModule === 'inorganic' && <InorganicModule />}
       </main>
     </div>

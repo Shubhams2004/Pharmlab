@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { FlaskConical, Calculator, Scale, Droplet, CheckCircle2, BookOpen, Activity } from 'lucide-react';
+import { FlaskConical, Calculator, Scale, Droplet, CheckCircle2, BookOpen, Tag, Package } from 'lucide-react';
 
 export default function GeneralPharmacyModule() {
-  const [activeTab, setActiveTab] = useState('alligation');
+  const [activeTab, setActiveTab] = useState('experiments');
 
+  // Existing Calculator States
   const [highConc, setHighConc] = useState(20);
   const [lowConc, setLowConc] = useState(5);
   const [targetConc, setTargetConc] = useState(10);
@@ -25,6 +26,339 @@ export default function GeneralPharmacyModule() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDrug, setSelectedDrug] = useState('Paracetamol');
   const [prescribedDose, setPrescribedDose] = useState(500);
+
+  // New BP107P Compounding Workbench State
+  const [selectedPrepId, setSelectedPrepId] = useState('sol_ammonium');
+  const [batchFactor, setBatchFactor] = useState(1.0);
+  const [completedSteps, setCompletedSteps] = useState({});
+
+  const bp107pPreparations = [
+    {
+      id: 'sol_ammonium',
+      category: '2. Solutions',
+      code: 'Exp 2(a)',
+      name: 'Strong Solution of Ammonium Acetate – IP',
+      baseSize: '100 mL',
+      type: 'Internal Liquid',
+      storage: 'Well-closed container, cool place',
+      auxiliaryLabel: 'Dilute well before administration',
+      formula: [
+        { ingredient: 'Glacial Acetic Acid', qty: 45.3, unit: 'g' },
+        { ingredient: 'Strong Ammonia Solution', qty: 65.0, unit: 'mL (approx. to neutralize)' },
+        { ingredient: 'Purified Water q.s. to', qty: 100.0, unit: 'mL' }
+      ],
+      steps: [
+        'Mix glacial acetic acid with 35 mL purified water in a beaker.',
+        'Add strong ammonia solution gradually with continuous stirring until a drop gives neutral reaction to bromothymol blue (pH ~7.0-7.5).',
+        'Adjust final volume to required batch volume with purified water and filter if necessary.'
+      ],
+      use: 'Diaphoretic and mild expectorant.'
+    },
+    {
+      id: 'sol_cresol',
+      category: '2. Solutions',
+      code: 'Exp 2(b)',
+      name: 'Cresol with Soap Solution (Lysol) – IP',
+      baseSize: '100 mL',
+      type: 'External Antiseptic / Disinfectant',
+      storage: 'Amber-colored, tightly closed bottle',
+      auxiliaryLabel: 'FOR EXTERNAL USE ONLY • DILUTE BEFORE USE',
+      formula: [
+        { ingredient: 'Cresol', qty: 50.0, unit: 'mL' },
+        { ingredient: 'Linseed Oil (or Castor/Vegetable Oil)', qty: 18.0, unit: 'g' },
+        { ingredient: 'Potassium Hydroxide (KOH)', qty: 4.2, unit: 'g' },
+        { ingredient: 'Purified Water q.s. to', qty: 100.0, unit: 'mL' }
+      ],
+      steps: [
+        'Dissolve KOH in 25 mL purified water and warm on a water bath.',
+        'Add vegetable oil slowly with constant stirring until saponification is complete (clear foam test in water).',
+        'Incorporate cresol gradually into the warm soap base and adjust volume with purified water.'
+      ],
+      use: 'Powerful phenolic disinfectant for surgical instruments and surfaces (50% v/v cresol).'
+    },
+    {
+      id: 'sol_lugol',
+      category: '2. Solutions',
+      code: 'Exp 2(c)',
+      name: "Lugol's Solution (Aqueous Iodine Solution) – BPC",
+      baseSize: '100 mL',
+      type: 'Internal / Thyroid Suppression',
+      storage: 'Well-closed, iodine-resistant amber glass container',
+      auxiliaryLabel: 'Store protected from light • Dilute in milk/water before taking',
+      formula: [
+        { ingredient: 'Iodine (I₂)', qty: 5.0, unit: 'g' },
+        { ingredient: 'Potassium Iodide (KI)', qty: 10.0, unit: 'g' },
+        { ingredient: 'Purified Water q.s. to', qty: 100.0, unit: 'mL' }
+      ],
+      steps: [
+        'Dissolve Potassium Iodide completely in ~15 mL purified water (KI forms soluble triiodide complex KI₃).',
+        'Add accurately weighed Iodine crystals and stir with a glass rod until completely dissolved.',
+        'Make up the final volume to 100 mL using purified water (avoid metal spatulas).'
+      ],
+      use: 'Source of elemental iodine in hyperthyroidism (pre-operative thyroid storm) and antiseptic.'
+    },
+    {
+      id: 'syrup_simple',
+      category: '3. Syrups',
+      code: 'Exp 3(a)',
+      name: 'Simple Syrup – IP',
+      baseSize: '100 g',
+      type: 'Oral Pharmaceutical Vehicle',
+      storage: 'Tightly closed container, cool place (prevent crystallization/fermentation)',
+      auxiliaryLabel: '66.7% w/w Sucrose • Specific Gravity 1.313 at 25°C',
+      formula: [
+        { ingredient: 'Sucrose (IP Grade)', qty: 66.7, unit: 'g' },
+        { ingredient: 'Purified Water q.s. to', qty: 100.0, unit: 'g' }
+      ],
+      steps: [
+        'Weigh purified water into a tared beaker and heat gently (do not boil excessively to prevent caramelization/inversion).',
+        'Add sucrose gradually with continuous stirring until completely dissolved.',
+        'Cool, adjust final weight to 100 g with purified water, and strain through muslin cloth.'
+      ],
+      use: 'Sweetening agent, viscosity modifier, and self-preserving oral liquid vehicle (66.7% w/w).'
+    },
+    {
+      id: 'pwd_ors',
+      category: '4. Powders & Granules',
+      code: 'Exp 4(a)',
+      name: 'Oral Rehydration Salts (ORS) Powder – WHO',
+      baseSize: '1 Litre Pack (20.5 g)',
+      type: 'Oral Electrolyte Powder',
+      storage: 'Moisture-proof laminated aluminium sachet, dry place',
+      auxiliaryLabel: 'Dissolve entire contents in 1 Litre of clean drinking water. Use within 24 hours.',
+      formula: [
+        { ingredient: 'Sodium Chloride (NaCl)', qty: 2.6, unit: 'g' },
+        { ingredient: 'Glucose, Anhydrous', qty: 13.5, unit: 'g' },
+        { ingredient: 'Potassium Chloride (KCl)', qty: 1.5, unit: 'g' },
+        { ingredient: 'Trisodium Citrate, Dihydrate', qty: 2.9, unit: 'g' }
+      ],
+      steps: [
+        'Dry hygroscopic salts gently and pass all ingredients separately through Sieve No. 60.',
+        'Mix geometrically in ascending order of weights (KCl -> NaCl -> Trisodium Citrate -> Glucose).',
+        'Pack 20.5 g (low-osmolarity WHO formula: 245 mOsm/L) in moisture-tight pouches.'
+      ],
+      use: 'Oral rehydration therapy in acute diarrhea and electrolyte depletion (Na⁺ 75, Cl⁻ 65, K⁺ 20, Citrate 10, Glucose 75 mmol/L).'
+    },
+    {
+      id: 'pwd_effervescent',
+      category: '4. Powders & Granules',
+      code: 'Exp 4(b)',
+      name: 'Effervescent Granules (Sodium Phosphate/Citrate) – IP',
+      baseSize: '50 g',
+      type: 'Internal Effervescent Granules',
+      storage: 'Airtight wide-mouth bottle in cool dry place',
+      auxiliaryLabel: 'Dissolve in a glass of water and drink while effervescing',
+      formula: [
+        { ingredient: 'Sodium Bicarbonate (NaHCO₃)', qty: 25.5, unit: 'g' },
+        { ingredient: 'Tartaric Acid', qty: 13.5, unit: 'g' },
+        { ingredient: 'Citric Acid Monohydrate', qty: 9.5, unit: 'g' },
+        { ingredient: 'Active / Base excipient (Sucrose)', qty: 1.5, unit: 'g' }
+      ],
+      steps: [
+        'Powder and dry ingredients thoroughly; mix tartaric acid, citric acid (monohydrate releases 1 mol H₂O on heating), and sodium bicarbonate.',
+        'Heat mixture in a porcelain dish on a water bath (95–105°C) until water of crystallization forms a coherent damp mass.',
+        'Force damp mass through Sieve No. 12 to form granules, dry at ≤50°C, and pack immediately in airtight containers.'
+      ],
+      use: 'Rapid CO₂ effervescence masks bitter taste and enhances gastric buffering/dissolution.'
+    },
+    {
+      id: 'pwd_dusting',
+      category: '4. Powders & Granules',
+      code: 'Exp 4(c)',
+      name: 'Dusting Powder (Talc-Starch-Zinc Oxide) – IP',
+      baseSize: '50 g',
+      type: 'External Topical Powder',
+      storage: 'Sifter-top airtight container, dry place',
+      auxiliaryLabel: 'FOR EXTERNAL USE ONLY • Do not apply to open wounds or broken skin',
+      formula: [
+        { ingredient: 'Zinc Oxide', qty: 10.0, unit: 'g' },
+        { ingredient: 'Starch (Maize)', qty: 15.0, unit: 'g' },
+        { ingredient: 'Purified Talc (Sterilized)', qty: 25.0, unit: 'g' }
+      ],
+      steps: [
+        'Sift each powder individually through Sieve No. 120 (fine impalpable grade to prevent grittiness).',
+        'Mix geometrically using a light spatula on paper/mortar without heavy trituration.',
+        'Sterilize talc base if intended for surgical/abraded areas and pack in sifter-top container.'
+      ],
+      use: 'Absorbent, astringent, and protective topical powder for chafing and minor skin irritation.'
+    },
+    {
+      id: 'pwd_divided',
+      category: '4. Powders & Granules',
+      code: 'Exp 4(d)',
+      name: 'Divided Powders (Chartulae) – IP',
+      baseSize: '6 Powders (500 mg each)',
+      type: 'Oral Solid Divided Dose',
+      storage: 'Dry place in butter/waxed paper packets inside powder box',
+      auxiliaryLabel: 'Take one powder with water as directed',
+      formula: [
+        { ingredient: 'Paracetamol / Aspirin (API)', qty: 1.5, unit: 'g (250 mg/dose)' },
+        { ingredient: 'Lactose Diluent', qty: 1.5, unit: 'g' }
+      ],
+      steps: [
+        'Calculate total quantities for N+1 extra powder to compensate for trituration loss.',
+        'Triturate API and lactose using geometric dilution method until uniform.',
+        'Weigh each dose individually (500 mg) onto folded parchment/waxed paper (double-wrap if hygroscopic) and secure neatly.'
+      ],
+      use: 'Accurate unit-dose solid dispensing for pediatric or extemporaneous oral therapy.'
+    },
+    {
+      id: 'supp_glycerin',
+      category: '5. Suppositories',
+      code: 'Exp 5(a)',
+      name: 'Glycerogelatin Suppository – BPC',
+      baseSize: '6 Suppositories (1.2× Mould)',
+      type: 'Rectal Suppository',
+      storage: 'Tightly closed container, cool place (<25°C)',
+      auxiliaryLabel: 'FOR RECTAL USE ONLY • Moisten with water before insertion',
+      formula: [
+        { ingredient: 'Gelatin (Pharmaceutical Grade)', qty: 1.4, unit: 'g' },
+        { ingredient: 'Glycerin', qty: 7.0, unit: 'g' },
+        { ingredient: 'Purified Water q.s. to', qty: 10.0, unit: 'g' }
+      ],
+      steps: [
+        'Lubricate suppository mould lightly with liquid paraffin (do not use soap/water).',
+        'Soak gelatin in water for 5 mins, add glycerin, and heat gently on water bath until gelatin dissolves (avoid stirring air bubbles).',
+        'Pour into calibrated mould (remember glycerogelatin density factor = 1.2× cocoa butter), cool until set, trim, and wrap.'
+      ],
+      use: 'Osmotic laxative effect in constipation; dissolves slowly in rectal fluids.'
+    },
+    {
+      id: 'supp_cocoa',
+      category: '5. Suppositories',
+      code: 'Exp 5(b)',
+      name: 'Cocoa Butter (Theobroma Oil) Suppository – IP',
+      baseSize: '6 Suppositories (1 g mould)',
+      type: 'Rectal Suppository (Oleaginous Base)',
+      storage: 'Cool place (<20°C)',
+      auxiliaryLabel: 'FOR RECTAL USE ONLY • Store in refrigerator',
+      formula: [
+        { ingredient: 'Theobroma Oil (Cocoa Butter)', qty: 6.0, unit: 'g (plus excess for 7-8)' }
+      ],
+      steps: [
+        'Grate cocoa butter and melt gently at ≤35°C (do NOT overheat >36°C or unstable low-melting α/γ polymorphs form).',
+        'Stir to creamy pourable consistency near solidification point (preserve stable β-crystals).',
+        'Pour into unlubricated/lightly soap-lubricated chilled mould, overfill slightly, trim flush after cooling, and unmould.'
+      ],
+      use: 'Soothing emollient oleaginous suppository base melting at body temperature (34–35°C).'
+    },
+    {
+      id: 'supp_zno',
+      category: '5. Suppositories',
+      code: 'Exp 5(c)',
+      name: 'Zinc Oxide Suppository (DV = 4.0) – IP',
+      baseSize: '6 Suppositories (1 g mould, 100 mg ZnO each)',
+      type: 'Medicated Rectal Suppository',
+      storage: 'Cool dry place (<25°C)',
+      auxiliaryLabel: 'FOR RECTAL USE ONLY',
+      formula: [
+        { ingredient: 'Zinc Oxide (Sieve #120)', qty: 0.6, unit: 'g (calculate for 8: 0.8 g)' },
+        { ingredient: 'Cocoa Butter Base (adjusted for DV 4.0)', qty: 5.85, unit: 'g (for 6; 7.8 g for 8)' }
+      ],
+      steps: [
+        'Calculate base displaced using Displacement Value (DV of ZnO = 4.0): Displaced base = 0.8 / 4.0 = 0.2 g; Base = 8.0 - 0.2 = 7.8 g.',
+        'Melt 2/3 of cocoa butter at ≤35°C, levigate finely sifted ZnO on a warm tile with remaining melted base.',
+        'Combine, stir continuously to prevent dense ZnO sedimentation, and pour just before thickening.'
+      ],
+      use: 'Astringent and protective suppository for hemorrhoids and anorectal inflammation.'
+    },
+    {
+      id: 'semi_sulphur',
+      category: '6. Semisolids',
+      code: 'Exp 6(a)',
+      name: 'Sulphur Ointment (10% w/w) – IP',
+      baseSize: '50 g',
+      type: 'Topical Ointment',
+      storage: 'Well-closed container, cool place',
+      auxiliaryLabel: 'FOR EXTERNAL USE ONLY • Apply thinly to affected skin',
+      formula: [
+        { ingredient: 'Sublimed / Precipitated Sulphur', qty: 5.0, unit: 'g' },
+        { ingredient: 'Simple Ointment Base (Wool fat, Hard paraffin, Cetostearyl alcohol, White soft paraffin)', qty: 45.0, unit: 'g' }
+      ],
+      steps: [
+        'Pass sulphur through Sieve No. 120 to eliminate gritty agglomerates.',
+        'Place sulphur on an ointment slab and levigate with a small portion of Simple Ointment (or 1–2 drops liquid paraffin) using a stainless steel spatula.',
+        'Incorporate remaining ointment base geometrically until completely smooth and homogeneous.'
+      ],
+      use: 'Scabicide, keratolytic, and mild antifungal ointment.'
+    },
+    {
+      id: 'semi_iodine',
+      category: '6. Semisolids',
+      code: 'Exp 6(b)',
+      name: 'Non-Staining Iodine Ointment with Methyl Salicylate – BPC',
+      baseSize: '50 g',
+      type: 'Topical Counter-Irritant Ointment',
+      storage: 'Amber glass ointment jar, cool place',
+      auxiliaryLabel: 'FOR EXTERNAL USE ONLY • Keep away from eyes & broken skin',
+      formula: [
+        { ingredient: 'Iodine', qty: 2.5, unit: 'g' },
+        { ingredient: 'Arachis Oil (Unsaturated fixed oil)', qty: 10.0, unit: 'mL' },
+        { ingredient: 'Methyl Salicylate', qty: 2.5, unit: 'mL' },
+        { ingredient: 'Yellow Soft Paraffin q.s. to', qty: 50.0, unit: 'g' }
+      ],
+      steps: [
+        'Warm iodine with arachis oil in a stoppered flask at ~50°C with gentle shaking until free brown iodine reacts with unsaturated oil double bonds and turns dark greenish-black (non-staining).',
+        'Melt yellow soft paraffin gently and blend into the iodized oil.',
+        'When cooled to ~40°C, stir in volatile methyl salicylate (prevent evaporation loss) and pack.'
+      ],
+      use: 'Counter-irritant and analgesic rub for sprains, myalgia, and joint stiffness.'
+    },
+    {
+      id: 'gargle_iodine',
+      category: '7. Gargles & Mouthwashes',
+      code: 'Exp 7(a)',
+      name: 'Compound Iodine Gargle (Phenol-Iodine) – BPC',
+      baseSize: '100 mL',
+      type: 'Oropharyngeal Gargle',
+      storage: 'Amber bottle, tightly closed',
+      auxiliaryLabel: 'NOT TO BE SWALLOWED • Dilute with equal volume of warm water before gargling',
+      formula: [
+        { ingredient: 'Iodine', qty: 0.5, unit: 'g' },
+        { ingredient: 'Potassium Iodide', qty: 1.0, unit: 'g' },
+        { ingredient: 'Liquefied Phenol', qty: 0.5, unit: 'mL' },
+        { ingredient: 'Glycerin', qty: 40.0, unit: 'mL' },
+        { ingredient: 'Purified Water q.s. to', qty: 100.0, unit: 'mL' }
+      ],
+      steps: [
+        'Dissolve KI in 10 mL water, then dissolve Iodine completely to form clear triiodide solution.',
+        'Add liquefied phenol and glycerin slowly with stirring.',
+        'Adjust final volume with purified water and affix red "NOT TO BE SWALLOWED" dispensing label.'
+      ],
+      use: 'Antiseptic and soothing throat gargle for pharyngitis and tonsillitis.'
+    },
+    {
+      id: 'mw_chx',
+      category: '7. Gargles & Mouthwashes',
+      code: 'Exp 7(b)',
+      name: 'Chlorhexidine Mouthwash (0.2% w/v) – IP',
+      baseSize: '100 mL',
+      type: 'Antiseptic Mouthwash',
+      storage: 'Light-resistant container at room temperature',
+      auxiliaryLabel: 'FOR ORAL RINSE ONLY • Do not swallow • Wait 30 min after brushing',
+      formula: [
+        { ingredient: 'Chlorhexidine Gluconate Solution (20% w/v)', qty: 1.0, unit: 'mL (yields 0.2% w/v)' },
+        { ingredient: 'Peppermint Oil / Spirit', qty: 0.2, unit: 'mL' },
+        { ingredient: 'Glycerin (Humectant)', qty: 5.0, unit: 'mL' },
+        { ingredient: 'Purified Water q.s. to', qty: 100.0, unit: 'mL' }
+      ],
+      steps: [
+        'Measure Chlorhexidine Gluconate 20% concentrate accurately using a graduated pipette.',
+        'Mix peppermint flavouring with glycerin and blend gradually into ~70 mL purified water.',
+        'Add chlorhexidine solution (avoid anionic surfactants/soaps which precipitate cationic CHX) and make up to 100 mL.'
+      ],
+      use: 'Broad-spectrum anti-plaque and gingivitis oral antiseptic rinse.'
+    }
+  ];
+
+  const marketedCompendium = [
+    { brand: 'Electral (FDC)', generic: 'WHO ORS Powder 21.8 g', form: 'Oral Powder Sachet', standard: 'WHO / IP', labelReq: 'Dissolve in 1L boiled & cooled water; discard after 24h' },
+    { brand: 'Betadine Gargle', generic: 'Povidone-Iodine 2% w/v', form: 'Gargle / Mouthwash', standard: 'IP / BPC', labelReq: 'For external/oral rinse only; do not swallow' },
+    { brand: 'Hexidine', generic: 'Chlorhexidine Gluconate 0.2%', form: 'Mouthwash', standard: 'IP', labelReq: 'Rinse 10 mL for 1 min; do not swallow' },
+    { brand: 'Dulcolax / Glycerin Suppository', generic: 'Bisacodyl / Glycerogelatin', form: 'Rectal Suppository', standard: 'IP / BPC', labelReq: 'For rectal use only; store below 25°C' },
+    { brand: 'Iodex', generic: 'Non-staining Iodine + Methyl Salicylate', form: 'Topical Balm/Ointment', standard: 'BPC', labelReq: 'For external use only; keep away from eyes' },
+    { brand: 'Candid Dusting Powder', generic: 'Clotrimazole 1% + Talc', form: 'Dusting Powder', standard: 'IP', labelReq: 'For external use only; keep dry' }
+  ];
 
   const latinDictionary = [
     { term: 'b.i.d. (bis in die)', meaning: 'Twice a day', category: 'Frequency' },
@@ -65,26 +399,37 @@ export default function GeneralPharmacyModule() {
   const naclEquivalentOfDrug = isoDrugGrams * eValue;
   const additionalNaclNeeded = naclNeededForIsotonic - naclEquivalentOfDrug;
 
-  const filteredLatin = latinDictionary.filter(item => 
+  const filteredLatin = latinDictionary.filter((item) =>
     item.term.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.meaning.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const selectedPrep = bp107pPreparations.find((p) => p.id === selectedPrepId) || bp107pPreparations[0];
+
+  const toggleStep = (idx) => {
+    const key = `${selectedPrep.id}-${idx}`;
+    setCompletedSteps((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-100 pb-12">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">PCI B.Pharm • General Pharmacy (Practical) • BP107P</span>
+        <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">PCI B.Pharm • General Pharmacy (Practical) • BP102T / BP107P</span>
         <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">General Pharmacy Laboratory Suite</h2>
-        <p className="text-slate-400 text-sm mt-1">Interactive compounding calculators, alligation matrices, Latin prescription parsing, and isotonicity adjustments.</p>
+        <p className="text-slate-400 text-sm mt-1">
+          All 15 official IP/BPC/WHO compounding experiments (Solutions, Syrups, Powders, Suppositories, Semisolids, Gargles &amp; Mouthwashes), batch scaling, dispensing labels, and pharmaceutical calculators.
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
         {[
+          { id: 'experiments', label: '🧪 BP107P Wet-Lab Experiments (2–7)' },
           { id: 'alligation', label: '⚖️ Alligation Calculator' },
-          { id: 'alcohol', label: '🧪 Alcohol Dilution' },
+          { id: 'alcohol', label: '💧 Alcohol Dilution' },
           { id: 'suppository', label: '💊 Suppository Displacement' },
-          { id: 'isotonicity', label: '💧 Isotonicity Adjustment' },
-          { id: 'prescription', label: '📝 Prescription & Latin Decoder' }
+          { id: 'isotonicity', label: '🧫 Isotonicity Adjustment' },
+          { id: 'prescription', label: '📝 Prescription & Latin' },
+          { id: 'compendium', label: '📦 Marketed Compendia' }
         ].map((tab) => (
           <button
             key={tab.id}
@@ -99,6 +444,115 @@ export default function GeneralPharmacyModule() {
           </button>
         ))}
       </div>
+
+      {/* BP107P COMPOUNDING WORKBENCH */}
+      {activeTab === 'experiments' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-2 max-h-[680px] overflow-y-auto">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 px-2 block pb-1">
+              BP107P Official Practicals (15 Formulations)
+            </span>
+            {bp107pPreparations.map((prep) => (
+              <button
+                key={prep.id}
+                onClick={() => setSelectedPrepId(prep.id)}
+                className={`w-full text-left p-3 rounded-xl border transition-all ${
+                  selectedPrepId === prep.id
+                    ? 'bg-emerald-600/20 border-emerald-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono text-emerald-400">
+                  <span>{prep.category}</span>
+                  <span>{prep.code}</span>
+                </div>
+                <p className="text-xs font-semibold mt-1">{prep.name}</p>
+              </button>
+            ))}
+          </div>
+
+          <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <span className="text-xs font-mono text-blue-400">{selectedPrep.category} &bull; {selectedPrep.code}</span>
+                <h3 className="text-xl font-bold text-white mt-0.5">{selectedPrep.name}</h3>
+                <p className="text-xs text-slate-400 mt-1">Category: {selectedPrep.type} &bull; Use: {selectedPrep.use}</p>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs">
+                <label className="block text-[10px] text-slate-400 uppercase mb-1">Batch Scaling Factor</label>
+                <select
+                  value={batchFactor}
+                  onChange={(e) => setBatchFactor(parseFloat(e.target.value))}
+                  className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-emerald-400 font-mono"
+                >
+                  <option value={0.5}>0.5× (Half Batch)</option>
+                  <option value={1.0}>1.0× ({selectedPrep.baseSize})</option>
+                  <option value={2.0}>2.0× (Double Batch)</option>
+                  <option value={5.0}>5.0× (Lab Stock)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Working Formula Table */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-3">
+                Master &amp; Working Formula (Scaled {batchFactor}×)
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400">
+                      <th className="pb-2">Ingredient</th>
+                      <th className="pb-2 text-right">Official Qty</th>
+                      <th className="pb-2 text-right text-emerald-400">Working Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {selectedPrep.formula.map((item, i) => (
+                      <tr key={i}>
+                        <td className="py-2 text-slate-200">{item.ingredient}</td>
+                        <td className="py-2 text-right font-mono text-slate-400">{item.qty} {item.unit}</td>
+                        <td className="py-2 text-right font-mono font-bold text-emerald-400">{(item.qty * batchFactor).toFixed(2)} {item.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Compounding Procedure Checklist */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400">Step-by-Step Compounding Procedure</h4>
+              {selectedPrep.steps.map((step, idx) => {
+                const done = !!completedSteps[`${selectedPrep.id}-${idx}`];
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => toggleStep(idx)}
+                    className={`w-full text-left p-3 rounded-lg border text-xs flex items-start space-x-3 transition-all ${
+                      done ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200' : 'bg-slate-900 border-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${done ? 'text-emerald-400' : 'text-slate-600'}`} />
+                    <span><strong>Step {idx + 1}:</strong> {step}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Pharmacopoeial Dispensing Label Preview */}
+            <div className="bg-slate-950 border-2 border-dashed border-slate-700 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-400">
+                <span className="flex items-center space-x-1"><Tag className="w-3.5 h-3.5 text-amber-400" /><span>Dispensing Label Preview</span></span>
+                <span>PharmLab Model Pharmacy</span>
+              </div>
+              <p className="text-sm font-bold text-white">{selectedPrep.name}</p>
+              <p className="text-xs text-rose-400 font-bold uppercase">{selectedPrep.auxiliaryLabel}</p>
+              <p className="text-[11px] text-slate-400">Storage: {selectedPrep.storage}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'alligation' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
@@ -143,7 +597,7 @@ export default function GeneralPharmacyModule() {
 
       {activeTab === 'alcohol' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <h3 className="text-lg font-bold text-white">Alcohol Strength & Dilution Calculator</h3>
+          <h3 className="text-lg font-bold text-white">Alcohol Strength &amp; Dilution Calculator</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
               <div>
@@ -226,7 +680,7 @@ export default function GeneralPharmacyModule() {
 
       {activeTab === 'prescription' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <h3 className="text-lg font-bold text-white">Prescription Latin Decoder & Dose Safety Checker</h3>
+          <h3 className="text-lg font-bold text-white">Prescription Latin Decoder &amp; Dose Safety Checker</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
               <label className="block text-xs text-slate-400 mb-1">Select Drug</label>
@@ -252,6 +706,42 @@ export default function GeneralPharmacyModule() {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'compendium' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center space-x-2 text-emerald-400 border-b border-slate-800 pb-3">
+            <Package className="w-5 h-5" />
+            <div>
+              <h3 className="text-lg font-bold text-white">Compendium of Marketed Dosage Forms (BP107P Note)</h3>
+              <p className="text-xs text-slate-400">Evaluation of marketed preparations against IP/BPC/WHO labeling and patient-centric compliance.</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 uppercase">
+                  <th className="py-2.5 px-3">Marketed Brand</th>
+                  <th className="py-2.5 px-3">Active Composition</th>
+                  <th className="py-2.5 px-3">Dosage Form</th>
+                  <th className="py-2.5 px-3">Official Standard</th>
+                  <th className="py-2.5 px-3">Labeling &amp; Patient Counseling</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {marketedCompendium.map((c, idx) => (
+                  <tr key={idx} className="hover:bg-slate-800/40">
+                    <td className="py-3 px-3 font-bold text-emerald-400">{c.brand}</td>
+                    <td className="py-3 px-3 text-slate-200">{c.generic}</td>
+                    <td className="py-3 px-3 text-blue-300">{c.form}</td>
+                    <td className="py-3 px-3 font-mono text-slate-400">{c.standard}</td>
+                    <td className="py-3 px-3 text-slate-300">{c.labelReq}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
