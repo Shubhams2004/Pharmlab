@@ -4,6 +4,7 @@ import DashboardLayout from './components/DashboardLayout';
 import Dashboard from './components/Dashboard';
 import CommandPalette from './components/CommandPalette';
 import QuickGlossary from './components/QuickGlossary';
+import SettingsModal from './components/SettingsModal';
 import PandasModule from './modules/bp101t-python/PandasModule';
 import PythonModule from './modules/bp101t-python/PythonModule';
 import GeneralPharmacyModule from './modules/bp102t-general-pharmacy/GeneralPharmacyModule';
@@ -13,10 +14,23 @@ import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyMod
 import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
+import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
+import {
+  applyStudyPreferencesToDom,
+  clearRecentActivity,
+  getRecentActivity,
+  getStudyPreferences,
+  recordRecentActivity,
+  saveStudyPreferences
+} from './utils/studyWorkspace';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
   const [navTarget, setNavTarget] = useState({ module: 'dashboard', tab: null, nonce: 0 });
+  const [workspaceSection, setWorkspaceSectionState] = useState({
+    section: null,
+    detail: null
+  });
   const [knowledgeJump, setKnowledgeJump] = useState({
     bookId: null,
     pageNumber: null,
@@ -33,6 +47,10 @@ export default function App() {
   });
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const [recentActivity, setRecentActivity] = useState(() => getRecentActivity());
+  const [preferences, setPreferences] = useState(() => getStudyPreferences());
 
   const [theme, setTheme] = useState(() => {
     try {
@@ -55,8 +73,16 @@ export default function App() {
     }
   }, [theme]);
 
+  useEffect(() => {
+    applyStudyPreferencesToDom(preferences);
+  }, [preferences]);
+
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  const updatePreferences = useCallback((next) => {
+    setPreferences(saveStudyPreferences(next));
   }, []);
 
   const [visitedModules, setVisitedModules] = useState(() => {
@@ -76,34 +102,67 @@ export default function App() {
     }
   });
 
-  const navigateTo = useCallback((moduleId, tab = null) => {
-    setActiveModule(moduleId);
-    setNavTarget((prev) => ({ module: moduleId, tab, nonce: prev.nonce + 1 }));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const recordActivity = useCallback((item) => {
+    setRecentActivity(recordRecentActivity(item));
+  }, []);
 
-    if (
-      moduleId !== 'dashboard' &&
-      moduleId !== 'knowledge_library' &&
-      moduleId !== 'visual_library'
-    ) {
-      setLastModule(moduleId);
-      try {
-        localStorage.setItem('pharmlab_last_module', moduleId);
-      } catch {
-        // ignore storage errors
-      }
-      setVisitedModules((prev) => {
-        if (prev.includes(moduleId)) return prev;
-        const next = [...prev, moduleId];
+  const setWorkspaceSection = useCallback((sectionLabel, detailLabel = null) => {
+    setWorkspaceSectionState((prev) => {
+      if (prev.section === sectionLabel && prev.detail === detailLabel) return prev;
+      return { section: sectionLabel, detail: detailLabel };
+    });
+  }, []);
+
+  const navigateTo = useCallback(
+    (moduleId, tab = null) => {
+      setActiveModule(moduleId);
+      setNavTarget((prev) => ({ module: moduleId, tab, nonce: prev.nonce + 1 }));
+      setWorkspaceSectionState({ section: null, detail: null });
+      window.scrollTo({
+        top: 0,
+        behavior: preferences.reducedMotion ? 'auto' : 'smooth'
+      });
+
+      if (
+        moduleId !== 'dashboard' &&
+        moduleId !== 'knowledge_library' &&
+        moduleId !== 'visual_library'
+      ) {
+        setLastModule(moduleId);
         try {
-          localStorage.setItem('pharmlab_visited_modules', JSON.stringify(next));
+          localStorage.setItem('pharmlab_last_module', moduleId);
         } catch {
           // ignore storage errors
         }
-        return next;
-      });
-    }
-  }, []);
+        setVisitedModules((prev) => {
+          if (prev.includes(moduleId)) return prev;
+          const next = [...prev, moduleId];
+          try {
+            localStorage.setItem('pharmlab_visited_modules', JSON.stringify(next));
+          } catch {
+            // ignore storage errors
+          }
+          return next;
+        });
+
+        const meta = DEPARTMENT_WORKSPACES[moduleId];
+        if (meta) {
+          const tabMeta = tab ? meta.tabs.find((t) => t.id === tab) : null;
+          setRecentActivity(
+            recordRecentActivity({
+              key: `dept:${moduleId}:${tab || 'default'}`,
+              kind: tab ? 'experiment' : 'department',
+              title: tabMeta ? `${meta.shortLabel} · ${tabMeta.label}` : meta.shortLabel,
+              subtitle: meta.code,
+              moduleId,
+              tab: tab || null
+            })
+          );
+        }
+      }
+    },
+    [preferences.reducedMotion]
+  );
 
   const openKnowledgeLibrary = useCallback(
     (opts = {}) => {
@@ -128,18 +187,73 @@ export default function App() {
         annotationId: opts.annotationId ?? null,
         nonce: prev.nonce + 1
       }));
+      if (opts.category === 'equipment') {
+        setRecentActivity(
+          recordRecentActivity({
+            key: 'visual:category:equipment',
+            kind: 'equipment',
+            title: 'Equipment & Apparatus Directory',
+            subtitle: 'Scientific Visual Library',
+            moduleId: 'visual_library',
+            category: 'equipment'
+          })
+        );
+      }
       navigateTo('visual_library');
     },
     [navigateTo]
   );
 
+  const handleOpenRecentItem = useCallback(
+    (item) => {
+      if (item.kind === 'book' && item.bookId) {
+        openKnowledgeLibrary({ bookId: item.bookId, pageNumber: item.pageNumber ?? 1 });
+        return;
+      }
+      if (item.kind === 'visual' && item.visualId) {
+        openVisualLibrary({ visualId: item.visualId });
+        return;
+      }
+      if (item.kind === 'equipment' && item.category) {
+        openVisualLibrary({ category: item.category });
+        return;
+      }
+      navigateTo(item.moduleId, item.tab ?? null);
+    },
+    [navigateTo, openKnowledgeLibrary, openVisualLibrary]
+  );
+
+  const handleClearRecent = useCallback(() => {
+    setRecentActivity(clearRecentActivity());
+  }, []);
+
+  const handleResetExplored = useCallback(() => {
+    setVisitedModules([]);
+    try {
+      localStorage.removeItem('pharmlab_visited_modules');
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
   const libraryContextValue = useMemo(
     () => ({
       openKnowledgeLibrary,
       openVisualLibrary,
-      navigateToModule: navigateTo
+      navigateToModule: navigateTo,
+      setWorkspaceSection,
+      recordActivity,
+      preferences,
+      openSettings: () => setSettingsOpen(true)
     }),
-    [openKnowledgeLibrary, openVisualLibrary, navigateTo]
+    [
+      openKnowledgeLibrary,
+      openVisualLibrary,
+      navigateTo,
+      setWorkspaceSection,
+      recordActivity,
+      preferences
+    ]
   );
 
   useEffect(() => {
@@ -147,6 +261,7 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setGlossaryOpen(false);
+        setSettingsOpen(false);
         setPaletteOpen((prev) => !prev);
       }
     };
@@ -154,33 +269,59 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  const isEquipmentViewActive =
+    activeModule === 'visual_library' &&
+    visualJump.category === 'equipment' &&
+    workspaceSection.section === 'Equipment & Apparatus';
+
   return (
     <LibraryNavigationContext.Provider value={libraryContextValue}>
       <DashboardLayout
         activeModule={activeModule}
+        isEquipmentViewActive={isEquipmentViewActive}
+        breadcrumbSection={workspaceSection.section}
+        breadcrumbDetail={workspaceSection.detail}
         onSelectModule={navigateTo}
+        onOpenEquipment={() => openVisualLibrary({ category: 'equipment' })}
+        onOpenRecent={handleOpenRecentItem}
+        recentActivity={recentActivity}
         visitedModules={visitedModules}
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenPalette={() => {
           setGlossaryOpen(false);
+          setSettingsOpen(false);
           setPaletteOpen(true);
         }}
         onOpenGlossary={() => {
           setPaletteOpen(false);
+          setSettingsOpen(false);
           setGlossaryOpen(true);
+        }}
+        onOpenSettings={() => {
+          setPaletteOpen(false);
+          setGlossaryOpen(false);
+          setSettingsOpen(true);
         }}
       >
         {activeModule === 'dashboard' && (
           <Dashboard
             onSelectModule={navigateTo}
             onOpenPalette={() => setPaletteOpen(true)}
+            onOpenGlossary={() => setGlossaryOpen(true)}
+            onOpenRecent={handleOpenRecentItem}
+            recentActivity={recentActivity}
             visitedModules={visitedModules}
             lastModule={lastModule}
           />
         )}
         {activeModule === 'pandas' && <PandasModule />}
-        {activeModule === 'python' && <PythonModule />}
+        {activeModule === 'python' && (
+          <PythonModule
+            initialTab={navTarget.module === 'python' ? navTarget.tab : null}
+            navNonce={navTarget.nonce}
+          />
+        )}
         {activeModule === 'general_pharmacy' && (
           <GeneralPharmacyModule
             initialTab={navTarget.module === 'general_pharmacy' ? navTarget.tab : null}
@@ -237,6 +378,19 @@ export default function App() {
         onClose={() => setGlossaryOpen(false)}
         activeModule={activeModule}
         onNavigate={navigateTo}
+      />
+
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        preferences={preferences}
+        onUpdatePreferences={updatePreferences}
+        recentCount={recentActivity.length}
+        exploredCount={visitedModules.length}
+        onClearRecent={handleClearRecent}
+        onResetExplored={handleResetExplored}
       />
     </LibraryNavigationContext.Provider>
   );

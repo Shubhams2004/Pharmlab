@@ -1,13 +1,58 @@
 import React, { useState, useEffect } from 'react';
 import { FlaskConical, Calculator, Scale, Droplet, CheckCircle2, BookOpen, Tag, Package } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
+import { DepartmentHeader, ResponsiveTableWrapper, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
+
+const GENERAL_PHARMACY_TABS = [
+  { id: 'experiments', label: 'Compounding (Exp 2–15)' },
+  { id: 'theory', label: 'Theory (Units I–V)' },
+  { id: 'posology_proof', label: 'Posology & Proof' },
+  { id: 'alligation', label: 'Alligation Calculator' },
+  { id: 'alcohol', label: 'Alcohol Dilution' },
+  { id: 'suppository', label: 'Suppository DV' },
+  { id: 'isotonicity', label: 'Isotonicity' },
+  { id: 'prescription', label: 'Prescription & Latin' },
+  { id: 'compendium', label: 'Marketed Compendia' }
+];
+
+const BP102_UNITS = [
+  { id: 'u1', label: 'Unit I: History, Pharmacopoeias & Prescription' },
+  { id: 'u2', label: 'Unit II: Calculations, Posology & Excipients' },
+  { id: 'u3', label: 'Unit III: Solid Dosage Forms' },
+  { id: 'u4', label: 'Unit IV: Monophasic & Biphasic Liquids' },
+  { id: 'u5', label: 'Unit V: Semisolids & Suppositories' }
+];
 
 export default function GeneralPharmacyModule({ initialTab, navNonce }) {
+  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
   const [activeTab, setActiveTab] = useState(initialTab || 'experiments');
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab, navNonce]);
+
+  useEffect(() => {
+    const label = GENERAL_PHARMACY_TABS.find((t) => t.id === activeTab)?.label || null;
+    setWorkspaceSection(label);
+    return () => setWorkspaceSection(null);
+  }, [activeTab, setWorkspaceSection]);
+
+  const handleSelectTab = (tabId) => {
+    setActiveTab(tabId);
+    const label = GENERAL_PHARMACY_TABS.find((t) => t.id === tabId)?.label;
+    if (label) {
+      recordActivity({
+        key: `dept:general_pharmacy:${tabId}`,
+        kind: 'experiment',
+        title: `Pharmaceutics · ${label}`,
+        subtitle: DEPARTMENT_WORKSPACES.general_pharmacy.code,
+        moduleId: 'general_pharmacy',
+        tab: tabId
+      });
+    }
+  };
 
   // Existing Calculator States
   const [highConc, setHighConc] = useState(20);
@@ -439,41 +484,23 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
     setCompletedSteps((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const activeTabLabel = GENERAL_PHARMACY_TABS.find((t) => t.id === activeTab)?.label;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
-        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">PCI B.Pharm &bull; General Pharmacy (Practical) &bull; BP102T / BP107P</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1.5 text-slate-900 dark:text-white">General Pharmacy Laboratory Suite</h2>
-        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base mt-1.5 leading-relaxed">
-          All 15 official IP/BPC/WHO compounding experiments (Solutions, Syrups, Powders, Suppositories, Semisolids, Gargles &amp; Mouthwashes), batch scaling, dispensing labels, and pharmaceutical calculators.
-        </p>
-      </div>
+      <DepartmentHeader
+        meta={DEPARTMENT_WORKSPACES.general_pharmacy}
+        icon={FlaskConical}
+        accentColorClass="text-emerald-600 dark:text-emerald-400"
+        activeTabLabel={activeTabLabel}
+      />
 
-      <div className="flex flex-wrap gap-2">
-        {[
-          { id: 'experiments', label: 'BP107P Wet-Lab Experiments (2–7)' },
-          { id: 'theory', label: 'BP102T Theory (Units I–V)' },
-          { id: 'posology_proof', label: 'Posology & Proof Spirit' },
-          { id: 'alligation', label: 'Alligation Calculator' },
-          { id: 'alcohol', label: 'Alcohol Dilution' },
-          { id: 'suppository', label: 'Suppository Displacement' },
-          { id: 'isotonicity', label: 'Isotonicity Adjustment' },
-          { id: 'prescription', label: 'Prescription & Latin' },
-          { id: 'compendium', label: 'Marketed Compendia' }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-              activeTab === tab.id
-                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabBar
+        tabs={GENERAL_PHARMACY_TABS}
+        activeTab={activeTab}
+        onChange={handleSelectTab}
+        ariaLabel="BP102T Pharmaceutics Sections"
+      />
 
       {/* BP107P COMPOUNDING WORKBENCH */}
       {activeTab === 'experiments' && (
@@ -558,8 +585,9 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
                 return (
                   <button
                     key={idx}
+                    type="button"
                     onClick={() => toggleStep(idx)}
-                    className={`w-full text-left p-3.5 rounded-lg border text-sm flex items-start space-x-3 transition-all leading-relaxed ${
+                    className={`w-full min-h-[44px] text-left p-3.5 rounded-lg border text-sm flex items-start space-x-3 transition-colors leading-relaxed ${
                       done ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-500/40 text-emerald-800 dark:text-emerald-200' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                     }`}
                   >
@@ -753,10 +781,10 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
               <p className="text-sm text-slate-600 dark:text-slate-400">Evaluation of marketed preparations against IP/BPC/WHO labeling and patient-centric compliance.</p>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
+          <ResponsiveTableWrapper>
+            <table className="w-full min-w-[640px] text-sm text-left">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-xs">
+                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 text-xs">
                   <th className="py-2.5 px-3">Marketed Brand</th>
                   <th className="py-2.5 px-3">Active Composition</th>
                   <th className="py-2.5 px-3">Dosage Form</th>
@@ -776,7 +804,7 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ResponsiveTableWrapper>
         </div>
       )}
 
@@ -858,26 +886,13 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
 
       {/* BP102T THEORY (UNITS I-V) */}
       {activeTab === 'theory' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5 text-sm leading-relaxed">
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'u1', label: 'Unit I: History, Pharmacopoeias & Prescription' },
-              { id: 'u2', label: 'Unit II: Calculations, Posology & Excipients' },
-              { id: 'u3', label: 'Unit III: Solid Dosage Forms' },
-              { id: 'u4', label: 'Unit IV: Monophasic & Biphasic Liquids' },
-              { id: 'u5', label: 'Unit V: Semisolids & Suppositories' }
-            ].map((u) => (
-              <button
-                key={u.id}
-                onClick={() => setBp102Unit(u.id)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
-                  bp102Unit === u.id ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                {u.label}
-              </button>
-            ))}
-          </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5 text-sm sm:text-[15px] leading-relaxed">
+          <WorkspaceTabBar
+            tabs={BP102_UNITS}
+            activeTab={bp102Unit}
+            onChange={setBp102Unit}
+            ariaLabel="BP102T Pharmaceutics Theory Units"
+          />
           {bp102Unit === 'u1' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5">

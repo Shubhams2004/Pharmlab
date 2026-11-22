@@ -245,7 +245,7 @@ export default function PdfReader({
   initialSearchQuery,
   jumpNonce
 }: PdfReaderProps) {
-  const { openVisualLibrary } = useLibraryNavigation();
+  const { openVisualLibrary, setWorkspaceSection, preferences } = useLibraryNavigation();
 
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pagesText, setPagesText] = useState<BookPageText[]>([]);
@@ -263,7 +263,7 @@ export default function PdfReader({
     String(Math.max(1, Math.min(initialPage || book.lastReadPage || 1, book.pageCount || 1)))
   );
 
-  const [fitMode, setFitMode] = useState<FitMode>('width');
+  const [fitMode, setFitMode] = useState<FitMode>(() => preferences.defaultPdfFit || 'width');
   const [manualScale, setManualScale] = useState(1.15);
   const [effectiveScale, setEffectiveScale] = useState(1.15);
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
@@ -338,6 +338,10 @@ export default function PdfReader({
   });
 
   const totalPages = pdfDoc?.numPages || book.pageCount || 1;
+
+  useEffect(() => {
+    setWorkspaceSection(book.title, `Page ${currentPage} of ${totalPages}`);
+  }, [book.title, currentPage, totalPages, setWorkspaceSection]);
 
   // Apply deep link updates when user navigates from a module ResourceConnector or ImageViewer
   useEffect(() => {
@@ -1157,7 +1161,7 @@ export default function PdfReader({
             <h2 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[150px] xs:max-w-[200px] sm:max-w-[240px] lg:max-w-[300px]">
               {book.title}
             </h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums truncate">
+            <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums truncate">
               Page {currentPage} of {totalPages} · {progressPercent}%
             </p>
           </div>
@@ -1448,7 +1452,7 @@ export default function PdfReader({
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
-                  <span className="text-[11px] tabular-nums px-0.5">
+                  <span className="text-xs tabular-nums px-0.5">
                     {Math.max(1, matchingPagesOrdered.indexOf(currentPage) + 1)}/{matchingPagesOrdered.length}
                   </span>
                   <button
@@ -1646,7 +1650,7 @@ export default function PdfReader({
                         key={tab.id}
                         type="button"
                         onClick={() => setPanelTab(tab.id as SidePanelTab)}
-                        className={`inline-flex items-center justify-center gap-1 px-1.5 py-2 sm:py-1.5 rounded-lg text-[11px] font-medium transition-colors whitespace-nowrap ${
+                        className={`inline-flex items-center justify-center gap-1 px-1.5 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
                           active
                             ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
                             : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -1905,7 +1909,7 @@ export default function PdfReader({
                         <button
                           type="button"
                           onClick={() => handleCaptureSelectionForNote()}
-                          className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                          className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
                         >
                           Pull PDF Selection
                         </button>
@@ -2186,7 +2190,7 @@ export default function PdfReader({
                 aria-label="Current page number"
                 className="w-11 h-10 text-center text-xs font-semibold tabular-nums rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
               />
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+              <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                 /{totalPages}
               </span>
             </form>
@@ -2217,7 +2221,7 @@ export default function PdfReader({
               type="button"
               onClick={handleCycleFitMode}
               disabled={loadingDoc}
-              className={`h-9 px-2 rounded-lg text-[11px] font-semibold tabular-nums whitespace-nowrap ${
+              className={`h-9 px-2 rounded-lg text-xs font-semibold tabular-nums whitespace-nowrap ${
                 fitMode !== 'manual'
                   ? 'bg-emerald-600 text-white'
                   : 'text-slate-700 dark:text-slate-200'
@@ -2369,7 +2373,7 @@ export default function PdfReader({
                               : [...prev, dept]
                           )
                         }
-                        className={`px-2 py-1 rounded-md border text-[11px] font-medium ${
+                        className={`px-2 py-1 rounded-md border text-xs font-medium ${
                           active
                             ? 'bg-emerald-600 border-emerald-600 text-white'
                             : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'

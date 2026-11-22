@@ -1,13 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquareHeart, Users, FileWarning, ClipboardCheck, Megaphone, BookHeart, CheckCircle2, AlertTriangle, Plus } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
+import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
+
+const PSYCHOLOGY_TABS = [
+  { id: 'roleplay', label: '1. Role Plays & Simulations' },
+  { id: 'cases', label: '2. Case Study Discussions' },
+  { id: 'peer', label: '3. Peer Practice (Paraphrasing & SBAR)' },
+  { id: 'community', label: '4. Community IEC & Health Ed' },
+  { id: 'journal', label: '5. Self-Reflection Logs' },
+  { id: 'theory', label: 'Theory (Units I–V)' }
+];
+
+const PSY_THEORY_UNITS = [
+  { id: 'u1', label: 'Unit I: Psychology & Learning' },
+  { id: 'u2', label: 'Unit II: Development & Disorders' },
+  { id: 'u3', label: 'Unit III: Health Communication' },
+  { id: 'u4', label: 'Unit IV: Professional & Legal Ethics' },
+  { id: 'u5', label: 'Unit V: HBM, CBT, TTM & PFA' }
+];
 
 export default function PsychologyCommunicationModule({ initialTab, navNonce }) {
+  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
   const [activeTab, setActiveTab] = useState(initialTab || 'roleplay');
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab, navNonce]);
+
+  useEffect(() => {
+    const label = PSYCHOLOGY_TABS.find((t) => t.id === activeTab)?.label || null;
+    setWorkspaceSection(label);
+    return () => setWorkspaceSection(null);
+  }, [activeTab, setWorkspaceSection]);
+
+  const handleSelectTab = (tabId) => {
+    setActiveTab(tabId);
+    const label = PSYCHOLOGY_TABS.find((t) => t.id === tabId)?.label;
+    if (label) {
+      recordActivity({
+        key: `dept:psychology:${tabId}`,
+        kind: 'experiment',
+        title: `Psychology · ${label}`,
+        subtitle: DEPARTMENT_WORKSPACES.psychology.code,
+        moduleId: 'psychology',
+        tab: tabId
+      });
+    }
+  };
 
   // 1. Role Play & Simulation State
   const [selectedScenario, setSelectedScenario] = useState('chronic');
@@ -217,39 +259,23 @@ export default function PsychologyCommunicationModule({ initialTab, navNonce }) 
   const activeCaseData = caseStudies[activeCase];
   const activeParaphrase = paraphrasePrompts[paraphraseIdx];
 
+  const activeTabLabel = PSYCHOLOGY_TABS.find((t) => t.id === activeTab)?.label;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
-        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">PCI B.Pharm · BP103T / BP108P · Practical Suite</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-slate-900 dark:text-white">Healthcare Psychology &amp; Communication Skills Lab</h2>
-        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base mt-1 leading-relaxed">
-          Interactive clinical role-plays (SPIKES, chronic care, crisis PFA), primary care case studies, SBAR &amp; paraphrasing practice, IEC designer, and reflective logs.
-        </p>
-      </div>
+      <DepartmentHeader
+        meta={DEPARTMENT_WORKSPACES.psychology}
+        icon={MessageSquareHeart}
+        accentColorClass="text-rose-600 dark:text-rose-400"
+        activeTabLabel={activeTabLabel}
+      />
 
-      {/* Navigation Tabs matching BP108P 5 Practical Groups + BP103T Theory */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          { id: 'roleplay', label: '1. Role Plays & Simulations' },
-          { id: 'cases', label: '2. Case Study Discussions' },
-          { id: 'peer', label: '3. Peer Practice (Paraphrasing & SBAR)' },
-          { id: 'community', label: '4. Community IEC & Health Ed' },
-          { id: 'journal', label: '5. Self-Reflection Logs' },
-          { id: 'theory', label: 'BP103T Theory (Units I–V)' }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-              activeTab === tab.id
-                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabBar
+        tabs={PSYCHOLOGY_TABS}
+        activeTab={activeTab}
+        onChange={handleSelectTab}
+        ariaLabel="BP103T Healthcare Psychology Sections"
+      />
 
       {/* 1. ROLE PLAYS */}
       {activeTab === 'roleplay' && (
@@ -583,26 +609,13 @@ export default function PsychologyCommunicationModule({ initialTab, navNonce }) 
 
       {/* 6. BP103T THEORY (UNITS I-V) */}
       {activeTab === 'theory' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5 text-sm leading-relaxed">
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'u1', label: 'Unit I: Psychology & Learning' },
-              { id: 'u2', label: 'Unit II: Development & Disorders' },
-              { id: 'u3', label: 'Unit III: Health Communication' },
-              { id: 'u4', label: 'Unit IV: Professional & Legal Ethics' },
-              { id: 'u5', label: 'Unit V: HBM, CBT, TTM & PFA' }
-            ].map((u) => (
-              <button
-                key={u.id}
-                onClick={() => setTheoryUnit(u.id)}
-                className={`px-4 py-2 rounded-xl font-semibold border ${
-                  theoryUnit === u.id ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                {u.label}
-              </button>
-            ))}
-          </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5 text-sm sm:text-[15px] leading-relaxed">
+          <WorkspaceTabBar
+            tabs={PSY_THEORY_UNITS}
+            activeTab={theoryUnit}
+            onChange={setTheoryUnit}
+            ariaLabel="BP103T Psychology Theory Units"
+          />
           {theoryUnit === 'u1' && (
             <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5 text-slate-700 dark:text-slate-300">
               <h4 className="font-bold text-emerald-700 dark:text-emerald-400 text-base">Branches, Perception &amp; Learning in Healthcare</h4>

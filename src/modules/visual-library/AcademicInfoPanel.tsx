@@ -551,7 +551,7 @@ export default function AcademicInfoPanel({
                       key={dept}
                       type="button"
                       onClick={() => toggleDept(dept)}
-                      className={`px-2 py-1 rounded-md border text-[11px] font-medium ${
+                      className={`px-2 py-1 rounded-md border text-xs font-medium ${
                         active
                           ? 'bg-emerald-600 border-emerald-600 text-white'
                           : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
@@ -620,14 +620,14 @@ export default function AcademicInfoPanel({
               <p className="font-semibold text-slate-800 dark:text-slate-200">
                 Enrich Academic Information &amp; Annotations
               </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                 Add verified textbook notes or link this image to an existing PharmaLab Academic Subject. Leave unknown sections blank rather than guessing.
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <button
                   type="button"
                   onClick={onTogglePinPlacement}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${
                     pinPlacementMode
                       ? 'bg-amber-500 text-slate-950 border-amber-500'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
@@ -848,7 +848,7 @@ export default function AcademicInfoPanel({
                     <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
                       Matching PharmaLab Academic Subject Found
                     </p>
-                    <p className="text-[11px] text-slate-700 dark:text-slate-300">
+                    <p className="text-xs text-slate-700 dark:text-slate-300">
                       Link this image to reuse verified B.Pharm study notes without duplicating content:
                     </p>
                     <div className="flex flex-wrap gap-1.5">
@@ -857,7 +857,7 @@ export default function AcademicInfoPanel({
                           key={cand.id}
                           type="button"
                           onClick={() => handleLinkSubject(cand.id)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
                         >
                           <Link2 className="w-3 h-3" />
                           <span>Link: {cand.identification.primaryName}</span>
@@ -882,7 +882,7 @@ export default function AcademicInfoPanel({
                         Enrich Sections
                       </button>
                     </div>
-                    <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                       <strong>Missing sections (not fabricated):</strong>{' '}
                       {context.completeness.missingSections.join(' · ')}
                     </p>
@@ -1037,7 +1037,7 @@ export default function AcademicInfoPanel({
                       <button
                         type="button"
                         onClick={onTogglePinPlacement}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
                       >
                         <PlusCircle className="w-3.5 h-3.5" />
                         <span>{pinPlacementMode ? 'Cancel Pin' : 'Add Pin'}</span>
@@ -1058,7 +1058,7 @@ export default function AcademicInfoPanel({
                                 : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-emerald-500/50'
                             }`}
                           >
-                            <span className="font-mono text-[11px] opacity-80">
+                            <span className="font-mono text-xs opacity-80">
                               {ann.shortCode || idx + 1}.
                             </span>
                             <span>{ann.label}</span>
@@ -1075,7 +1075,7 @@ export default function AcademicInfoPanel({
                               {selectedAnnotation.label}
                             </p>
                             {selectedAnnotation.location && (
-                              <p className="text-[11px] text-emerald-800 dark:text-emerald-300 mt-0.5">
+                              <p className="text-xs text-emerald-800 dark:text-emerald-300 mt-0.5">
                                 Location: {selectedAnnotation.location}
                               </p>
                             )}
@@ -1104,7 +1104,7 @@ export default function AcademicInfoPanel({
                           </p>
                         )}
                         {selectedAnnotation.sourceNote && (
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
                             Source: {selectedAnnotation.sourceNote}
                           </p>
                         )}
@@ -1215,7 +1215,7 @@ export default function AcademicInfoPanel({
                     </ul>
                     {context.histologyProfile.importantRegions.length > 0 && (
                       <div className="space-y-1 pt-1">
-                        <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                        <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
                           Key Regions Visible
                         </p>
                         {context.histologyProfile.importantRegions.map((reg) => (
@@ -1709,7 +1709,7 @@ export default function AcademicInfoPanel({
                             })}
                           </div>
                           {answered && (
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed pt-1 border-t border-slate-200 dark:border-slate-800">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed pt-1 border-t border-slate-200 dark:border-slate-800">
                               <strong>Rationale:</strong> {q.explanation}
                             </p>
                           )}
@@ -1753,14 +1753,14 @@ export default function AcademicInfoPanel({
                           className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-left flex items-center justify-between gap-3 transition-colors group"
                         >
                           <div className="min-w-0 space-y-0.5">
-                            <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold capitalize">
+                            <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold capitalize">
                               <FlaskConical className="w-3 h-3 shrink-0" />
                               <span>{link.kind.replace('_', ' ')}</span>
                             </div>
                             <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
                               {link.label}
                             </p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
                               {link.description}
                             </p>
                           </div>
@@ -1783,7 +1783,7 @@ export default function AcademicInfoPanel({
                         openKnowledgeLibrary({ searchQuery: context.textbookKeywords[0] || item.title });
                         onCloseViewer();
                       }}
-                      className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                      className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
                     >
                       Open Library
                     </button>
@@ -1808,7 +1808,7 @@ export default function AcademicInfoPanel({
                           openKnowledgeLibrary();
                           onCloseViewer();
                         }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
                       >
                         <BookOpen className="w-3.5 h-3.5" />
                         <span>Upload Textbook PDF</span>
@@ -1843,7 +1843,7 @@ export default function AcademicInfoPanel({
                                 Open Page {top.pageNumber}
                               </button>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2">
+                            <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
                               {top.beforeContext}
                               <mark className="bg-amber-300/60 dark:bg-amber-500/35 px-0.5 rounded font-semibold">
                                 {top.matchedText}
@@ -1916,7 +1916,7 @@ export default function AcademicInfoPanel({
                             <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                               {rel.title}
                             </p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                               {CATEGORY_LABELS[rel.category]}
                             </p>
                           </div>
@@ -1940,13 +1940,13 @@ export default function AcademicInfoPanel({
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-bold text-slate-900 dark:text-white">{ref.title}</span>
-                            <span className="text-[10px] font-mono uppercase text-emerald-700 dark:text-emerald-400 shrink-0">
+                            <span className="text-xs font-mono uppercase text-emerald-700 dark:text-emerald-400 shrink-0">
                               {ref.sourceType}
                             </span>
                           </div>
                           <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{ref.citation}</p>
                           {ref.reliabilityNote && (
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 italic">
                               {ref.reliabilityNote}
                             </p>
                           )}
@@ -1955,7 +1955,7 @@ export default function AcademicInfoPanel({
                               href={ref.url}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-0.5"
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline pt-0.5"
                             >
                               <span>Open External Record</span>
                               <ExternalLink className="w-3 h-3" />
@@ -1970,7 +1970,7 @@ export default function AcademicInfoPanel({
                     </p>
                   )}
 
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 space-y-1.5 leading-relaxed">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-1.5 leading-relaxed">
                     <p className="font-semibold text-slate-800 dark:text-slate-200">
                       Content Provenance &amp; Accuracy Note
                     </p>

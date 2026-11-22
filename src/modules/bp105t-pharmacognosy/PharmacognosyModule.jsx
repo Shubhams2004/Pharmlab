@@ -3,17 +3,58 @@ import { Microscope, Leaf, FlaskConical, Ruler, BookOpen, Tag, ZoomIn } from 'lu
 import ResourceConnector from '../../components/ResourceConnector';
 import { BUILT_IN_VISUALS } from '../visual-library/builtInVisuals';
 import ImageViewerModal from '../visual-library/ImageViewerModal';
+import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 
 const BOTANICAL_PLATE = BUILT_IN_VISUALS.find((v) => v.id === 'builtin_botanical_microscopy') || null;
 const MICROSCOPE_PLATE = BUILT_IN_VISUALS.find((v) => v.id === 'builtin_compound_microscope') || null;
 
+const PHARMACOGNOSY_TABS = [
+  { id: 'leaf_constants', label: 'Leaf Constants & Micrometry (Exp 8, 9, 12, 13)' },
+  { id: 'theory', label: 'Theory (Units I–V)' },
+  { id: 'morphology', label: 'Unit V Plant Morphology (Exp 1)' },
+  { id: 'powder', label: 'Powder Microscopy (Exp 2–5)' },
+  { id: 'physicochemical', label: 'Physicochemical QC (Exp 6, 7, 10, 11)' },
+  { id: 'voucher', label: 'Voucher Builder (Exp 14)' }
+];
+
+const COG_THEORY_UNITS = [
+  { id: 'u1', label: 'Unit I: History, Sources & Classification' },
+  { id: 'u2', label: 'Unit II: Cultivation, GACP & Conservation' },
+  { id: 'u3', label: 'Unit III: Quality Control & Adulteration' },
+  { id: 'u4', label: 'Unit IV: Metabolites & AYUSH / TCM' }
+];
+
 export default function PharmacognosyModule({ initialTab, navNonce }) {
+  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
   const [activeTab, setActiveTab] = useState(initialTab || 'leaf_constants');
   const [viewerItem, setViewerItem] = useState(null);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab, navNonce]);
+
+  useEffect(() => {
+    const label = PHARMACOGNOSY_TABS.find((t) => t.id === activeTab)?.label || null;
+    setWorkspaceSection(label);
+    return () => setWorkspaceSection(null);
+  }, [activeTab, setWorkspaceSection]);
+
+  const handleSelectTab = (tabId) => {
+    setActiveTab(tabId);
+    const label = PHARMACOGNOSY_TABS.find((t) => t.id === tabId)?.label;
+    if (label) {
+      recordActivity({
+        key: `dept:pharmacognosy:${tabId}`,
+        kind: 'experiment',
+        title: `Pharmacognosy · ${label}`,
+        subtitle: DEPARTMENT_WORKSPACES.pharmacognosy.code,
+        moduleId: 'pharmacognosy',
+        tab: tabId
+      });
+    }
+  };
 
   // Existing Exp 8 & 9 States
   const [stomataCount, setStomataCount] = useState('');
@@ -163,39 +204,23 @@ export default function PharmacognosyModule({ initialTab, navNonce }) {
   const categories = ['All', ...Array.from(new Set(unitVPlants.map((p) => p.cat)))];
   const filteredPlants = plantFilter === 'All' ? unitVPlants : unitVPlants.filter((p) => p.cat === plantFilter);
 
+  const activeTabLabel = PHARMACOGNOSY_TABS.find((t) => t.id === activeTab)?.label;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
-        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">BP105T / BP110P Core Practical Suite (14 Experiments)</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1.5 mb-2 text-slate-900 dark:text-white">Pharmacognosy &amp; Phytochemistry Laboratory</h2>
-        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base leading-relaxed">
-          Unit V Medicinal Plants Morphology, Organoleptic &amp; Powder Microscopy, Leaf Constants, Eyepiece Micrometry, Lycopodium Spore Purity, Physicochemical QC, and Voucher Herbarium Builder.
-        </p>
-      </div>
+      <DepartmentHeader
+        meta={DEPARTMENT_WORKSPACES.pharmacognosy}
+        icon={Microscope}
+        accentColorClass="text-purple-700 dark:text-purple-400"
+        activeTabLabel={activeTabLabel}
+      />
 
-      {/* Navigation Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          { id: 'leaf_constants', label: 'Leaf Constants & Micrometry (Exp 8, 9, 12, 13)' },
-          { id: 'theory', label: 'BP105T Theory (Units I–V)' },
-          { id: 'morphology', label: 'Unit V Plant Morphology (Exp 1)' },
-          { id: 'powder', label: 'Powder Microscopy (Exp 2–5)' },
-          { id: 'physicochemical', label: 'Physicochemical QC (Exp 6, 7, 10, 11)' },
-          { id: 'voucher', label: 'Voucher Specimen Builder (Exp 14)' }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-              activeTab === tab.id
-                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabBar
+        tabs={PHARMACOGNOSY_TABS}
+        activeTab={activeTab}
+        onChange={handleSelectTab}
+        ariaLabel="BP105T Pharmacognosy Sections"
+      />
 
       {/* TAB 1: LEAF CONSTANTS, MICROMETRY & LYCOPODIUM (Exp 8, 9, 12, 13) */}
       {activeTab === 'leaf_constants' && (
@@ -634,25 +659,13 @@ export default function PharmacognosyModule({ initialTab, navNonce }) {
 
       {/* TAB 6: BP105T THEORY (UNITS I-V) */}
       {activeTab === 'theory' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5 text-sm leading-relaxed">
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'u1', label: 'Unit I: History, Sources & Classification' },
-              { id: 'u2', label: 'Unit II: Cultivation, GACP & Conservation' },
-              { id: 'u3', label: 'Unit III: Quality Control & Adulteration' },
-              { id: 'u4', label: 'Unit IV: Metabolites & AYUSH / TCM' }
-            ].map((u) => (
-              <button
-                key={u.id}
-                onClick={() => setTheoryUnit(u.id)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
-                  theoryUnit === u.id ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                {u.label}
-              </button>
-            ))}
-          </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5 text-sm sm:text-[15px] leading-relaxed">
+          <WorkspaceTabBar
+            tabs={COG_THEORY_UNITS}
+            activeTab={theoryUnit}
+            onChange={setTheoryUnit}
+            ariaLabel="BP105T Pharmacognosy Theory Units"
+          />
           {theoryUnit === 'u1' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5">

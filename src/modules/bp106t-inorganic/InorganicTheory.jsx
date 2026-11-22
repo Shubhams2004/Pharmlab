@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Calculator, Atom, ShieldAlert, Beaker, BookOpen } from 'lucide-react';
+import { WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 
 export default function InorganicTheory() {
   const [unit, setUnit] = useState('unit1');
@@ -39,29 +40,22 @@ export default function InorganicTheory() {
   const activeIso = isotopes[selectedIsotope];
   const remainingActivity = initialActivity * Math.pow(0.5, elapsedHours / activeIso.halfLifeHrs);
 
+  const unitTabs = [
+    { id: 'unit1', label: 'Unit I: Solutions, Errors & Impurities' },
+    { id: 'unit2', label: 'Unit II: Buffers, Isotonicity & Electrolytes' },
+    { id: 'unit3', label: 'Unit III: Titrimetry & Gravimetry' },
+    { id: 'unit4', label: 'Unit IV: GI Agents & Radiopharma' },
+    { id: 'unit5', label: 'Unit V: Expectorants, Haematinics & Antidotes' }
+  ];
+
   return (
     <div className="space-y-6 text-sm leading-relaxed">
-      <div className="flex flex-wrap gap-2">
-        {[
-          { id: 'unit1', label: 'Unit I: Solutions, Errors & Impurities' },
-          { id: 'unit2', label: 'Unit II: Buffers, Isotonicity & Electrolytes' },
-          { id: 'unit3', label: 'Unit III: Titrimetry & Gravimetry' },
-          { id: 'unit4', label: 'Unit IV: GI Agents & Radiopharma' },
-          { id: 'unit5', label: 'Unit V: Expectorants, Haematinics & Antidotes' }
-        ].map((u) => (
-          <button
-            key={u.id}
-            onClick={() => setUnit(u.id)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${
-              unit === u.id
-                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
-                : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            {u.label}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabBar
+        tabs={unitTabs}
+        activeTab={unit}
+        onChange={setUnit}
+        ariaLabel="BP106T Inorganic Chemistry Theory Units"
+      />
 
       {/* UNIT I */}
       {unit === 'unit1' && (

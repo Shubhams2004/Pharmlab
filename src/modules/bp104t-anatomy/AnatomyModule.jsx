@@ -3,13 +3,48 @@ import { Activity, Microscope, Bone, Droplet, HeartPulse, FileText, CheckCircle2
 import AnatomyDiagrams from './AnatomyDiagrams';
 import AnatomyTheory from './AnatomyTheory';
 import ResourceConnector from '../../components/ResourceConnector';
+import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
+
+const ANATOMY_TABS = [
+  { id: 'diagrams', label: 'Annotated Diagrams (2D/3D)' },
+  { id: 'theory', label: 'Theory (Units I–V)' },
+  { id: 'hematology', label: 'Hematology (Exp 6–13)' },
+  { id: 'microscopy', label: 'Microscopy & Histology (Exp 1–3)' },
+  { id: 'bones', label: 'Osteology & Bones (Exp 4–5)' },
+  { id: 'cardio', label: 'Vitals, ECG & CVS (Exp 14–16)' },
+  { id: 'cases', label: 'Clinical Case Files (Exp 17)' }
+];
 
 export default function AnatomyModule({ initialTab, navNonce }) {
+  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
   const [activeTab, setActiveTab] = useState(initialTab || 'diagrams');
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab, navNonce]);
+
+  useEffect(() => {
+    const label = ANATOMY_TABS.find((t) => t.id === activeTab)?.label || null;
+    setWorkspaceSection(label);
+    return () => setWorkspaceSection(null);
+  }, [activeTab, setWorkspaceSection]);
+
+  const handleSelectTab = (tabId) => {
+    setActiveTab(tabId);
+    const label = ANATOMY_TABS.find((t) => t.id === tabId)?.label;
+    if (label) {
+      recordActivity({
+        key: `dept:anatomy:${tabId}`,
+        kind: 'experiment',
+        title: `Anatomy · ${label}`,
+        subtitle: DEPARTMENT_WORKSPACES.anatomy.code,
+        moduleId: 'anatomy',
+        tab: tabId
+      });
+    }
+  };
 
   // Existing Exp 8 & 11 States
   const [dilution, setDilution] = useState('20');
@@ -208,40 +243,23 @@ export default function AnatomyModule({ initialTab, navNonce }) {
     return 'M 0 65 L 35 65 Q 43 54 51 65 L 70 65 L 76 72 L 84 18 L 92 82 L 99 65 L 122 65 Q 140 44 158 65 L 215 65 Q 223 54 231 65 L 250 65 L 256 72 L 264 18 L 272 82 L 279 65 L 302 65 Q 320 44 338 65 L 395 65 Q 403 54 411 65 L 430 65 L 436 72 L 444 18 L 452 82 L 459 65 L 482 65 Q 500 44 518 65 L 540 65';
   };
 
+  const activeTabLabel = ANATOMY_TABS.find((t) => t.id === activeTab)?.label;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
-        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">BP104T / BP109P Core Practical Suite (17 Experiments)</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 mb-1 text-slate-900 dark:text-white">Human Anatomy, Physiology &amp; Pathophysiology I Lab</h2>
-        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base leading-relaxed">
-          Complete BP109P virtual laboratory: Microscopy, Histology, Axial/Appendicular Osteology, Hemocytometry, Cell Analyser, DLC, RBC, BT/CT, Hb, Blood Grouping, ESR, BP, ECG, CVS/Skin &amp; Case Files.
-        </p>
-      </div>
+      <DepartmentHeader
+        meta={DEPARTMENT_WORKSPACES.anatomy}
+        icon={Activity}
+        accentColorClass="text-amber-600 dark:text-amber-400"
+        activeTabLabel={activeTabLabel}
+      />
 
-      {/* Category Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          { id: 'diagrams', label: 'Annotated Anatomical Diagrams (2D/3D)' },
-          { id: 'theory', label: 'BP104T Theory (Units I–V)' },
-          { id: 'hematology', label: 'Hematology & Blood Group (Exp 6–13)' },
-          { id: 'microscopy', label: 'Microscopy & Histology (Exp 1–3)' },
-          { id: 'bones', label: 'Axial & Appendicular Bones (Exp 4–5)' },
-          { id: 'cardio', label: 'Vitals, ECG & CVS/Skin (Exp 14–16)' },
-          { id: 'cases', label: 'Clinical Case Files (Exp 17)' }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-              activeTab === tab.id
-                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabBar
+        tabs={ANATOMY_TABS}
+        activeTab={activeTab}
+        onChange={handleSelectTab}
+        ariaLabel="BP104T Anatomy and Physiology Sections"
+      />
 
       {activeTab === 'diagrams' && <AnatomyDiagrams />}
       {activeTab === 'theory' && <AnatomyTheory />}
@@ -662,8 +680,8 @@ export default function AnatomyModule({ initialTab, navNonce }) {
               <button
                 key={c}
                 onClick={() => setSelectedCase(c)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold border ${
-                  selectedCase === c ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                className={`min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                  selectedCase === c ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 {c}

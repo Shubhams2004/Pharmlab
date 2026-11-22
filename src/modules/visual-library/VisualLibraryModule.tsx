@@ -82,7 +82,8 @@ export default function VisualLibraryModule({
   initialAnnotationId,
   navNonce
 }: VisualLibraryModuleProps) {
-  const { openKnowledgeLibrary, navigateToModule } = useLibraryNavigation();
+  const { openKnowledgeLibrary, navigateToModule, setWorkspaceSection, recordActivity } =
+    useLibraryNavigation();
 
   const [activeTab, setActiveTab] = useState<LibraryTab>('repository');
   const [visuals, setVisuals] = useState<VisualMediaItem[]>([]);
@@ -138,9 +139,10 @@ export default function VisualLibraryModule({
   const [importedUrls, setImportedUrls] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (initialDepartment) setDepartmentFilter(initialDepartment);
-    if (initialCategory) setCategoryFilter(initialCategory);
+    setDepartmentFilter(initialDepartment || 'all');
+    setCategoryFilter(initialCategory || 'all');
     if (typeof initialQuery === 'string') setSearchQuery(initialQuery);
+    else if (navNonce) setSearchQuery('');
   }, [initialDepartment, initialCategory, initialQuery, navNonce]);
 
   const loadVisuals = useCallback(async () => {
@@ -214,9 +216,29 @@ export default function VisualLibraryModule({
 
   const isSearching = searchQuery.trim().length > 0;
 
+  useEffect(() => {
+    if (activeTab === 'discover') {
+      setWorkspaceSection('Open Discovery', viewerItem?.title ?? null);
+    } else if (categoryFilter === 'equipment') {
+      setWorkspaceSection('Equipment & Apparatus', viewerItem?.title ?? null);
+    } else if (categoryFilter !== 'all') {
+      setWorkspaceSection(CATEGORY_LABELS[categoryFilter], viewerItem?.title ?? null);
+    } else {
+      setWorkspaceSection(viewerItem ? viewerItem.title : null, null);
+    }
+  }, [activeTab, categoryFilter, viewerItem, setWorkspaceSection]);
+
   const openViewer = (item: VisualMediaItem, annotationId: string | null = null) => {
     setViewerAnnotationId(annotationId);
     setViewerItem(item);
+    recordActivity({
+      key: `visual:${item.id}`,
+      kind: item.category === 'equipment' ? 'equipment' : 'visual',
+      title: item.title,
+      subtitle: `${CATEGORY_LABELS[item.category]} · Visual Library`,
+      moduleId: 'visual_library',
+      visualId: item.id
+    });
   };
 
   const handleOpenUploadWithFile = (file: File) => {
@@ -523,27 +545,27 @@ export default function VisualLibraryModule({
             </div>
 
             {/* Academic Search Concept Starters */}
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
-              <span className="font-medium text-slate-500 dark:text-slate-400 mr-1">
-                Try concept search:
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs">
+              <span className="font-medium text-slate-500 dark:text-slate-400 mr-1 whitespace-nowrap shrink-0">
+                Quick concepts:
               </span>
               {ACADEMIC_SEARCH_EXAMPLES.map((term) => (
                 <button
                   key={term}
                   type="button"
                   onClick={() => setSearchQuery(term)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-slate-700 dark:text-slate-300 transition-colors"
+                  className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-slate-700 dark:text-slate-300 transition-colors whitespace-nowrap shrink-0"
                 >
                   {term}
                 </button>
               ))}
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto sm:flex-wrap pb-1">
               <button
                 type="button"
                 onClick={() => setCategoryFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                className={`min-h-[40px] sm:min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                   categoryFilter === 'all'
                     ? 'bg-emerald-600 text-white'
                     : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
@@ -556,7 +578,7 @@ export default function VisualLibraryModule({
                   key={cat}
                   type="button"
                   onClick={() => setCategoryFilter(cat)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  className={`min-h-[40px] sm:min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
                     categoryFilter === cat
                       ? 'bg-emerald-600 text-white'
                       : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
@@ -587,7 +609,7 @@ export default function VisualLibraryModule({
                         <BookOpen className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                         <span>Scientific Topics ({academicSearch.topics.length})</span>
                       </span>
-                      <span className="text-[11px] font-normal text-slate-500">
+                      <span className="text-xs font-normal text-slate-500">
                         Opens Academic Profile
                       </span>
                     </div>
@@ -604,7 +626,7 @@ export default function VisualLibraryModule({
                             <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
                               {subject.identification.primaryName}
                             </p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                               {ACADEMIC_DOMAIN_LABELS[subject.domain]} · Matched: {matchedOn}
                             </p>
                           </div>
@@ -625,7 +647,7 @@ export default function VisualLibraryModule({
                           Structures &amp; Components ({academicSearch.structures.length})
                         </span>
                       </span>
-                      <span className="text-[11px] font-normal text-slate-500">
+                      <span className="text-xs font-normal text-slate-500">
                         Highlights exact pin
                       </span>
                     </div>
@@ -641,7 +663,7 @@ export default function VisualLibraryModule({
                             <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
                               {annotation.label}
                             </p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                               In: {visual.title} · {annotation.functionRole}
                             </p>
                           </div>
@@ -673,7 +695,7 @@ export default function VisualLibraryModule({
                             <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
                               {eq.name}
                             </p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                               {eq.visual.title}
                               {eq.experiments.length > 0 ? ` · ${eq.experiments.join(', ')}` : ''}
                             </p>
@@ -708,7 +730,7 @@ export default function VisualLibraryModule({
                             <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
                               {link.label}
                             </p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                               {link.kind.replace('_', ' ')} · Linked to {sourceLabel}
                             </p>
                           </div>
@@ -735,11 +757,11 @@ export default function VisualLibraryModule({
                                 <FileText className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                                 <span className="truncate">{book.title}</span>
                               </p>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                                 Knowledge Library PDF · Page {top.pageNumber}
                               </p>
                             </div>
-                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
                               <Eye className="w-3.5 h-3.5" />
                               <span>Page {top.pageNumber}</span>
                             </span>
@@ -837,7 +859,7 @@ export default function VisualLibraryModule({
                           </p>
                         )}
 
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums pt-0.5">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums pt-0.5">
                           <span className="font-medium text-slate-700 dark:text-slate-300">
                             {ctx.completeness.completenessPercent}% Academic Guide
                           </span>
@@ -882,7 +904,7 @@ export default function VisualLibraryModule({
                         </div>
                       ) : (
                         <>
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
                             {item.license}
                           </span>
                           <div className="flex items-center gap-1.5 shrink-0">
@@ -1132,7 +1154,7 @@ export default function VisualLibraryModule({
                           {cand.description}
                         </p>
 
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1 pt-1">
                           <p className="truncate">
                             <strong>Creator:</strong> {cand.creator}
                           </p>
@@ -1142,7 +1164,7 @@ export default function VisualLibraryModule({
                         </div>
 
                         {cand.licenseWarning && (
-                          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-800 dark:text-amber-200">
+                          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-200">
                             {cand.licenseWarning}
                           </div>
                         )}

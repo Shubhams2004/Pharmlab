@@ -4,20 +4,27 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
-  BookOpen,
-  Search
+  Search,
+  SlidersHorizontal
 } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import SubjectNavigation, { SUBJECT_NAV_ITEMS } from './SubjectNavigation';
 
 export default function DashboardLayout({
   activeModule,
+  isEquipmentViewActive = false,
+  breadcrumbSection = null,
+  breadcrumbDetail = null,
   onSelectModule,
+  onOpenEquipment,
+  onOpenRecent,
+  recentActivity = [],
   visitedModules,
   theme,
   onToggleTheme,
   onOpenPalette,
   onOpenGlossary,
+  onOpenSettings,
   children
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -64,17 +71,32 @@ export default function DashboardLayout({
         >
           <SubjectNavigation
             activeModule={activeModule}
+            isEquipmentViewActive={isEquipmentViewActive}
             onSelectModule={handleSelectModule}
+            onOpenEquipment={() => {
+              setMobileNavOpen(false);
+              onOpenEquipment();
+            }}
+            onOpenRecent={(item) => {
+              setMobileNavOpen(false);
+              onOpenRecent(item);
+            }}
+            recentActivity={recentActivity}
             visitedModules={visitedModules}
-            onOpenPalette={onOpenPalette}
             onOpenGlossary={onOpenGlossary}
+            onOpenSettings={onOpenSettings}
           />
         </aside>
       )}
 
       {/* Mobile Slide-Over Navigation Drawer */}
       {mobileNavOpen && (
-        <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true" aria-label="Subject navigation">
+        <div
+          className="fixed inset-0 z-50 md:hidden flex"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Subject navigation"
+        >
           <div
             className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/80 backdrop-blur-sm"
             onClick={() => setMobileNavOpen(false)}
@@ -82,15 +104,25 @@ export default function DashboardLayout({
           <aside className="relative w-72 max-w-[85vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-5 h-full overflow-y-auto z-10 shadow-xl">
             <SubjectNavigation
               activeModule={activeModule}
+              isEquipmentViewActive={isEquipmentViewActive}
               onSelectModule={handleSelectModule}
-              visitedModules={visitedModules}
-              onOpenPalette={() => {
+              onOpenEquipment={() => {
                 setMobileNavOpen(false);
-                onOpenPalette();
+                onOpenEquipment();
               }}
+              onOpenRecent={(item) => {
+                setMobileNavOpen(false);
+                onOpenRecent(item);
+              }}
+              recentActivity={recentActivity}
+              visitedModules={visitedModules}
               onOpenGlossary={() => {
                 setMobileNavOpen(false);
                 onOpenGlossary();
+              }}
+              onOpenSettings={() => {
+                setMobileNavOpen(false);
+                onOpenSettings();
               }}
               onCloseMobile={() => setMobileNavOpen(false)}
             />
@@ -100,13 +132,13 @@ export default function DashboardLayout({
 
       {/* Main Viewport Shell */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Sticky Utility Header */}
-        <header className="sticky top-0 z-30 h-14 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-4 md:px-8 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5 min-w-0">
+        {/* Compact Sticky Utility Header (56px) */}
+        <header className="sticky top-0 z-30 h-14 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-3 sm:px-6 md:px-8 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
-              className="md:hidden inline-flex items-center justify-center w-10 h-10 -ml-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+              className="md:hidden inline-flex items-center justify-center w-11 h-11 -ml-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
               aria-label="Open navigation menu"
               aria-expanded={mobileNavOpen}
             >
@@ -133,58 +165,82 @@ export default function DashboardLayout({
                 onClick={() => handleSelectModule('dashboard')}
                 className={`font-medium transition-colors whitespace-nowrap shrink-0 ${
                   activeModule === 'dashboard'
-                    ? 'text-slate-900 dark:text-white'
+                    ? 'text-slate-900 dark:text-white font-semibold'
                     : 'text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400'
                 }`}
               >
                 Semester I
               </button>
+
               {activeModule !== 'dashboard' && (
                 <>
                   <ChevronRight className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0" />
-                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold truncate">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectModule(activeModule)}
+                    className={`truncate transition-colors ${
+                      breadcrumbSection
+                        ? 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium max-w-[130px] sm:max-w-[200px]'
+                        : 'text-emerald-700 dark:text-emerald-400 font-semibold'
+                    }`}
+                  >
                     {currentMeta.label}
+                  </button>
+                </>
+              )}
+
+              {activeModule !== 'dashboard' && breadcrumbSection && (
+                <>
+                  <ChevronRight className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0 hidden xs:inline sm:inline" />
+                  <span className="hidden xs:inline sm:inline text-emerald-700 dark:text-emerald-400 font-semibold truncate max-w-[140px] sm:max-w-[220px]">
+                    {breadcrumbSection}
                   </span>
-                  <span className="hidden sm:inline text-slate-500 dark:text-slate-400 text-xs font-medium shrink-0">
-                    · {currentMeta.code}
+                </>
+              )}
+
+              {activeModule !== 'dashboard' && breadcrumbDetail && (
+                <>
+                  <ChevronRight className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0 hidden lg:inline" />
+                  <span className="hidden lg:inline text-xs font-medium text-slate-500 dark:text-slate-400 truncate max-w-[160px] tabular-nums">
+                    {breadcrumbDetail}
                   </span>
                 </>
               )}
             </nav>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-
-            <button
-              type="button"
-              onClick={onOpenGlossary}
-              className="inline-flex items-center gap-2 h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 dark:hover:border-emerald-500/40 text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors whitespace-nowrap shrink-0"
-            >
-              <BookOpen className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span className="hidden sm:inline">Quick Glossary</span>
-              <span className="sm:hidden">Glossary</span>
-            </button>
 
             <button
               type="button"
               onClick={onOpenPalette}
               className="inline-flex items-center gap-2 h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors whitespace-nowrap shrink-0"
+              aria-label="Open global search"
             >
               <Search className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <span className="hidden sm:inline">Search Labs</span>
-              <span className="sm:hidden">Search</span>
+              <span className="hidden sm:inline">Search</span>
               <span className="hidden md:inline text-xs text-slate-500 ml-0.5">⌘K</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+              aria-label="Open workspace settings"
+              title="Settings"
+            >
+              <SlidersHorizontal className="w-4 h-4 text-slate-600 dark:text-slate-300" />
             </button>
           </div>
         </header>
 
         {/* Main Laboratory Module Content */}
-        <main className="flex-1 p-5 sm:p-6 md:p-8 lg:p-10 max-w-7xl w-full mx-auto min-w-0">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-7xl w-full mx-auto min-w-0">
           {children}
         </main>
 
-        <footer className="px-5 sm:px-6 md:px-8 lg:px-10 py-4 border-t border-slate-200/70 dark:border-slate-800/70 text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2 max-w-7xl w-full mx-auto">
+        <footer className="px-4 sm:px-6 md:px-8 lg:px-10 py-4 border-t border-slate-200/70 dark:border-slate-800/70 text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2 max-w-7xl w-full mx-auto">
           <span>PharmLab · B.Pharm Semester I Virtual Laboratory</span>
           <span>
             Curated by <strong className="font-medium text-slate-700 dark:text-slate-300">Shubham</strong> · Y. B. Chavan College of Pharmacy

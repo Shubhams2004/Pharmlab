@@ -617,7 +617,7 @@ export default function ImageViewerModal({
         {/* Top Viewer Bar */}
         <header className="px-3 sm:px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2.5 shrink-0 bg-white dark:bg-slate-900">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
               <span className="font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
                 {ACADEMIC_DOMAIN_LABELS[academicContext.domain]}
               </span>
@@ -763,7 +763,7 @@ export default function ImageViewerModal({
                     setPinPlacementMode(false);
                     setDraftPinCoords(null);
                   }}
-                  className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-[11px]"
+                  className="ml-1 px-2 py-0.5 rounded bg-white/20 hover:bg-white/30 text-xs"
                 >
                   Cancel
                 </button>
@@ -917,15 +917,15 @@ export default function ImageViewerModal({
                               isSelected
                                 ? 'w-7 h-7 text-xs bg-emerald-500 border-white text-white ring-4 ring-emerald-400/40 z-20'
                                 : ann.isUserAdded
-                                  ? 'w-6 h-6 text-[11px] bg-amber-500 border-white text-white hover:scale-110 z-10'
-                                  : 'w-6 h-6 text-[11px] bg-slate-900/90 border-emerald-400 text-white hover:bg-emerald-600 hover:border-white hover:scale-110 z-10'
+                                  ? 'w-6 h-6 text-xs bg-amber-500 border-white text-white hover:scale-110 z-10'
+                                  : 'w-6 h-6 text-xs bg-slate-900/90 border-emerald-400 text-white hover:bg-emerald-600 hover:border-white hover:scale-110 z-10'
                             }`}
                             title={ann.label}
                             aria-label={`Inspect structure ${badgeText}: ${ann.label}`}
                           >
                             {badgeText}
                             <span
-                              className={`hidden sm:block pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap bg-slate-900/95 text-white border border-slate-700 shadow-lg transition-opacity ${
+                              className={`hidden sm:block pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap bg-slate-900/95 text-white border border-slate-700 shadow-lg transition-opacity ${
                                 isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                               }`}
                             >
@@ -960,11 +960,11 @@ export default function ImageViewerModal({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400 block">
+                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 block">
                       {selectedAnnotation.isUserAdded ? 'Custom Study Pin' : 'Interactive Structure'}
                       {selectedAnnotation.shortCode ? ` · #${selectedAnnotation.shortCode}` : ''}
                     </span>
-                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-snug">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
                       {selectedAnnotation.label}
                     </h4>
                   </div>
@@ -979,7 +979,7 @@ export default function ImageViewerModal({
                 </div>
 
                 {selectedAnnotation.location && (
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     <strong className="text-slate-700 dark:text-slate-300">Location:</strong>{' '}
                     {selectedAnnotation.location}
                   </p>
@@ -987,12 +987,12 @@ export default function ImageViewerModal({
                 <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
                   {selectedAnnotation.definition}
                 </p>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   <strong className="text-emerald-700 dark:text-emerald-400">Role:</strong>{' '}
                   {selectedAnnotation.functionRole}
                 </p>
                 {selectedAnnotation.physiologicalOrClinicalImportance && (
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-200/80 dark:border-slate-800 pt-1">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-200/80 dark:border-slate-800 pt-1">
                     {selectedAnnotation.physiologicalOrClinicalImportance}
                   </p>
                 )}
@@ -1223,14 +1223,14 @@ export default function ImageViewerModal({
             <aside className="flex-1 lg:flex-initial lg:w-[440px] xl:w-[480px] min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-hidden shrink-0">
               {/* Mobile Docked Bar to Expand / Collapse Reading Height */}
               <div className="lg:hidden px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
-                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 truncate">
                   Academic Learning Information · {academicContext.completeness.completenessPercent}% Complete
                 </span>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
                     onClick={() => setMobilePanelExpanded((e) => !e)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200"
                   >
                     {mobilePanelExpanded ? (
                       <>
@@ -1282,7 +1282,7 @@ export default function ImageViewerModal({
         {relatedVisuals.length > 0 && (
           <div className="hidden lg:block px-4 py-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 shrink-0">
             <div className="flex items-center gap-3 overflow-x-auto pb-0.5">
-              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0">
                 Related Visuals:
               </span>
               {relatedVisuals.map((rel) => (
@@ -1298,10 +1298,10 @@ export default function ImageViewerModal({
                     imgClassName="w-full h-full object-contain"
                   />
                   <div className="min-w-0">
-                    <p className="text-[11px] font-semibold text-slate-900 dark:text-white truncate">
+                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                       {rel.title}
                     </p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                       {CATEGORY_LABELS[rel.category]}
                     </p>
                   </div>

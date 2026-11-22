@@ -72,6 +72,19 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   }
 }
 
+html[data-reduced-motion='true'] *,
+html[data-reduced-motion='true'] *::before,
+html[data-reduced-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+html[data-density='compact'] main {
+  font-size: 0.9375rem;
+}
+
 /* PDF.js TextLayer for accurate text selection & search highlighting */
 .pdf-text-layer {
   color-scheme: only light;

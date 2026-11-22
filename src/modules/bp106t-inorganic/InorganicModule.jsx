@@ -3,13 +3,47 @@ import { FlaskConical, Droplet, RefreshCcw, Sliders, Info, BookmarkCheck, Shield
 import InorganicDiagrams from './InorganicDiagrams';
 import InorganicTheory from './InorganicTheory';
 import ResourceConnector from '../../components/ResourceConnector';
+import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
+
+const INORGANIC_TABS = [
+  { id: 'diagrams', label: 'Apparatus Diagrams (2D/3D)' },
+  { id: 'theory', label: 'Theory (Units I–V)' },
+  { id: 'titration', label: 'Volumetric Burette (Exp 4a–4g)' },
+  { id: 'limit_tests', label: 'Limit Tests (Exp 1a–1e)' },
+  { id: 'preparations', label: 'Inorganic Preps (Exp 2a–2d)' },
+  { id: 'purity', label: 'Purity Tests (Exp 3a–3c)' }
+];
 
 export default function InorganicModule({ initialTab, navNonce }) {
+  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
   const [activeTab, setActiveTab] = useState(initialTab || 'diagrams');
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
   }, [initialTab, navNonce]);
+
+  useEffect(() => {
+    const label = INORGANIC_TABS.find((t) => t.id === activeTab)?.label || null;
+    setWorkspaceSection(label);
+    return () => setWorkspaceSection(null);
+  }, [activeTab, setWorkspaceSection]);
+
+  const handleSelectTab = (tabId) => {
+    setActiveTab(tabId);
+    const label = INORGANIC_TABS.find((t) => t.id === tabId)?.label;
+    if (label) {
+      recordActivity({
+        key: `dept:inorganic:${tabId}`,
+        kind: 'experiment',
+        title: `Inorganic · ${label}`,
+        subtitle: DEPARTMENT_WORKSPACES.inorganic.code,
+        moduleId: 'inorganic',
+        tab: tabId
+      });
+    }
+  };
 
   // Existing Burette Simulation State (preserved & extended for all 7 BP111P assays)
   const [selectedAssayId, setSelectedAssayId] = useState('hcl_naoh');
@@ -306,47 +340,23 @@ export default function InorganicModule({ initialTab, navNonce }) {
   // 1 mL of 0.01M Na2S2O3 ≡ 0.0003567 g KIO3 (IO3- + 5I- + 6H+ -> 3I2; 6 S2O3 2-)
   const iodatePpm = kiSampleWtG > 0 ? ((kiThioMl * 0.0003567) / kiSampleWtG) * 1e6 : 0;
 
+  const activeTabLabel = INORGANIC_TABS.find((t) => t.id === activeTab)?.label;
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12 text-slate-900 dark:text-slate-100">
-      {/* Header Banner */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm dark:shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="flex flex-wrap items-center gap-3 mb-2.5">
-          <span className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-sm font-semibold rounded-full">
-            BP106T / BP111P &bull; Practical Suite (18 Experiments)
-          </span>
-        </div>
-        <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white mb-2">
-          Pharmaceutical Inorganic &amp; Analytical Chemistry Lab
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base max-w-3xl leading-relaxed">
-          Live volumetric titration &amp; assay simulator (Exp 4a–4g), IP Limit Tests (Exp 1a–1e), Inorganic Synthesis (Exp 2a–2d), and Tests for Purity (Exp 3a–3c).
-        </p>
-      </div>
+      <DepartmentHeader
+        meta={DEPARTMENT_WORKSPACES.inorganic}
+        icon={FlaskConical}
+        accentColorClass="text-cyan-700 dark:text-cyan-400"
+        activeTabLabel={activeTabLabel}
+      />
 
-      {/* Category Navigation */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          { id: 'diagrams', label: 'Annotated Apparatus & Concept Diagrams (2D/3D)' },
-          { id: 'theory', label: 'BP106T Theory (Units I–V)' },
-          { id: 'titration', label: 'Volumetric Assays & Burette (Exp 4a–4g)' },
-          { id: 'limit_tests', label: 'Limit Tests Simulator (Exp 1a–1e)' },
-          { id: 'preparations', label: 'Inorganic Preparations (Exp 2a–2d)' },
-          { id: 'purity', label: 'Tests for Purity (Exp 3a–3c)' }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-              activeTab === tab.id
-                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabBar
+        tabs={INORGANIC_TABS}
+        activeTab={activeTab}
+        onChange={handleSelectTab}
+        ariaLabel="BP106T Inorganic Chemistry Sections"
+      />
 
       {activeTab === 'diagrams' && <InorganicDiagrams />}
       {activeTab === 'theory' && <InorganicTheory />}
@@ -386,7 +396,13 @@ export default function InorganicModule({ initialTab, navNonce }) {
                     <p className="text-sm text-slate-600 dark:text-slate-400 tabular-nums">Target Endpoint: {equivalencePoint} mL</p>
                   </div>
                 </div>
-                <button onClick={resetTitration} className="p-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-all" title="Reset Titration">
+                <button
+                  type="button"
+                  onClick={resetTitration}
+                  className="min-h-[40px] min-w-[40px] p-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors"
+                  title="Reset Titration"
+                  aria-label="Reset Titration"
+                >
                   <RefreshCcw className="w-4 h-4" />
                 </button>
               </div>
@@ -400,7 +416,7 @@ export default function InorganicModule({ initialTab, navNonce }) {
                   <input type="range" min="0" max="50" step="0.5" value={titrantVolume} onChange={(e) => setTitrantVolume(parseFloat(e.target.value))} className="w-full accent-emerald-500 bg-slate-100 dark:bg-slate-950 cursor-pointer" />
                 </div>
 
-                <button onClick={addDrop} className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-sm font-semibold rounded-xl transition-all flex items-center justify-center space-x-2 shadow-sm">
+                <button type="button" onClick={addDrop} className="w-full min-h-[44px] py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-sm font-semibold rounded-xl transition-colors flex items-center justify-center space-x-2 shadow-sm">
                   <Droplet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <span>Add 1 Drop (+0.1 mL)</span>
                 </button>
@@ -418,7 +434,7 @@ export default function InorganicModule({ initialTab, navNonce }) {
                   </div>
                 </div>
 
-                <button onClick={saveTrial} disabled={trials.length >= 3} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2">
+                <button type="button" onClick={saveTrial} disabled={trials.length >= 3} className="w-full min-h-[44px] py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold rounded-xl shadow-sm transition-colors flex items-center justify-center space-x-2">
                   <BookmarkCheck className="w-4 h-4" />
                   <span>Record Trial Result ({trials.length}/3)</span>
                 </button>
@@ -432,13 +448,13 @@ export default function InorganicModule({ initialTab, navNonce }) {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 shadow-sm dark:shadow-xl lg:col-span-2 flex flex-col items-center justify-between relative overflow-hidden">
-              <div className="w-full flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 z-10">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-sm dark:shadow-xl lg:col-span-2 flex flex-col items-center justify-between relative overflow-hidden">
+              <div className="w-full flex items-center justify-between gap-2 pb-4 border-b border-slate-200 dark:border-slate-800 z-10">
                 <div className="flex items-center space-x-2">
                   <FlaskConical className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">Live Virtual Lab Bench</h3>
                 </div>
-                <span className={`text-sm px-3 py-1 rounded-full border ${isEndpointReached ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 font-semibold' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}>
+                <span className={`text-xs sm:text-sm px-3 py-1 rounded-lg border font-semibold ${isEndpointReached ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}>
                   {isEndpointReached ? 'Endpoint Reached (Stop!)' : isOverTitrated ? 'Over-titrated' : 'Titration in Progress'}
                 </span>
               </div>
@@ -449,7 +465,7 @@ export default function InorganicModule({ initialTab, navNonce }) {
                 </div>
                 <div className="w-3 h-4 bg-slate-500 dark:bg-slate-700"></div>
                 {titrantVolume > 0 && titrantVolume < 50 && (
-                  <div className="w-1.5 h-3 bg-emerald-500 dark:bg-emerald-400 rounded-full animate-bounce my-1"></div>
+                  <div className="w-1.5 h-3 bg-emerald-500 dark:bg-emerald-400 rounded-full my-1" aria-hidden="true"></div>
                 )}
                 <div className="w-52 h-52 border-2 border-slate-400 dark:border-slate-600 rounded-b-[40px] rounded-t-lg relative flex flex-col justify-end p-3 overflow-hidden bg-slate-900 dark:bg-slate-950/50 shadow-xl dark:shadow-2xl">
                   <div className={`w-full transition-all duration-300 rounded-b-[36px] border-t-2 flex items-center justify-center ${getFlaskColor()}`} style={{ height: '70%' }}>

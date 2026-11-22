@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { BookOpen, Activity, Zap, ShieldAlert, HeartPulse } from 'lucide-react';
+import { ResponsiveTableWrapper, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 
 export default function AnatomyTheory() {
   const [unit, setUnit] = useState('unit1');
@@ -28,29 +29,22 @@ export default function AnatomyTheory() {
     { num: 'XII', name: 'Hypoglossal', type: 'Motor', fn: 'Intrinsic and extrinsic tongue muscles (speech & swallowing)' }
   ];
 
+  const unitTabs = [
+    { id: 'unit1', label: 'Unit I: Homeostasis, Cell & Injury' },
+    { id: 'unit2', label: 'Unit II: Skin, Skeleton & Joints' },
+    { id: 'unit3', label: 'Unit III: Blood, Lymph & Inflammation' },
+    { id: 'unit4', label: 'Unit IV: PNS & Special Senses' },
+    { id: 'unit5', label: 'Unit V: Cardiovascular Physiology' }
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
-        {[
-          { id: 'unit1', label: 'Unit I: Homeostasis, Cell & Injury' },
-          { id: 'unit2', label: 'Unit II: Skin, Skeleton & Joints' },
-          { id: 'unit3', label: 'Unit III: Blood, Lymph & Inflammation' },
-          { id: 'unit4', label: 'Unit IV: PNS & Special Senses' },
-          { id: 'unit5', label: 'Unit V: Cardiovascular Physiology' }
-        ].map((u) => (
-          <button
-            key={u.id}
-            onClick={() => setUnit(u.id)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${
-              unit === u.id
-                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
-                : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            {u.label}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabBar
+        tabs={unitTabs}
+        activeTab={unit}
+        onChange={setUnit}
+        ariaLabel="BP104T Anatomy Theory Units"
+      />
 
       {/* UNIT I */}
       {unit === 'unit1' && (
@@ -176,24 +170,24 @@ export default function AnatomyTheory() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm dark:shadow-none">
               <h3 className="text-lg font-bold text-emerald-600 dark:text-emerald-400">Autonomic Nervous System: Sympathetic vs Parasympathetic</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
+              <ResponsiveTableWrapper>
+                <table className="w-full min-w-[520px] text-left">
                   <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
-                      <th className="py-2">Organ / Parameter</th>
-                      <th className="py-2 text-amber-600 dark:text-amber-400">Sympathetic (Thoracolumbar T1–L2)</th>
-                      <th className="py-2 text-blue-600 dark:text-blue-400">Parasympathetic (Craniosacral III, VII, IX, X, S2–S4)</th>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 text-xs">
+                      <th className="py-2.5 px-3">Organ / Parameter</th>
+                      <th className="py-2.5 px-3 text-amber-600 dark:text-amber-400">Sympathetic (Thoracolumbar T1–L2)</th>
+                      <th className="py-2.5 px-3 text-blue-600 dark:text-blue-400">Parasympathetic (Craniosacral III, VII, IX, X, S2–S4)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 text-slate-700 dark:text-slate-300">
-                    <tr><td className="py-2 font-semibold">Neurotransmitter</td><td className="py-2">NE / Epinephrine (Adrenergic α/β)</td><td className="py-2">Acetylcholine (Muscarinic M₁–M₅)</td></tr>
-                    <tr><td className="py-2 font-semibold">Heart (SA/AV)</td><td className="py-2">↑ Heart Rate &amp; Contractility (β₁)</td><td className="py-2">↓ Heart Rate via Vagus CN X (M₂)</td></tr>
-                    <tr><td className="py-2 font-semibold">Bronchioles</td><td className="py-2">Bronchodilation (β₂)</td><td className="py-2">Bronchoconstriction (M₃)</td></tr>
-                    <tr><td className="py-2 font-semibold">Pupil</td><td className="py-2">Mydriasis / Dilation (α₁)</td><td className="py-2">Miosis / Constriction (M₃)</td></tr>
-                    <tr><td className="py-2 font-semibold">GI Motility</td><td className="py-2">Decreased motility, sphincter tone ↑</td><td className="py-2">Increased peristalsis &amp; secretions</td></tr>
+                    <tr><td className="py-2.5 px-3 font-semibold">Neurotransmitter</td><td className="py-2.5 px-3">NE / Epinephrine (Adrenergic α/β)</td><td className="py-2.5 px-3">Acetylcholine (Muscarinic M₁–M₅)</td></tr>
+                    <tr><td className="py-2.5 px-3 font-semibold">Heart (SA/AV)</td><td className="py-2.5 px-3">↑ Heart Rate &amp; Contractility (β₁)</td><td className="py-2.5 px-3">↓ Heart Rate via Vagus CN X (M₂)</td></tr>
+                    <tr><td className="py-2.5 px-3 font-semibold">Bronchioles</td><td className="py-2.5 px-3">Bronchodilation (β₂)</td><td className="py-2.5 px-3">Bronchoconstriction (M₃)</td></tr>
+                    <tr><td className="py-2.5 px-3 font-semibold">Pupil</td><td className="py-2.5 px-3">Mydriasis / Dilation (α₁)</td><td className="py-2.5 px-3">Miosis / Constriction (M₃)</td></tr>
+                    <tr><td className="py-2.5 px-3 font-semibold">GI Motility</td><td className="py-2.5 px-3">Decreased motility, sphincter tone ↑</td><td className="py-2.5 px-3">Increased peristalsis &amp; secretions</td></tr>
                   </tbody>
                 </table>
-              </div>
+              </ResponsiveTableWrapper>
               <p className="text-slate-600 dark:text-slate-400 pt-1"><strong>Spinal Nerves:</strong> 31 Pairs (8 Cervical, 12 Thoracic, 5 Lumbar, 5 Sacral, 1 Coccygeal) — mixed dorsal sensory &amp; ventral motor roots.</p>
             </div>
 

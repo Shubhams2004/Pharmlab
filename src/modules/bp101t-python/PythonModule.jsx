@@ -1,9 +1,48 @@
 import React, { useState, useEffect } from 'react';
-import { Code, Play, Terminal, RefreshCw, BarChart3, Calculator, Activity } from 'lucide-react';
+import { Code, Play, Terminal, RefreshCw, BarChart3, Calculator, Activity, Database } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
+import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 
-export default function PythonModule() {
-  const [activeUnit, setActiveUnit] = useState('unit1-2');
+const PYTHON_TABS = [
+  { id: 'unit1-2', label: 'Unit I & II: Syntax, BMI & Dosage' },
+  { id: 'unit3', label: 'Unit III: Data Structures, CSV & NumPy' },
+  { id: 'unit4', label: 'Unit IV: Pandas ADR & PK' },
+  { id: 'unit5', label: 'Unit V: Matplotlib Pharma Plots' },
+  { id: 'practical5', label: 'Practical 5: Arrhenius Shelf-Life' },
+  { id: 'sandbox', label: 'Custom Python Sandbox' }
+];
+
+export default function PythonModule({ initialTab, navNonce }) {
+  const { setWorkspaceSection, recordActivity, navigateToModule } = useLibraryNavigation();
+  const [activeUnit, setActiveUnit] = useState(initialTab || 'unit1-2');
+
+  useEffect(() => {
+    if (initialTab) setActiveUnit(initialTab);
+  }, [initialTab, navNonce]);
+
+  useEffect(() => {
+    const label = PYTHON_TABS.find((t) => t.id === activeUnit)?.label || null;
+    setWorkspaceSection(label);
+    return () => setWorkspaceSection(null);
+  }, [activeUnit, setWorkspaceSection]);
+
+  const handleSelectUnit = (tabId) => {
+    setActiveUnit(tabId);
+    const label = PYTHON_TABS.find((t) => t.id === tabId)?.label;
+    setConsoleOutput([`>>> Switched to ${label || tabId}. Click "Run in Browser".`]);
+    if (label) {
+      recordActivity({
+        key: `dept:python:${tabId}`,
+        kind: 'experiment',
+        title: `Python · ${label}`,
+        subtitle: DEPARTMENT_WORKSPACES.python.code,
+        moduleId: 'python',
+        tab: tabId
+      });
+    }
+  };
 
   // Pyodide Runtime State
   const [pyodide, setPyodide] = useState(null);
@@ -175,10 +214,11 @@ print("Generated Array:", arr)`);
       } catch (err) {
         if (isMounted) {
           setIsLoadingPyodide(false);
-          setRuntimeStatus('Failed to load Python runtime.');
+          setRuntimeStatus('Pyodide CDN offline — interactive BMI, dosage & Unit V SVG plotters remain active locally.');
           setConsoleOutput([
-            '>>> Runtime Error:',
-            `> ${err.message}`
+            '>>> Notice: External Pyodide WebAssembly CDN is currently unreachable.',
+            `> Details: ${err.message}`,
+            '>>> Local browser tools (Unit II BMI/Dosage Calculators, Unit V SVG PK Plots & Pandas Explorer) remain available offline.'
           ]);
         }
       }
@@ -273,35 +313,34 @@ print("Generated Array:", arr)`);
     { t: 120, ir: 100, sr: 91 }
   ];
 
+  const activeUnitLabel = PYTHON_TABS.find((t) => t.id === activeUnit)?.label;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
-        <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">PCI B.Pharm · BP101T</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-slate-900 dark:text-white">Basics of Python Programming for Pharmaceutical Sciences</h2>
-        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base mt-1">Interactive curriculum studio with live WebAssembly Python execution across all 5 syllabus units.</p>
-      </div>
+      <DepartmentHeader
+        meta={DEPARTMENT_WORKSPACES.python}
+        icon={Code}
+        accentColorClass="text-blue-600 dark:text-blue-400"
+        activeTabLabel={activeUnitLabel}
+      />
 
-      <div className="flex flex-wrap gap-2">
-        {[
-          { id: 'unit1-2', label: 'Unit I & II: Syntax, BMI & Dosage' },
-          { id: 'unit3', label: 'Unit III: Data Structures, CSV & NumPy' },
-          { id: 'unit4', label: 'Unit IV: Pandas ADR & PK' },
-          { id: 'unit5', label: 'Unit V: Matplotlib Pharma Plots' },
-          { id: 'practical5', label: 'Practical 5: Arrhenius Shelf-Life' },
-          { id: 'sandbox', label: 'Custom Python Sandbox' }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => { setActiveUnit(tab.id); setConsoleOutput([`>>> Switched to ${tab.label}. Click "Run in Browser".`]); }}
-            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-              activeUnit === tab.id
-                ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-500 text-blue-700 dark:text-blue-300 shadow-sm dark:shadow-lg'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <WorkspaceTabBar
+            tabs={PYTHON_TABS}
+            activeTab={activeUnit}
+            onChange={handleSelectUnit}
+            ariaLabel="BP101T Python Curriculum Units"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => navigateToModule('pandas')}
+          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
+        >
+          <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span>Open Pandas DataFrames</span>
+        </button>
       </div>
 
       {/* Unit II Interactive BMI & Dosage Verification Tool */}

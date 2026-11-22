@@ -1,12 +1,27 @@
-import React, { useState } from 'react';
-import { Database, Filter, RefreshCw, CheckCircle2, FileSpreadsheet, BarChart3, Terminal } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Database, RefreshCw, FileSpreadsheet, Terminal, Code } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
+import { DepartmentHeader, ResponsiveTableWrapper, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
+
+const DATASET_TABS = [
+  { id: 'pk', label: 'PK Study Concentration Dataset (CSV)' },
+  { id: 'adr', label: 'ADR Safety Reports Dataset (Excel)' }
+];
 
 export default function PandasModule() {
+  const { setWorkspaceSection, navigateToModule } = useLibraryNavigation();
   const [datasetType, setDatasetType] = useState('pk');
   const [missingAction, setMissingAction] = useState('raw');
   const [inspectMethod, setInspectMethod] = useState('head');
   const [filterMode, setFilterMode] = useState('all');
+
+  useEffect(() => {
+    const label = DATASET_TABS.find((t) => t.id === datasetType)?.label || null;
+    setWorkspaceSection(label);
+    return () => setWorkspaceSection(null);
+  }, [datasetType, setWorkspaceSection]);
 
   const pkData = [
     { id: 1, patient: 'P-001', drug: 'Amoxicillin', time_hr: 0.5, conc_mcg_ml: 14.2, status: 'Completed' },
@@ -77,33 +92,36 @@ export default function PandasModule() {
           return { group: drug, count: rows.length, metricLabel: 'Severe Reports', value: severeCount };
         });
 
+  const activeDatasetLabel = DATASET_TABS.find((t) => t.id === datasetType)?.label;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
-        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">BP101T · Unit IV · Data Handling with Pandas</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-slate-900 dark:text-white">Pharmaceutical Dataset & ADR Report Analyzer</h2>
-        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base mt-1 leading-relaxed">
-          Master Pandas DataFrames, Series, CSV/Excel ingestion, inspection (head, tail, info, describe), missing value handling, conditional filtering, and groupby aggregation.
-        </p>
-      </div>
+      <DepartmentHeader
+        meta={DEPARTMENT_WORKSPACES.pandas}
+        icon={Database}
+        accentColorClass="text-emerald-600 dark:text-emerald-400"
+        activeTabLabel={activeDatasetLabel}
+      />
 
-      {/* Dataset Selector */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <WorkspaceTabBar
+            tabs={DATASET_TABS}
+            activeTab={datasetType}
+            onChange={(id) => {
+              setDatasetType(id);
+              setFilterMode('all');
+            }}
+            ariaLabel="Pandas Pharmaceutical Datasets"
+          />
+        </div>
         <button
-          onClick={() => { setDatasetType('pk'); setFilterMode('all'); }}
-          className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-            datasetType === 'pk' ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          }`}
+          type="button"
+          onClick={() => navigateToModule('python', 'unit4')}
+          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
         >
-          PK Study Concentration Dataset (CSV)
-        </button>
-        <button
-          onClick={() => { setDatasetType('adr'); setFilterMode('all'); }}
-          className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
-            datasetType === 'adr' ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          }`}
-        >
-          ADR Safety Reports Dataset (Excel)
+          <Code className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+          <span>Run Pandas Script in IDE</span>
         </button>
       </div>
 
@@ -228,12 +246,12 @@ export default function PandasModule() {
         </div>
 
         {(inspectMethod === 'head' || inspectMethod === 'tail') && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm tabular-nums">
+          <ResponsiveTableWrapper>
+            <table className="w-full min-w-[540px] text-left text-sm tabular-nums">
               <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-semibold">
+                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-semibold text-xs">
                   {Object.keys(baseData[0]).map((key) => (
-                    <th key={key} className="pb-3 px-3">{key}</th>
+                    <th key={key} className="py-3 px-3">{key}</th>
                   ))}
                 </tr>
               </thead>
@@ -249,7 +267,7 @@ export default function PandasModule() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ResponsiveTableWrapper>
         )}
 
         {inspectMethod === 'info' && (
@@ -257,20 +275,22 @@ export default function PandasModule() {
             <p className="text-emerald-700 dark:text-emerald-400">&lt;class 'pandas.core.frame.DataFrame'&gt;</p>
             <p>RangeIndex: {cleanedData.length} entries</p>
             <p>Data columns (total {Object.keys(baseData[0]).length} columns):</p>
-            <div className="border-t border-slate-200 dark:border-slate-800 pt-2 space-y-1">
-              {Object.keys(baseData[0]).map((col, idx) => {
-                const nonNull = cleanedData.filter((r) => r[col] !== null && r[col] !== undefined).length;
-                const sampleVal = baseData[0][col];
-                const dtype = typeof sampleVal === 'number' ? (Number.isInteger(sampleVal) ? 'int64' : 'float64') : 'object';
-                return (
-                  <div key={col} className="grid grid-cols-4 text-slate-700 dark:text-slate-300">
-                    <span>{idx}  {col}</span>
-                    <span>{nonNull} non-null</span>
-                    <span className="text-blue-600 dark:text-blue-400">{dtype}</span>
-                    <span className="text-slate-500">{nonNull < cleanedData.length ? 'Has NaN' : 'Complete'}</span>
-                  </div>
-                );
-              })}
+            <div className="border-t border-slate-200 dark:border-slate-800 pt-2 overflow-x-auto">
+              <div className="min-w-[460px] space-y-1.5">
+                {Object.keys(baseData[0]).map((col, idx) => {
+                  const nonNull = cleanedData.filter((r) => r[col] !== null && r[col] !== undefined).length;
+                  const sampleVal = baseData[0][col];
+                  const dtype = typeof sampleVal === 'number' ? (Number.isInteger(sampleVal) ? 'int64' : 'float64') : 'object';
+                  return (
+                    <div key={col} className="grid grid-cols-4 gap-3 text-slate-700 dark:text-slate-300 tabular-nums">
+                      <span className="truncate">{idx}  {col}</span>
+                      <span>{nonNull} non-null</span>
+                      <span className="text-blue-600 dark:text-blue-400">{dtype}</span>
+                      <span className="text-slate-500">{nonNull < cleanedData.length ? 'Has NaN' : 'Complete'}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}

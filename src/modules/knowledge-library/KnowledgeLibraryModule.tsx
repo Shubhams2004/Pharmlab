@@ -11,7 +11,10 @@ import {
   Upload,
   X
 } from 'lucide-react';
-import { KnowledgeJumpTarget } from '../../context/LibraryNavigationContext';
+import {
+  KnowledgeJumpTarget,
+  useLibraryNavigation
+} from '../../context/LibraryNavigationContext';
 import {
   deleteBook,
   getAllBooks,
@@ -70,6 +73,8 @@ function formatDate(ts: number): string {
 export default function KnowledgeLibraryModule({
   jumpTarget
 }: KnowledgeLibraryModuleProps) {
+  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
+
   const [books, setBooks] = useState<LibraryBookMeta[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [libraryError, setLibraryError] = useState<string | null>(null);
@@ -85,6 +90,7 @@ export default function KnowledgeLibraryModule({
     nonce: number;
   }>({ nonce: 0 });
 
+  const [importPanelOpen, setImportPanelOpen] = useState(false);
   const [uploadCategory, setUploadCategory] = useState<DocumentCategory>('textbook');
   const [uploadDepartment, setUploadDepartment] = useState<BookDepartmentTag>('all');
   const [processing, setProcessing] = useState<ProcessingProgress | null>(null);
@@ -239,6 +245,40 @@ export default function KnowledgeLibraryModule({
     [books, activeBookId]
   );
 
+  const continueBooks = useMemo(() => {
+    return [...books]
+      .filter((b) => (b.lastReadPage || 1) > 1 || Boolean(b.lastOpenedAt))
+      .sort((a, b) => (b.lastOpenedAt || b.uploadedAt) - (a.lastOpenedAt || a.uploadedAt))
+      .slice(0, 3);
+  }, [books]);
+
+  useEffect(() => {
+    if (!activeBook) {
+      setWorkspaceSection(null, null);
+    }
+  }, [activeBook, setWorkspaceSection]);
+
+  const openBookReader = useCallback(
+    (book: LibraryBookMeta, jumpOpts?: { pageNumber?: number | null; searchQuery?: string | null; nonce?: number }) => {
+      setReaderJump({
+        pageNumber: jumpOpts?.pageNumber ?? null,
+        searchQuery: jumpOpts?.searchQuery ?? null,
+        nonce: jumpOpts?.nonce ?? 0
+      });
+      setActiveBookId(book.id);
+      recordActivity({
+        key: `book:${book.id}`,
+        kind: 'book',
+        title: book.title,
+        subtitle: `Knowledge Library · Page ${jumpOpts?.pageNumber || book.lastReadPage || 1} of ${book.pageCount}`,
+        moduleId: 'knowledge_library',
+        bookId: book.id,
+        pageNumber: jumpOpts?.pageNumber || book.lastReadPage || 1
+      });
+    },
+    [recordActivity]
+  );
+
   const filteredBooks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return books.filter((book) => {
@@ -286,48 +326,20 @@ export default function KnowledgeLibraryModule({
       }}
     >
       {/* Header Section */}
-      <section className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-6 border-b border-slate-200 dark:border-slate-800">
-        <div className="space-y-2 max-w-2xl">
-          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+      <section className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-5 border-b border-slate-200 dark:border-slate-800">
+        <div className="space-y-1.5 max-w-2xl">
+          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
             Offline Textbook &amp; Document Repository
           </p>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight text-balance">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight text-balance">
             Knowledge Library
           </h1>
-          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed">
-            Upload pharmaceutical textbooks, practical manuals, and research PDFs. Files, highlights, study notes, and full-book search indexes are stored locally in IndexedDB with zero external servers.
+          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            Store pharmaceutical textbooks and manuals locally in IndexedDB with full-book search, notes, and direct diagram capture.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <select
-            aria-label="Document type"
-            value={uploadCategory}
-            onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
-            disabled={Boolean(processing)}
-            className="h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
-          >
-            {CATEGORY_OPTIONS.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            aria-label="Subject department"
-            value={uploadDepartment}
-            onChange={(e) => setUploadDepartment(e.target.value as BookDepartmentTag)}
-            disabled={Boolean(processing)}
-            className="h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
-          >
-            {(Object.keys(BOOK_DEPARTMENT_LABELS) as BookDepartmentTag[]).map((dept) => (
-              <option key={dept} value={dept}>
-                {BOOK_DEPARTMENT_LABELS[dept]}
-              </option>
-            ))}
-          </select>
-
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <input
             ref={fileInputRef}
             type="file"
@@ -338,19 +350,77 @@ export default function KnowledgeLibraryModule({
           />
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={Boolean(processing)}
-            className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
+            onClick={() => setImportPanelOpen((prev) => !prev)}
+            className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-xl border text-sm font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 ${
+              importPanelOpen
+                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
+                : 'bg-emerald-600 hover:bg-emerald-500 border-emerald-600 text-white'
+            }`}
           >
-            {processing ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Upload className="w-4 h-4" />
-            )}
-            <span>{processing ? 'Indexing PDF...' : 'Upload PDF'}</span>
+            <Upload className="w-4 h-4" />
+            <span>{importPanelOpen ? 'Hide Import Options' : 'Import PDF'}</span>
           </button>
         </div>
       </section>
+
+      {/* Collapsible Upload & Metadata Bar */}
+      {(importPanelOpen || isDragging) && (
+        <section className="bg-white dark:bg-slate-900 border border-emerald-500/35 rounded-2xl p-4 sm:p-5 space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                Add Pharmaceutical Textbook or Lab Manual
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Choose classification tags first, then select or drop PDF files.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <select
+                aria-label="Document type"
+                value={uploadCategory}
+                onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
+                disabled={Boolean(processing)}
+                className="min-h-[42px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
+              >
+                {CATEGORY_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Subject department"
+                value={uploadDepartment}
+                onChange={(e) => setUploadDepartment(e.target.value as BookDepartmentTag)}
+                disabled={Boolean(processing)}
+                className="min-h-[42px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
+              >
+                {(Object.keys(BOOK_DEPARTMENT_LABELS) as BookDepartmentTag[]).map((dept) => (
+                  <option key={dept} value={dept}>
+                    {BOOK_DEPARTMENT_LABELS[dept]}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={Boolean(processing)}
+                className="min-h-[42px] px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
+              >
+                {processing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+                <span>{processing ? 'Indexing PDF...' : 'Select PDF Files'}</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Processing Progress Banner */}
       {processing && (
@@ -494,13 +564,48 @@ export default function KnowledgeLibraryModule({
         </div>
       )}
 
+      {/* Continue Reading Strip */}
+      {!loadingLibrary && continueBooks.length > 0 && (
+        <section aria-label="Continue reading" className="space-y-3">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">
+            Continue Reading
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {continueBooks.map((book) => {
+              const readPage = Math.max(1, Math.min(book.lastReadPage || 1, book.pageCount));
+              const pct = Math.round((readPage / Math.max(1, book.pageCount)) * 100);
+              return (
+                <button
+                  key={book.id}
+                  type="button"
+                  onClick={() => openBookReader(book)}
+                  className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-left space-y-2 transition-colors group"
+                >
+                  <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
+                    {book.title}
+                  </p>
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                    <span>
+                      Page {readPage} / {book.pageCount}
+                    </span>
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                      {pct}%
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Books Grid / Empty State */}
       {loadingLibrary ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {[1, 2].map((n) => (
             <div
               key={n}
-              className="h-52 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 animate-pulse p-6"
+              className="h-52 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6"
             />
           ))}
         </div>
@@ -662,11 +767,8 @@ export default function KnowledgeLibraryModule({
 
                       <button
                         type="button"
-                        onClick={() => {
-                          setReaderJump({ pageNumber: null, searchQuery: null, nonce: 0 });
-                          setActiveBookId(book.id);
-                        }}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0"
+                        onClick={() => openBookReader(book)}
+                        className="inline-flex items-center gap-2 min-h-[40px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0"
                       >
                         <BookOpen className="w-4 h-4" />
                         <span>{readPage > 1 ? 'Continue Reading' : 'Open Book'}</span>

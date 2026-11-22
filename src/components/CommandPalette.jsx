@@ -1,11 +1,30 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, ArrowRight, Compass, BookOpen, FlaskConical, Activity, Microscope, Code, MessageSquareHeart, Library, Images } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  Search,
+  X,
+  ArrowRight,
+  Compass,
+  BookOpen,
+  FlaskConical,
+  Activity,
+  Microscope,
+  Code,
+  MessageSquareHeart,
+  Library,
+  Images,
+  FileText,
+  MapPin
+} from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
+import { getAllBooks } from '../modules/knowledge-library/libraryDb';
+import { runAcademicSearch } from '../modules/visual-library/academicSearch';
+import { getAllVisuals } from '../modules/visual-library/visualDb';
 
 export const QUICK_INDEX = [
   // Knowledge & Visual Libraries
   { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search, Notes & Diagram Crop', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
   { title: 'Academic Visual Learning Library & Atlas', sub: 'Interactive Diagrams, Structure Labels, Mechanisms, MCQs & Open-Access Search', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
+  { title: 'Equipment & Apparatus Directory', sub: 'Compound Microscope, Gutzeit Apparatus, Nessler Cylinders & Lab Glassware', module: 'visual_library', category: 'equipment', tab: null, cat: 'Equipment', icon: Microscope },
   { title: 'Human Nephron & Glomerular Filtration (Visual Plate)', sub: 'Interactive Pins: Glomerulus, PCT, Loop of Henle, DCT & Collecting Duct', module: 'visual_library', visualId: 'builtin_nephron_anatomy', tab: null, cat: 'Anatomy', icon: Activity },
   { title: 'Diuretic Sites of Action Along the Nephron (Visual Plate)', sub: 'Pharmacology · Loop Diuretics, Thiazides, Acetazolamide & Spironolactone', module: 'visual_library', visualId: 'builtin_diuretic_pharmacology', tab: null, cat: 'Pharmacology', icon: FlaskConical },
   { title: 'Aspirin (Acetylsalicylic Acid) Structure & COX Acetylation', sub: 'Medicinal Chemistry · Functional Groups, Esterification & Antiplatelet Mechanism', module: 'visual_library', visualId: 'builtin_aspirin_molecule', tab: null, cat: 'Chemistry', icon: FlaskConical },
@@ -51,37 +70,88 @@ export const QUICK_INDEX = [
 ];
 
 export default function CommandPalette({ isOpen, onClose, onNavigate }) {
-  const { openVisualLibrary } = useLibraryNavigation();
+  const { openVisualLibrary, openKnowledgeLibrary } = useLibraryNavigation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [books, setBooks] = useState([]);
+  const [visuals, setVisuals] = useState([]);
   const inputRef = useRef(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    setQuery('');
+    setSelectedIndex(0);
+    setTimeout(() => inputRef.current?.focus(), 20);
+
+    let cancelled = false;
+    Promise.all([getAllBooks(), getAllVisuals()])
+      .then(([loadedBooks, loadedVisuals]) => {
+        if (cancelled) return;
+        setBooks(loadedBooks);
+        setVisuals(loadedVisuals);
+      })
+      .catch(() => {
+        // ignore IndexedDB error inside palette
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const indexHits = QUICK_INDEX.filter((item) => {
+      if (!q) return true;
+      return (
+        item.title.toLowerCase().includes(q) ||
+        item.sub.toLowerCase().includes(q) ||
+        item.cat.toLowerCase().includes(q)
+      );
+    });
+
+    if (!q) return indexHits;
+
+    const bookHits = books
+      .filter(
+        (b) =>
+          b.title.toLowerCase().includes(q) ||
+          b.fileName.toLowerCase().includes(q)
+      )
+      .slice(0, 4)
+      .map((b) => ({
+        title: b.title,
+        sub: `PDF Knowledge Library · Page ${b.lastReadPage || 1} of ${b.pageCount}`,
+        bookId: b.id,
+        pageNumber: b.lastReadPage || 1,
+        cat: 'PDF Book',
+        icon: FileText
+      }));
+
+    const academic = runAcademicSearch(q, visuals);
+    const structureHits = academic.structures.slice(0, 3).map(({ annotation, visual }) => ({
+      title: annotation.label,
+      sub: `${visual.title} · ${annotation.functionRole}`,
+      visualId: visual.id,
+      annotationId: annotation.id,
+      cat: 'Structure Pin',
+      icon: MapPin
+    }));
+
+    return [...indexHits.slice(0, 8), ...structureHits, ...bookHits];
+  }, [query, books, visuals]);
+
   const launchPick = (pick) => {
-    if (pick.visualId) {
-      openVisualLibrary({ visualId: pick.visualId });
+    if (pick.bookId) {
+      openKnowledgeLibrary({ bookId: pick.bookId, pageNumber: pick.pageNumber || 1 });
+    } else if (pick.visualId) {
+      openVisualLibrary({ visualId: pick.visualId, annotationId: pick.annotationId || null });
+    } else if (pick.category) {
+      openVisualLibrary({ category: pick.category });
     } else {
       onNavigate(pick.module, pick.tab);
     }
     onClose();
   };
-
-  useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 20);
-    }
-  }, [isOpen]);
-
-  const results = QUICK_INDEX.filter((item) => {
-    const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      item.title.toLowerCase().includes(q) ||
-      item.sub.toLowerCase().includes(q) ||
-      item.cat.toLowerCase().includes(q)
-    );
-  });
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -105,7 +175,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [isOpen, results, selectedIndex, onClose, onNavigate, openVisualLibrary]);
+  }, [isOpen, results, selectedIndex, onClose]);
 
   if (!isOpen) return null;
 
@@ -115,7 +185,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Quick experiment and syllabus finder"
+      aria-label="Global workspace finder"
     >
       <div
         className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden"
@@ -128,13 +198,14 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Jump to any experiment, diagram, calculator, or unit (e.g. Gutzeit, Heart, EDTA, ORS)..."
+            placeholder="Search labs, structures ('glomerulus'), equipment, or uploaded PDFs..."
             className="flex-1 bg-transparent text-base text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
           />
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            aria-label="Close quick finder"
+            className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            aria-label="Close finder"
           >
             <X className="w-4 h-4" />
           </button>
@@ -147,7 +218,8 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
               const isSelected = idx === selectedIndex;
               return (
                 <button
-                  key={`${item.module}-${item.title}`}
+                  key={`${item.module || item.bookId || item.visualId}-${item.title}-${idx}`}
+                  type="button"
                   onClick={() => launchPick(item)}
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={`w-full text-left px-4 py-3.5 flex items-center justify-between gap-4 transition-colors ${
@@ -155,32 +227,54 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className={`p-2 rounded-lg shrink-0 ${isSelected ? 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                    <div
+                      className={`p-2 rounded-lg shrink-0 ${
+                        isSelected
+                          ? 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
                       <Icon className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className={`text-sm font-semibold truncate ${isSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-slate-100'}`}>
+                      <p
+                        className={`text-sm font-semibold truncate ${
+                          isSelected
+                            ? 'text-emerald-700 dark:text-emerald-300'
+                            : 'text-slate-900 dark:text-slate-100'
+                        }`}
+                      >
                         {item.title}
                       </p>
-                      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 truncate mt-0.5">{item.sub}</p>
+                      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        {item.sub}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{item.cat}</span>
-                    <ArrowRight className={`w-4 h-4 ${isSelected ? 'text-emerald-600 dark:text-emerald-400 translate-x-0.5' : 'text-slate-400 dark:text-slate-600'} transition-transform`} />
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {item.cat}
+                    </span>
+                    <ArrowRight
+                      className={`w-4 h-4 ${
+                        isSelected
+                          ? 'text-emerald-600 dark:text-emerald-400 translate-x-0.5'
+                          : 'text-slate-400 dark:text-slate-600'
+                      } transition-transform`}
+                    />
                   </div>
                 </button>
               );
             })
           ) : (
             <div className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-              No matching experiments or diagrams found for "{query}".
+              No matching labs, visuals, structures, or PDFs found for "{query}".
             </div>
           )}
         </div>
 
         <div className="px-4 py-3 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-          <span>Use ↑ ↓ arrows and Enter to launch</span>
+          <span>Use ↑ ↓ arrows and Enter to open</span>
           <span className="font-medium">Esc to close</span>
         </div>
       </div>
