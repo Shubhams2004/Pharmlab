@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
-import { Activity, Microscope, Bone, Droplet, HeartPulse, FileText, CheckCircle2, RefreshCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Activity, Microscope, Bone, Droplet, HeartPulse, FileText, CheckCircle2, RefreshCcw, Layers, BookOpen } from 'lucide-react';
+import AnatomyDiagrams from './AnatomyDiagrams';
+import AnatomyTheory from './AnatomyTheory';
 
-export default function AnatomyModule() {
-  const [activeTab, setActiveTab] = useState('hematology');
+export default function AnatomyModule({ initialTab, navNonce }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'diagrams');
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab, navNonce]);
 
   // Existing Exp 8 & 11 States
   const [dilution, setDilution] = useState('20');
@@ -202,11 +208,11 @@ export default function AnatomyModule() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 text-slate-100 pb-12">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">BP104T / BP109P Core Practical Suite (17 Experiments)</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 mb-1 text-white">Human Anatomy, Physiology &amp; Pathophysiology I Lab</h2>
-        <p className="text-slate-400 text-sm">
+    <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
+        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">BP104T / BP109P Core Practical Suite (17 Experiments)</span>
+        <h2 className="text-2xl md:text-3xl font-bold mt-1 mb-1 text-slate-900 dark:text-white">Human Anatomy, Physiology &amp; Pathophysiology I Lab</h2>
+        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base leading-relaxed">
           Complete BP109P virtual laboratory: Microscopy, Histology, Axial/Appendicular Osteology, Hemocytometry, Cell Analyser, DLC, RBC, BT/CT, Hb, Blood Grouping, ESR, BP, ECG, CVS/Skin &amp; Case Files.
         </p>
       </div>
@@ -214,19 +220,21 @@ export default function AnatomyModule() {
       {/* Category Tabs */}
       <div className="flex flex-wrap gap-2">
         {[
-          { id: 'hematology', label: '🩸 Hematology & Blood Group (Exp 6–13)' },
-          { id: 'microscopy', label: '🔬 Microscopy & Histology (Exp 1–3)' },
-          { id: 'bones', label: '🦴 Axial & Appendicular Bones (Exp 4–5)' },
-          { id: 'cardio', label: '❤️ Vitals, ECG & CVS/Skin (Exp 14–16)' },
-          { id: 'cases', label: '📋 Clinical Case Files (Exp 17)' }
+          { id: 'diagrams', label: 'Annotated Anatomical Diagrams (2D/3D)' },
+          { id: 'theory', label: 'BP104T Theory (Units I–V)' },
+          { id: 'hematology', label: 'Hematology & Blood Group (Exp 6–13)' },
+          { id: 'microscopy', label: 'Microscopy & Histology (Exp 1–3)' },
+          { id: 'bones', label: 'Axial & Appendicular Bones (Exp 4–5)' },
+          { id: 'cardio', label: 'Vitals, ECG & CVS/Skin (Exp 14–16)' },
+          { id: 'cases', label: 'Clinical Case Files (Exp 17)' }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
               activeTab === tab.id
-                ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 shadow-lg'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             {tab.label}
@@ -234,82 +242,85 @@ export default function AnatomyModule() {
         ))}
       </div>
 
+      {activeTab === 'diagrams' && <AnatomyDiagrams />}
+      {activeTab === 'theory' && <AnatomyTheory />}
+
       {/* TAB 1: HEMATOLOGY (Exp 6 - 13) */}
       {activeTab === 'hematology' && (
         <div className="space-y-6">
           {/* Existing Exp 8 & 11 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-              <h3 className="text-lg font-bold text-emerald-300 mb-2">Exp 8. Hemocytometry WBC Enumeration</h3>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
+              <h3 className="text-lg font-bold text-emerald-700 dark:text-emerald-300 mb-3">Exp 8. Hemocytometry WBC Enumeration</h3>
               <form onSubmit={calculateWbc} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Total Cells Counted in 4 Corner Squares</label>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Total Cells Counted in 4 Corner Squares</label>
                   <input
                     type="number"
                     step="any"
                     value={squaresCounted}
                     onChange={(e) => setSquaresCounted(e.target.value)}
                     placeholder="e.g., 160"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Dilution Factor (Turk's Fluid, 1:20)</label>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Dilution Factor (Turk's Fluid, 1:20)</label>
                   <input
                     type="number"
                     value={dilution}
                     onChange={(e) => setDilution(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                     required
                   />
                 </div>
-                <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors">
+                <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-xl transition-colors">
                   Calculate WBC Count
                 </button>
               </form>
               {wbcResult !== null && (
-                <div className="mt-4 p-4 bg-slate-950 rounded-xl border border-emerald-900/50 text-center">
-                  <span className="text-sm text-slate-400">Total Leukocyte Count: </span>
-                  <span className="text-xl font-bold text-emerald-400">{wbcResult} cells/cu.mm</span>
+                <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-emerald-500/30 dark:border-emerald-900/50 text-center">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Total Leukocyte Count: </span>
+                  <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{wbcResult} cells/cu.mm</span>
                 </div>
               )}
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-              <h3 className="text-lg font-bold text-emerald-300 mb-2">Exp 11. Hemoglobin Diagnostic Analyzer (Sahli's)</h3>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
+              <h3 className="text-lg font-bold text-emerald-700 dark:text-emerald-300 mb-3">Exp 11. Hemoglobin Diagnostic Analyzer (Sahli's)</h3>
               <form onSubmit={analyzeHb} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Hemoglobin Value (g/dL)</label>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Hemoglobin Value (g/dL)</label>
                   <input
                     type="number"
                     step="any"
                     value={hbValue}
                     onChange={(e) => setHbValue(e.target.value)}
                     placeholder="e.g., 13.5"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Patient Demographic</label>
+                  <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Patient Demographic</label>
                   <select
                     value={gender}
                     onChange={(e) => setGender(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="male">Male (Normal: 13.5 - 17.5 g/dL)</option>
                     <option value="female">Female (Normal: 12.0 - 15.5 g/dL)</option>
                   </select>
                 </div>
-                <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl transition-colors">
+                <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-xl transition-colors">
                   Evaluate Hemoglobin
                 </button>
               </form>
               {hbResult && (
-                <div className="mt-4 p-4 bg-slate-950 rounded-xl border border-emerald-900/50 text-center">
-                  <span className="text-sm text-slate-400">Status: </span>
-                  <span className="block text-lg font-bold text-emerald-400 mt-1">{hbResult.status}</span>
+                <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-emerald-500/30 dark:border-emerald-900/50 text-center">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Status: </span>
+                  <span className="block text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-1">{hbResult.status}</span>
                 </div>
               )}
             </div>
@@ -317,45 +328,50 @@ export default function AnatomyModule() {
 
           {/* Exp 8b & 9: DLC Counter & RBC Enumeration */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-white">Exp 8(b). Differential Leukocyte Count (DLC)</h3>
-                <button onClick={() => setDlc({ Neutrophils: 0, Lymphocytes: 0, Monocytes: 0, Eosinophils: 0, Basophils: 0 })} className="text-xs text-slate-400 hover:text-white flex items-center space-x-1">
-                  <RefreshCcw className="w-3.5 h-3.5" /><span>Reset</span>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 8(b). Differential Leukocyte Count (DLC)</h3>
+                <button onClick={() => setDlc({ Neutrophils: 0, Lymphocytes: 0, Monocytes: 0, Eosinophils: 0, Basophils: 0 })} className="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center space-x-1">
+                  <RefreshCcw className="w-4 h-4" /><span>Reset</span>
                 </button>
               </div>
-              <p className="text-xs text-slate-400">Click cell types on Leishman-stained smear (Target: 100 cells | Total: <strong className="text-emerald-400">{dlcTotal}</strong>)</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Click cell types on Leishman-stained smear (Target: 100 cells | Total: <strong className="text-emerald-600 dark:text-emerald-400 tabular-nums">{dlcTotal}</strong>)</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {Object.entries(dlc).map(([cell, count]) => (
                   <button
                     key={cell}
                     onClick={() => setDlc({ ...dlc, [cell]: count + 1 })}
-                    className="bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl p-3 text-left transition-all"
+                    className="bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-left transition-all"
                   >
-                    <span className="text-[11px] text-slate-400 block">{cell}</span>
-                    <span className="text-lg font-bold text-emerald-400 font-mono">{dlcTotal > 0 ? ((count / dlcTotal) * 100).toFixed(0) : 0}%</span>
-                    <span className="text-[10px] text-slate-500 block">({count} cells)</span>
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400 block">{cell}</span>
+                    <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{dlcTotal > 0 ? ((count / dlcTotal) * 100).toFixed(0) : 0}%</span>
+                    <span className="text-xs text-slate-500 block">({count} cells)</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-              <h3 className="text-base font-bold text-white">Exp 9. Total RBC Count (Hayem's Fluid)</h3>
-              <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 9. Total RBC Count (Hayem's Fluid)</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <label className="block text-slate-400 mb-1">RBCs in 5 Central Squares (N)</label>
-                  <input type="number" value={rbcCells} onChange={(e) => setRbcCells(parseFloat(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white" />
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">RBCs in 5 Central Squares (N)</label>
+                  <input type="number" value={rbcCells} onChange={(e) => setRbcCells(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">Dilution Factor</label>
-                  <input type="number" value={rbcDilution} onChange={(e) => setRbcDilution(parseFloat(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white" />
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">Dilution Factor</label>
+                  <input type="number" value={rbcDilution} onChange={(e) => setRbcDilution(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
                 </div>
               </div>
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-center">
-                <span className="text-xs text-slate-400 block">Total RBC Count = (N × Dilution) / (0.2 × 0.1)</span>
-                <span className="text-xl font-bold text-emerald-400 font-mono">{(rbcTotal / 1e6).toFixed(2)} million / cu.mm</span>
-                <span className="text-[11px] text-slate-400 block mt-1">Normal: Male 4.5–6.0 M | Female 4.0–5.5 M/cu.mm</span>
+              <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-center space-y-1.5">
+                <span className="text-sm text-slate-600 dark:text-slate-400 block">Total RBC Count = (N × Dilution) / (0.2 × 0.1)</span>
+                <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums block">{(rbcTotal / 1e6).toFixed(2)} million / cu.mm</span>
+                <span className="text-xs text-slate-600 dark:text-slate-400 block">Normal: Male 4.5–6.0 M | Female 4.0–5.5 M/cu.mm</span>
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200 dark:border-slate-800 text-xs sm:text-sm">
+                  <span>Est. Hct: <strong className="text-blue-600 dark:text-blue-400 tabular-nums">{((rbcTotal / 1e6) * 9).toFixed(1)}%</strong></span>
+                  <span>MCV: <strong className="text-emerald-700 dark:text-emerald-300 tabular-nums">{rbcTotal > 0 ? (((rbcTotal / 1e6) * 9 * 10) / (rbcTotal / 1e6)).toFixed(0) : 0} fL</strong></span>
+                  <span>MCHC: <strong className="text-amber-600 dark:text-amber-300 tabular-nums">33 g/dL</strong></span>
+                </div>
               </div>
             </div>
           </div>
@@ -363,10 +379,10 @@ export default function AnatomyModule() {
           {/* Exp 12: Blood Grouping + Exp 10 & 13: BT/CT & ESR + Exp 7: Cell Analyser */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Exp 12 */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-              <h3 className="text-base font-bold text-white">Exp 12. ABO &amp; Rh Blood Grouping</h3>
-              <p className="text-xs text-slate-400">Toggle slide agglutination (clumping) observed with antisera:</p>
-              <div className="space-y-2 text-xs">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 12. ABO &amp; Rh Blood Grouping</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Toggle slide agglutination (clumping) observed with antisera:</p>
+              <div className="space-y-2 text-sm">
                 {[
                   { label: 'Anti-A Serum (Blue)', state: antiA, set: setAntiA },
                   { label: 'Anti-B Serum (Yellow)', state: antiB, set: setAntiB },
@@ -376,60 +392,60 @@ export default function AnatomyModule() {
                     key={s.label}
                     onClick={() => s.set(!s.state)}
                     className={`w-full flex justify-between items-center p-3 rounded-xl border ${
-                      s.state ? 'bg-rose-500/15 border-rose-500 text-rose-200' : 'bg-slate-950 border-slate-800 text-slate-300'
+                      s.state ? 'bg-rose-50 dark:bg-rose-500/15 border-rose-500 text-rose-700 dark:text-rose-200' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <span>{s.label}</span>
-                    <span className="font-mono font-bold">{s.state ? 'Agglutination (+)' : 'No Clumping (-)'}</span>
+                    <span className="font-bold">{s.state ? 'Agglutination (+)' : 'No Clumping (-)'}</span>
                   </button>
                 ))}
               </div>
-              <div className="bg-slate-950 border border-emerald-500/30 rounded-xl p-4 text-center">
-                <span className="text-xs text-slate-400">Identified Blood Group:</span>
-                <p className="text-2xl font-extrabold text-emerald-400 mt-1">{getBloodGroup()}</p>
+              <div className="bg-slate-50 dark:bg-slate-950 border border-emerald-500/30 rounded-xl p-4 text-center">
+                <span className="text-sm text-slate-600 dark:text-slate-400">Identified Blood Group:</span>
+                <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">{getBloodGroup()}</p>
               </div>
             </div>
 
             {/* Exp 10 & 13 */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-              <h3 className="text-base font-bold text-white">Exp 10 &amp; 13. BT, CT &amp; ESR Analyzer</h3>
-              <div className="space-y-3 text-xs">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 10 &amp; 13. BT, CT &amp; ESR Analyzer</h3>
+              <div className="space-y-3 text-sm">
                 <div>
-                  <label className="block text-slate-400 mb-1">Bleeding Time — Duke's Method (min) [Normal: 1–5 min]</label>
-                  <input type="number" step="0.5" value={btMin} onChange={(e) => setBtMin(parseFloat(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white" />
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">Bleeding Time — Duke's Method (min) [Normal: 1–5 min]</label>
+                  <input type="number" step="0.5" value={btMin} onChange={(e) => setBtMin(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">Clotting Time — Capillary Tube (min) [Normal: 3–8 min]</label>
-                  <input type="number" step="0.5" value={ctMin} onChange={(e) => setCtMin(parseFloat(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white" />
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">Clotting Time — Capillary Tube (min) [Normal: 3–8 min]</label>
+                  <input type="number" step="0.5" value={ctMin} onChange={(e) => setCtMin(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">ESR — Westergren Method (mm/1st hr)</label>
-                  <input type="number" value={esrMm} onChange={(e) => setEsrMm(parseFloat(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white" />
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">ESR — Westergren Method (mm/1st hr)</label>
+                  <input type="number" value={esrMm} onChange={(e) => setEsrMm(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
                 </div>
               </div>
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs space-y-1">
-                <p>BT/CT Status: <strong className={btMin > 5 || ctMin > 8 ? 'text-rose-400' : 'text-emerald-400'}>{btMin > 5 || ctMin > 8 ? 'Prolonged Hemostasis' : 'Normal Hemostasis'}</strong></p>
-                <p>ESR Interpretation: <strong className={esrMm > 20 ? 'text-amber-400' : 'text-emerald-400'}>{esrMm > 20 ? 'Elevated (Inflammation / Infection / Anaemia)' : 'Normal Sedimentation'}</strong></p>
+              <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 text-sm space-y-1">
+                <p>BT/CT Status: <strong className={btMin > 5 || ctMin > 8 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}>{btMin > 5 || ctMin > 8 ? 'Prolonged Hemostasis' : 'Normal Hemostasis'}</strong></p>
+                <p>ESR Interpretation: <strong className={esrMm > 20 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>{esrMm > 20 ? 'Elevated (Inflammation / Infection / Anaemia)' : 'Normal Sedimentation'}</strong></p>
               </div>
             </div>
 
             {/* Exp 6 & 7: Cell Analyser & Hemocytometry Intro */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-              <h3 className="text-base font-bold text-white">Exp 6 &amp; 7. Cell Analyser CBC Demo</h3>
-              <select value={cbcPreset} onChange={(e) => setCbcPreset(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 6 &amp; 7. Cell Analyser CBC Demo</h3>
+              <select value={cbcPreset} onChange={(e) => setCbcPreset(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white">
                 <option value="normal">Normal Adult CBC Profile</option>
                 <option value="ida">Iron Deficiency Anaemia Profile</option>
                 <option value="infection">Acute Bacterial Infection Profile</option>
               </select>
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-1.5 text-xs font-mono">
-                <div className="flex justify-between"><span className="text-slate-400">WBC:</span><span className="text-white">{cbcPresets[cbcPreset].wbc}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">RBC:</span><span className="text-white">{cbcPresets[cbcPreset].rbc}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Hb / Hct:</span><span className="text-white">{cbcPresets[cbcPreset].hb} / {cbcPresets[cbcPreset].hct}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">MCV:</span><span className="text-white">{cbcPresets[cbcPreset].mcv}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Platelets:</span><span className="text-white">{cbcPresets[cbcPreset].plt}</span></div>
-                <div className="pt-2 border-t border-slate-800 text-emerald-400 font-sans font-bold">{cbcPresets[cbcPreset].flag}</div>
+              <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2 text-sm tabular-nums">
+                <div className="flex justify-between"><span className="text-slate-600 dark:text-slate-400">WBC:</span><span className="font-semibold text-slate-900 dark:text-white">{cbcPresets[cbcPreset].wbc}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600 dark:text-slate-400">RBC:</span><span className="font-semibold text-slate-900 dark:text-white">{cbcPresets[cbcPreset].rbc}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600 dark:text-slate-400">Hb / Hct:</span><span className="font-semibold text-slate-900 dark:text-white">{cbcPresets[cbcPreset].hb} / {cbcPresets[cbcPreset].hct}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600 dark:text-slate-400">MCV:</span><span className="font-semibold text-slate-900 dark:text-white">{cbcPresets[cbcPreset].mcv}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600 dark:text-slate-400">Platelets:</span><span className="font-semibold text-slate-900 dark:text-white">{cbcPresets[cbcPreset].plt}</span></div>
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800 text-emerald-600 dark:text-emerald-400 font-bold">{cbcPresets[cbcPreset].flag}</div>
               </div>
-              <p className="text-[11px] text-slate-400">Exp 6 Neubauer Grid: 3×3 mm total area, 0.1 mm depth; corner 4 squares (1 mm² each) for WBC, central 5 small squares (0.2 mm²) for RBC.</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">Exp 6 Neubauer Grid: 3×3 mm total area, 0.1 mm depth; corner 4 squares (1 mm² each) for WBC, central 5 small squares (0.2 mm²) for RBC.</p>
             </div>
           </div>
         </div>
@@ -438,23 +454,23 @@ export default function AnatomyModule() {
       {/* TAB 2: MICROSCOPY & HISTOLOGY (Exp 1 - 3) */}
       {activeTab === 'microscopy' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center space-x-2 text-emerald-400">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
               <Microscope className="w-5 h-5" />
-              <h3 className="text-lg font-bold text-white">Exp 1. Study of Compound Microscopes</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 1. Study of Compound Microscopes</h3>
             </div>
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <label className="block text-slate-400 mb-1">Eyepiece Magnification</label>
-                <select value={eyepiece} onChange={(e) => setEyepiece(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white">
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">Eyepiece Magnification</label>
+                <select value={eyepiece} onChange={(e) => setEyepiece(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white">
                   <option value={5}>5×</option>
                   <option value={10}>10×</option>
                   <option value={15}>15×</option>
                 </select>
               </div>
               <div>
-                <label className="block text-slate-400 mb-1">Objective Lens</label>
-                <select value={objective} onChange={(e) => setObjective(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white">
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">Objective Lens</label>
+                <select value={objective} onChange={(e) => setObjective(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white">
                   <option value={4}>4× (Scanning)</option>
                   <option value={10}>10× (Low Power)</option>
                   <option value={40}>40× (High Power)</option>
@@ -462,45 +478,45 @@ export default function AnatomyModule() {
                 </select>
               </div>
             </div>
-            <div className="bg-slate-950 border border-emerald-500/30 rounded-xl p-4 text-center">
-              <span className="text-xs text-slate-400">Total Magnification = Eyepiece × Objective</span>
-              <p className="text-2xl font-extrabold text-emerald-400 font-mono mt-1">{eyepiece * objective}×</p>
+            <div className="bg-slate-50 dark:bg-slate-950 border border-emerald-500/30 rounded-xl p-4 text-center">
+              <span className="text-sm text-slate-600 dark:text-slate-400">Total Magnification = Eyepiece × Objective</span>
+              <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">{eyepiece * objective}×</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {Object.keys(microscopeParts).map((part) => (
                 <button
                   key={part}
                   onClick={() => setSelectedScopePart(part)}
-                  className={`px-3 py-1.5 rounded-lg text-xs border ${
-                    selectedScopePart === part ? 'bg-blue-600/20 border-blue-500 text-blue-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+                  className={`px-3.5 py-2 rounded-lg text-sm font-medium border ${
+                    selectedScopePart === part ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-500 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   {part}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-300 bg-slate-950 p-3 rounded-xl border border-slate-800">{microscopeParts[selectedScopePart]}</p>
+            <p className="text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 leading-relaxed">{microscopeParts[selectedScopePart]}</p>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <h3 className="text-lg font-bold text-white">Exp 2 &amp; 3. Microscopic Study of Four Primary Tissues</h3>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 2 &amp; 3. Microscopic Study of Four Primary Tissues</h3>
             <div className="flex flex-wrap gap-2">
               {Object.keys(tissues).map((t) => (
                 <button
                   key={t}
                   onClick={() => setSelectedTissue(t)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold border ${
-                    selectedTissue === t ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+                  className={`px-3.5 py-2 rounded-xl text-sm font-semibold border ${
+                    selectedTissue === t ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   {t} Tissue
                 </button>
               ))}
             </div>
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-3 text-xs">
-              <h4 className="text-sm font-bold text-emerald-400">{selectedTissue} Tissue Histology</h4>
-              <p className="text-slate-300 leading-relaxed"><strong>Classification &amp; Locations:</strong> {tissues[selectedTissue].subtypes}</p>
-              <p className="text-slate-300 leading-relaxed"><strong>Key Diagnostic Features:</strong> {tissues[selectedTissue].features}</p>
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3 text-sm">
+              <h4 className="text-base font-bold text-emerald-600 dark:text-emerald-400">{selectedTissue} Tissue Histology</h4>
+              <p className="text-slate-700 dark:text-slate-300 leading-relaxed"><strong>Classification &amp; Locations:</strong> {tissues[selectedTissue].subtypes}</p>
+              <p className="text-slate-700 dark:text-slate-300 leading-relaxed"><strong>Key Diagnostic Features:</strong> {tissues[selectedTissue].features}</p>
             </div>
           </div>
         </div>
@@ -508,32 +524,32 @@ export default function AnatomyModule() {
 
       {/* TAB 3: AXIAL & APPENDICULAR BONES (Exp 4 - 5) */}
       {activeTab === 'bones' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
             <div className="flex items-center space-x-2.5">
-              <Bone className="w-5 h-5 text-amber-400" />
+              <Bone className="w-5 h-5 text-amber-600 dark:text-amber-400" />
               <div>
-                <h3 className="text-lg font-bold text-white">Exp 4 &amp; 5. Human Skeleton Identification (206 Bones)</h3>
-                <p className="text-xs text-slate-400">Axial Skeleton (80 bones) vs Appendicular Skeleton (126 bones).</p>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 4 &amp; 5. Human Skeleton Identification (206 Bones)</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Axial Skeleton (80 bones) vs Appendicular Skeleton (126 bones).</p>
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setBoneDivision('axial')} className={`px-4 py-2 rounded-xl text-xs font-semibold border ${boneDivision === 'axial' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
+              <button onClick={() => setBoneDivision('axial')} className={`px-4 py-2 rounded-xl text-sm font-semibold border ${boneDivision === 'axial' ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'}`}>
                 Exp 4: Axial Bones (80)
               </button>
-              <button onClick={() => setBoneDivision('appendicular')} className={`px-4 py-2 rounded-xl text-xs font-semibold border ${boneDivision === 'appendicular' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
+              <button onClick={() => setBoneDivision('appendicular')} className={`px-4 py-2 rounded-xl text-sm font-semibold border ${boneDivision === 'appendicular' ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'}`}>
                 Exp 5: Appendicular Bones (126)
               </button>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {(boneDivision === 'axial' ? axialBones : appendicularBones).map((b) => (
-              <div key={b.group} className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-2">
+              <div key={b.group} className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-emerald-400">{b.group}</h4>
-                  <span className="px-2.5 py-0.5 rounded-full bg-slate-900 border border-slate-700 font-mono text-xs text-white">{b.count} bones</span>
+                  <h4 className="text-base font-bold text-emerald-600 dark:text-emerald-400">{b.group}</h4>
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 tabular-nums">{b.count} bones</span>
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">{b.details}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{b.details}</p>
               </div>
             ))}
           </div>
@@ -545,35 +561,35 @@ export default function AnatomyModule() {
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Exp 14: BP & Pulse */}
-            <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-              <h3 className="text-base font-bold text-white">Exp 14. Pulse Rate, Heart Rate &amp; Blood Pressure</h3>
-              <div className="space-y-3 text-xs">
+            <div className="lg:col-span-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 14. Pulse Rate, Heart Rate &amp; Blood Pressure</h3>
+              <div className="space-y-3 text-sm">
                 <div>
-                  <label className="block text-slate-400 mb-1">Systolic BP (mmHg)</label>
-                  <input type="number" value={sbp} onChange={(e) => setSbp(Number(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white" />
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">Systolic BP (mmHg)</label>
+                  <input type="number" value={sbp} onChange={(e) => setSbp(Number(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">Diastolic BP (mmHg)</label>
-                  <input type="number" value={dbp} onChange={(e) => setDbp(Number(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white" />
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">Diastolic BP (mmHg)</label>
+                  <input type="number" value={dbp} onChange={(e) => setDbp(Number(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">Radial Pulse / Heart Rate (bpm)</label>
-                  <input type="number" value={pulseRate} onChange={(e) => setPulseRate(Number(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white" />
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">Radial Pulse / Heart Rate (bpm)</label>
+                  <input type="number" value={pulseRate} onChange={(e) => setPulseRate(Number(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
                 </div>
               </div>
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs space-y-1">
-                <p>BP Category: <strong className="text-emerald-400">{bpClass}</strong></p>
-                <p>Pulse Pressure (SBP − DBP): <strong className="font-mono text-blue-400">{pulsePressure} mmHg</strong></p>
-                <p>Mean Arterial Pressure (MAP): <strong className="font-mono text-amber-400">{mapVal.toFixed(1)} mmHg</strong></p>
-                <p>Rate Status: <strong className="text-slate-200">{pulseRate < 60 ? 'Bradycardia' : pulseRate > 100 ? 'Tachycardia' : 'Normal Sinus (60–100 bpm)'}</strong></p>
+              <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-sm space-y-1.5">
+                <p>BP Category: <strong className="text-emerald-600 dark:text-emerald-400">{bpClass}</strong></p>
+                <p>Pulse Pressure (SBP − DBP): <strong className="tabular-nums text-blue-600 dark:text-blue-400">{pulsePressure} mmHg</strong></p>
+                <p>Mean Arterial Pressure (MAP): <strong className="tabular-nums text-amber-600 dark:text-amber-400">{mapVal.toFixed(1)} mmHg</strong></p>
+                <p>Rate Status: <strong className="text-slate-800 dark:text-slate-200">{pulseRate < 60 ? 'Bradycardia' : pulseRate > 100 ? 'Tachycardia' : 'Normal Sinus (60–100 bpm)'}</strong></p>
               </div>
             </div>
 
             {/* Exp 15: ECG */}
-            <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-base font-bold text-white flex items-center space-x-2">
-                  <HeartPulse className="w-5 h-5 text-rose-400" />
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                  <HeartPulse className="w-5 h-5 text-rose-600 dark:text-rose-400" />
                   <span>Exp 15. ECG Recording &amp; Interpretation</span>
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
@@ -586,8 +602,8 @@ export default function AnatomyModule() {
                     <button
                       key={r.id}
                       onClick={() => setEcgRhythm(r.id)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${
-                        ecgRhythm === r.id ? 'bg-rose-500/20 border-rose-500 text-rose-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                        ecgRhythm === r.id ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-500 text-rose-700 dark:text-rose-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                       }`}
                     >
                       {r.label}
@@ -595,12 +611,12 @@ export default function AnatomyModule() {
                   ))}
                 </div>
               </div>
-              <div className="bg-black border border-slate-800 rounded-xl p-4">
+              <div className="bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
                 <svg viewBox="0 0 540 100" className="w-full h-32">
                   <path d={getEcgPath()} fill="none" stroke="#10b981" strokeWidth="2.5" />
                 </svg>
               </div>
-              <p className="text-xs text-slate-300">
+              <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
                 <strong>Waves:</strong> P wave (Atrial depolarization) &bull; QRS complex (Ventricular depolarization, 0.08–0.10 s) &bull; T wave (Ventricular repolarization). PR interval: 0.12–0.20 s.
               </p>
             </div>
@@ -608,21 +624,21 @@ export default function AnatomyModule() {
 
           {/* Exp 16: CVS & Integumentary System */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-2 text-xs">
-              <h3 className="text-base font-bold text-emerald-400">Exp 16(a). Cardiovascular System &amp; Conduction</h3>
-              <p className="text-slate-300 leading-relaxed">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-2.5 text-sm">
+              <h3 className="text-lg font-bold text-emerald-600 dark:text-emerald-400">Exp 16(a). Cardiovascular System &amp; Conduction</h3>
+              <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
                 <strong>Conduction Pathway:</strong> SA Node (Pacemaker, 70–80 bpm) → Internodal tracts → AV Node (0.1s delay) → Bundle of His → Left &amp; Right Bundle Branches → Purkinje Fibers.
               </p>
-              <p className="text-slate-300 leading-relaxed">
+              <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
                 <strong>Cardiac Cycle (0.8 s):</strong> Atrial Systole (0.1 s) → Ventricular Systole (0.3 s, S1 "Lubb" AV valve closure) → Complete Cardiac Diastole (0.4 s, S2 "Dupp" semilunar valve closure).
               </p>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-2 text-xs">
-              <h3 className="text-base font-bold text-emerald-400">Exp 16(b). Integumentary System &amp; Wound Healing</h3>
-              <p className="text-slate-300 leading-relaxed">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-2.5 text-sm">
+              <h3 className="text-lg font-bold text-emerald-600 dark:text-emerald-400">Exp 16(b). Integumentary System &amp; Wound Healing</h3>
+              <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
                 <strong>Skin Layers:</strong> Epidermis (Stratum corneum, lucidum, granulosum, spinosum, basale with melanocytes) → Dermis (collagen, hair follicles, sebaceous/sweat glands, Meissner/Pacinian corpuscles) → Hypodermis (subcutaneous adipose).
               </p>
-              <p className="text-slate-300 leading-relaxed">
+              <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
                 <strong>Wound Healing Phases:</strong> Hemostasis → Inflammation → Proliferation (granulation &amp; angiogenesis) → Maturation/Remodeling.
               </p>
             </div>
@@ -632,12 +648,12 @@ export default function AnatomyModule() {
 
       {/* TAB 5: CASE STUDIES (Exp 17) */}
       {activeTab === 'cases' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
-          <div className="flex items-center space-x-2 text-emerald-400 border-b border-slate-800 pb-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5">
+          <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400 border-b border-slate-200 dark:border-slate-800 pb-3">
             <FileText className="w-5 h-5" />
             <div>
-              <h3 className="text-lg font-bold text-white">Exp 17. Clinical Patient Case Files (7 Core Disorders)</h3>
-              <p className="text-xs text-slate-400">Anaemia, Thalassemia, Haemophilia, Leprosy, Gout, Hypertension, and Ischemic Heart Disease.</p>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Exp 17. Clinical Patient Case Files (7 Core Disorders)</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Anaemia, Thalassemia, Haemophilia, Leprosy, Gout, Hypertension, and Ischemic Heart Disease.</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -645,19 +661,19 @@ export default function AnatomyModule() {
               <button
                 key={c}
                 onClick={() => setSelectedCase(c)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold border ${
-                  selectedCase === c ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+                className={`px-4 py-2 rounded-xl text-sm font-semibold border ${
+                  selectedCase === c ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                 }`}
               >
                 {c}
               </button>
             ))}
           </div>
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-3 text-xs">
-            <h4 className="text-base font-bold text-white">{selectedCase} — Clinical Case File</h4>
-            <p className="text-slate-200 bg-slate-900 p-3.5 rounded-lg border border-slate-800"><strong>Clinical Presentation:</strong> {caseFiles[selectedCase].patient}</p>
-            <p className="text-slate-300 leading-relaxed"><strong>Etiology &amp; Pathogenesis:</strong> {caseFiles[selectedCase].etiology}</p>
-            <p className="text-emerald-300 leading-relaxed"><strong>Pharmacotherapy &amp; Management:</strong> {caseFiles[selectedCase].management}</p>
+          <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3 text-sm leading-relaxed">
+            <h4 className="text-base font-bold text-slate-900 dark:text-white">{selectedCase} — Clinical Case File</h4>
+            <p className="text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800"><strong>Clinical Presentation:</strong> {caseFiles[selectedCase].patient}</p>
+            <p className="text-slate-700 dark:text-slate-300"><strong>Etiology &amp; Pathogenesis:</strong> {caseFiles[selectedCase].etiology}</p>
+            <p className="text-emerald-700 dark:text-emerald-300"><strong>Pharmacotherapy &amp; Management:</strong> {caseFiles[selectedCase].management}</p>
           </div>
         </div>
       )}

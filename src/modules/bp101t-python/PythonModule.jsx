@@ -273,11 +273,11 @@ print("Generated Array:", arr)`);
   ];
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 text-slate-100 pb-12">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <span className="text-xs font-bold tracking-widest text-blue-400 uppercase">PCI B.Pharm • BP101T</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">Basics of Python Programming for Pharmaceutical Sciences</h2>
-        <p className="text-slate-400 text-sm mt-1">Interactive curriculum studio with live WebAssembly Python execution across all 5 syllabus units.</p>
+    <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
+        <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">PCI B.Pharm · BP101T</span>
+        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-slate-900 dark:text-white">Basics of Python Programming for Pharmaceutical Sciences</h2>
+        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base mt-1">Interactive curriculum studio with live WebAssembly Python execution across all 5 syllabus units.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -286,16 +286,16 @@ print("Generated Array:", arr)`);
           { id: 'unit3', label: 'Unit III: Data Structures, CSV & NumPy' },
           { id: 'unit4', label: 'Unit IV: Pandas ADR & PK' },
           { id: 'unit5', label: 'Unit V: Matplotlib Pharma Plots' },
-          { id: 'practical5', label: '🧪 Practical 5: Arrhenius Shelf-Life' },
-          { id: 'sandbox', label: '✨ Custom Python Sandbox' }
+          { id: 'practical5', label: 'Practical 5: Arrhenius Shelf-Life' },
+          { id: 'sandbox', label: 'Custom Python Sandbox' }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => { setActiveUnit(tab.id); setConsoleOutput([`>>> Switched to ${tab.label}. Click "Run in Browser".`]); }}
-            className={`px-4 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
               activeUnit === tab.id
-                ? 'bg-blue-600/20 border-blue-500 text-blue-300 shadow-lg'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-500 text-blue-700 dark:text-blue-300 shadow-sm dark:shadow-lg'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             {tab.label}
@@ -305,45 +305,45 @@ print("Generated Array:", arr)`);
 
       {/* Unit II Interactive BMI & Dosage Verification Tool */}
       {activeUnit === 'unit1-2' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-          <div className="flex items-center space-x-2 text-emerald-400">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+          <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
             <Calculator className="w-5 h-5" />
-            <h3 className="text-sm font-bold uppercase tracking-wider">Unit II Interactive Lab: Dosage & BMI Calculator</h3>
+            <h3 className="text-base font-bold">Unit II Interactive Lab: Dosage & BMI Calculator</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
-              <span className="text-xs font-bold text-blue-400">BMI Classification Logic (if-elif-else)</span>
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
+              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">BMI Classification Logic (if-elif-else)</span>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Weight (kg)</label>
-                  <input type="number" value={bmiWeight} onChange={(e) => setBmiWeight(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white" />
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Weight (kg)</label>
+                  <input type="number" value={bmiWeight} onChange={(e) => setBmiWeight(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Height (cm)</label>
-                  <input type="number" value={bmiHeightCm} onChange={(e) => setBmiHeightCm(parseFloat(e.target.value) || 1)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white" />
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Height (cm)</label>
+                  <input type="number" value={bmiHeightCm} onChange={(e) => setBmiHeightCm(parseFloat(e.target.value) || 1)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
                 </div>
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
-                <span className="text-slate-400">Computed BMI: <strong className="text-emerald-400 font-mono">{bmiVal.toFixed(2)} kg/m²</strong></span>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-semibold">{bmiCategory}</span>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Computed BMI: <strong className="text-emerald-600 dark:text-emerald-400 tabular-nums">{bmiVal.toFixed(2)} kg/m²</strong></span>
+                <span className="px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 font-semibold text-xs">{bmiCategory}</span>
               </div>
             </div>
 
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
-              <span className="text-xs font-bold text-blue-400">Modular Pediatric Dosage Rules</span>
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
+              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">Modular Pediatric Dosage Rules</span>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Child Age (yrs)</label>
-                  <input type="number" value={childAge} onChange={(e) => setChildAge(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white" />
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Child Age (yrs)</label>
+                  <input type="number" value={childAge} onChange={(e) => setChildAge(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Adult Dose (mg)</label>
-                  <input type="number" value={adultDoseMg} onChange={(e) => setAdultDoseMg(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white" />
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Adult Dose (mg)</label>
+                  <input type="number" value={adultDoseMg} onChange={(e) => setAdultDoseMg(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
                 </div>
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
-                <span className="text-slate-400">Young's Rule: <strong className="text-emerald-400 font-mono">{youngsDose.toFixed(1)} mg</strong></span>
-                <span className="text-slate-400">Dilling's Rule: <strong className="text-blue-400 font-mono">{dillingDose.toFixed(1)} mg</strong></span>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Young's Rule: <strong className="text-emerald-600 dark:text-emerald-400 tabular-nums">{youngsDose.toFixed(1)} mg</strong></span>
+                <span className="text-slate-600 dark:text-slate-400">Dilling's Rule: <strong className="text-blue-600 dark:text-blue-400 tabular-nums">{dillingDose.toFixed(1)} mg</strong></span>
               </div>
             </div>
           </div>
@@ -352,13 +352,13 @@ print("Generated Array:", arr)`);
 
       {/* Unit V Interactive Matplotlib-style Pharmaceutical Plotter */}
       {activeUnit === 'unit5' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
-            <div className="flex items-center space-x-2 text-emerald-400">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+            <div className="flex items-center space-x-2.5 text-emerald-600 dark:text-emerald-400">
               <BarChart3 className="w-5 h-5" />
               <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider">Unit V: Pharmaceutical Data Visualization Lab (Matplotlib Studio)</h3>
-                <p className="text-xs text-slate-400">Concentration-time curves (Oral vs IV), ADR reporting rates, dissolution profiles & scientific interpretation.</p>
+                <h3 className="text-base font-bold">Unit V: Pharmaceutical Data Visualization Lab (Matplotlib Studio)</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Concentration-time curves (Oral vs IV), ADR reporting rates, dissolution profiles &amp; scientific interpretation.</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -371,8 +371,8 @@ print("Generated Array:", arr)`);
                 <button
                   key={p.id}
                   onClick={() => setPlotType(p.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                    plotType === p.id ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all ${
+                    plotType === p.id ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
                   {p.label}
@@ -383,34 +383,34 @@ print("Generated Array:", arr)`);
 
           {plotType === 'pk_curve' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4 bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-4">
+              <div className="lg:col-span-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-4">
                 <div>
-                  <div className="flex justify-between text-xs text-slate-400 mb-1">
+                  <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 mb-1">
                     <span>Dose (mg)</span>
-                    <span className="font-mono text-emerald-400">{oralDose} mg</span>
+                    <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{oralDose} mg</span>
                   </div>
                   <input type="range" min="100" max="1000" step="50" value={oralDose} onChange={(e) => setOralDose(Number(e.target.value))} className="w-full accent-emerald-500" />
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs text-slate-400 mb-1">
+                  <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 mb-1">
                     <span>Absorption Rate (ka /hr)</span>
-                    <span className="font-mono text-blue-400">{kaRate.toFixed(2)}</span>
+                    <span className="font-semibold tabular-nums text-blue-600 dark:text-blue-400">{kaRate.toFixed(2)}</span>
                   </div>
                   <input type="range" min="0.4" max="2.5" step="0.1" value={kaRate} onChange={(e) => setKaRate(Number(e.target.value))} className="w-full accent-blue-500" />
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs text-slate-400 mb-1">
+                  <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 mb-1">
                     <span>Elimination Rate (ke /hr)</span>
-                    <span className="font-mono text-amber-400">{keRate.toFixed(2)}</span>
+                    <span className="font-semibold tabular-nums text-amber-600 dark:text-amber-400">{keRate.toFixed(2)}</span>
                   </div>
                   <input type="range" min="0.05" max="0.45" step="0.01" value={keRate} onChange={(e) => setKeRate(Number(e.target.value))} className="w-full accent-amber-500" />
                 </div>
-                <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 space-y-1">
-                  <p className="font-bold text-emerald-400">Scientific Interpretation:</p>
-                  <p>IV Bolus exhibits immediate peak concentration (C₀ = {(oralDose / vd).toFixed(1)} mg/L) followed by mono-exponential decay. Oral curve shows an absorption phase rising to Cmax before elimination dominates (t₁/₂ = {(0.693 / keRate).toFixed(2)} h).</p>
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3.5 text-sm text-slate-700 dark:text-slate-300 space-y-1">
+                  <p className="font-bold text-emerald-700 dark:text-emerald-400">Scientific Interpretation:</p>
+                  <p className="leading-relaxed">IV Bolus exhibits immediate peak concentration (C₀ = {(oralDose / vd).toFixed(1)} mg/L) followed by mono-exponential decay. Oral curve shows an absorption phase rising to Cmax before elimination dominates (t₁/₂ = {(0.693 / keRate).toFixed(2)} h).</p>
                 </div>
               </div>
-              <div className="lg:col-span-8 bg-slate-950 border border-slate-800 rounded-xl p-4">
+              <div className="lg:col-span-8 bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
                 <svg viewBox="0 0 560 260" className="w-full h-64">
                   <text x="280" y="18" textAnchor="middle" fill="#e2e8f0" fontSize="12" fontWeight="bold">Plasma Concentration vs Time (Oral vs IV Bolus)</text>
                   <line x1="60" y1="30" x2="60" y2="215" stroke="#475569" strokeWidth="1.5" />
@@ -444,7 +444,7 @@ print("Generated Array:", arr)`);
           )}
 
           {plotType === 'adr_bar' && (
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+            <div className="bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
               <svg viewBox="0 0 560 250" className="w-full h-60">
                 <text x="280" y="18" textAnchor="middle" fill="#e2e8f0" fontSize="12" fontWeight="bold">ADR Reporting Rates Across Drugs (per 1,000 Prescriptions)</text>
                 <line x1="60" y1="30" x2="60" y2="205" stroke="#475569" strokeWidth="1.5" />
@@ -462,12 +462,12 @@ print("Generated Array:", arr)`);
                   );
                 })}
               </svg>
-              <p className="text-xs text-slate-400 mt-2"><strong>Interpretation:</strong> NSAIDs (Ibuprofen, Aspirin) show elevated ADR reporting rates requiring gastro-protective co-therapy monitoring.</p>
+              <p className="text-sm text-slate-300 mt-2"><strong>Interpretation:</strong> NSAIDs (Ibuprofen, Aspirin) show elevated ADR reporting rates requiring gastro-protective co-therapy monitoring.</p>
             </div>
           )}
 
           {plotType === 'dissolution' && (
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+            <div className="bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
               <svg viewBox="0 0 560 250" className="w-full h-60">
                 <text x="280" y="18" textAnchor="middle" fill="#e2e8f0" fontSize="12" fontWeight="bold">In-Vitro Drug Dissolution Profile (% Drug Released vs Time)</text>
                 <line x1="60" y1="30" x2="60" y2="205" stroke="#475569" strokeWidth="1.5" />
@@ -495,12 +495,12 @@ print("Generated Array:", arr)`);
                 <text x="410" y="55" fill="#10b981" fontSize="10">● Immediate Release (IR)</text>
                 <text x="410" y="72" fill="#f59e0b" fontSize="10">● Sustained Release (SR)</text>
               </svg>
-              <p className="text-xs text-slate-400 mt-2"><strong>Interpretation:</strong> Immediate release achieves &gt;80% dissolution within 30 min (IP Q-spec), whereas Sustained Release follows zero/first-order extended release over 120+ min.</p>
+              <p className="text-sm text-slate-300 mt-2"><strong>Interpretation:</strong> Immediate release achieves &gt;80% dissolution within 30 min (IP Q-spec), whereas Sustained Release follows zero/first-order extended release over 120+ min.</p>
             </div>
           )}
 
           {plotType === 'boxplot' && (
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+            <div className="bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
               <svg viewBox="0 0 560 240" className="w-full h-56">
                 <text x="280" y="18" textAnchor="middle" fill="#e2e8f0" fontSize="12" fontWeight="bold">Box Plot: Tablet Assay (% Label Claim) Across 3 Batches</text>
                 <line x1="60" y1="30" x2="60" y2="205" stroke="#475569" strokeWidth="1.5" />
@@ -520,19 +520,19 @@ print("Generated Array:", arr)`);
                   </g>
                 ))}
               </svg>
-              <p className="text-xs text-slate-400 mt-2"><strong>Interpretation:</strong> Narrow interquartile range (IQR) in Batch C demonstrates superior content uniformity and process control compared to Batch B.</p>
+              <p className="text-sm text-slate-300 mt-2"><strong>Interpretation:</strong> Narrow interquartile range (IQR) in Batch C demonstrates superior content uniformity and process control compared to Batch B.</p>
             </div>
           )}
         </div>
       )}
 
       {/* Live Python Editor & Console */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
           <div className="flex items-center space-x-2.5">
-            <Code className="w-5 h-5 text-emerald-400" />
+            <Code className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             <div>
-              <h3 className="text-lg font-bold text-white">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                 {activeUnit === 'unit1-2' && 'Unit I & II: Pharmaceutical Scripting, BMI & Dosage Functions'}
                 {activeUnit === 'unit3' && 'Unit III: Data Structures, CSV & NumPy Tablet QC'}
                 {activeUnit === 'unit4' && 'Unit IV: Pandas ADR Clinical Dataset & Grouping'}
@@ -540,13 +540,13 @@ print("Generated Array:", arr)`);
                 {activeUnit === 'practical5' && 'Practical 5: Accelerated Stability & Arrhenius Kinetics'}
                 {activeUnit === 'sandbox' && 'Custom Python 3.11 Sandbox Environment'}
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 {isLoadingPyodide ? runtimeStatus : 'Edit code below and execute live in your browser.'}
               </p>
             </div>
           </div>
           {isLoadingPyodide && (
-            <div className="flex items-center space-x-2 text-xs text-blue-400">
+            <div className="flex items-center space-x-2 text-sm text-blue-600 dark:text-blue-400">
               <RefreshCw className="w-4 h-4 animate-spin" />
               <span>Loading Pyodide...</span>
             </div>
@@ -556,23 +556,23 @@ print("Generated Array:", arr)`);
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 flex flex-col space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
-                <Terminal className="w-4 h-4 text-blue-400" />
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-2">
+                <Terminal className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <span>Live Python Code Editor</span>
               </span>
-              <span className="text-[11px] text-slate-500 font-mono">Python 3.11 WebAssembly</span>
+              <span className="text-xs text-slate-500">Python 3.11 WebAssembly</span>
             </div>
             <textarea
               rows={14}
               value={getCurrentCode()}
               onChange={(e) => setCurrentCode(e.target.value)}
               disabled={isLoadingPyodide}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500 disabled:opacity-50 leading-relaxed resize-y"
+              className="w-full bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-sm font-code text-emerald-300 focus:outline-none focus:border-emerald-500 disabled:opacity-50 leading-relaxed resize-y"
             />
             <button
               onClick={() => executeCode(getCurrentCode())}
               disabled={isLoadingPyodide}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all shadow-lg shadow-emerald-950 cursor-pointer"
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm flex items-center justify-center space-x-2 transition-all shadow-sm dark:shadow-lg dark:shadow-emerald-950 cursor-pointer"
             >
               <Play className="w-4 h-4 fill-current" />
               <span>{isLoadingPyodide ? 'Initializing Python Engine...' : 'Run in Browser'}</span>
@@ -580,12 +580,12 @@ print("Generated Array:", arr)`);
           </div>
 
           <div className="lg:col-span-5 flex flex-col space-y-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
               Console Output
             </span>
-            <div className="bg-black border border-slate-800 rounded-xl p-4 font-mono text-xs h-[360px] overflow-y-auto space-y-1">
+            <div className="bg-slate-950 dark:bg-black border border-slate-200 dark:border-slate-800 rounded-xl p-4 font-code text-sm h-[360px] overflow-y-auto space-y-1">
               {consoleOutput.map((line, i) => (
-                <div key={i} className={line.includes('Error') || line.includes('FAIL') ? 'text-rose-400 font-bold' : line.startsWith('>>>') ? 'text-slate-500' : 'text-emerald-300 whitespace-pre-wrap'}>
+                <div key={i} className={line.includes('Error') || line.includes('FAIL') ? 'text-rose-400 font-bold' : line.startsWith('>>>') ? 'text-slate-400' : 'text-emerald-300 whitespace-pre-wrap'}>
                   {line}
                 </div>
               ))}

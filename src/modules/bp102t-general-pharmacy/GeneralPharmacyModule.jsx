@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FlaskConical, Calculator, Scale, Droplet, CheckCircle2, BookOpen, Tag, Package } from 'lucide-react';
 
-export default function GeneralPharmacyModule() {
-  const [activeTab, setActiveTab] = useState('experiments');
+export default function GeneralPharmacyModule({ initialTab, navNonce }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'experiments');
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab, navNonce]);
 
   // Existing Calculator States
   const [highConc, setHighConc] = useState(20);
@@ -31,6 +35,18 @@ export default function GeneralPharmacyModule() {
   const [selectedPrepId, setSelectedPrepId] = useState('sol_ammonium');
   const [batchFactor, setBatchFactor] = useState(1.0);
   const [completedSteps, setCompletedSteps] = useState({});
+
+  // Posology & Proof Spirit / Ratio Dilution State (BP102T Unit II)
+  const [adultDoseMg, setAdultDoseMg] = useState(500);
+  const [childAgeYrs, setChildAgeYrs] = useState(6);
+  const [childAgeMonths, setChildAgeMonths] = useState(10);
+  const [childWtKg, setChildWtKg] = useState(20);
+  const [childBsaM2, setChildBsaM2] = useState(0.8);
+  const [spiritVvPct, setSpiritVvPct] = useState(95);
+  const [ratioStockPct, setRatioStockPct] = useState(10);
+  const [ratioTarget1InX, setRatioTarget1InX] = useState(500);
+  const [ratioVolMl, setRatioVolMl] = useState(250);
+  const [bp102Unit, setBp102Unit] = useState('u1');
 
   const bp107pPreparations = [
     {
@@ -399,6 +415,17 @@ export default function GeneralPharmacyModule() {
   const naclEquivalentOfDrug = isoDrugGrams * eValue;
   const additionalNaclNeeded = naclNeededForIsotonic - naclEquivalentOfDrug;
 
+  // Posology & Proof Spirit Calculations
+  const youngsDose = adultDoseMg * (childAgeYrs / (childAgeYrs + 12));
+  const dillingDose = adultDoseMg * (childAgeYrs / 20);
+  const clarkDose = adultDoseMg * ((childWtKg * 2.20462) / 150);
+  const friedDose = adultDoseMg * (childAgeMonths / 150);
+  const bsaDose = adultDoseMg * (childBsaM2 / 1.73);
+  const proofStrength = spiritVvPct * 1.753;
+  const proofLabel = proofStrength >= 100 ? `${(proofStrength - 100).toFixed(1)}° O.P. (Over Proof)` : `${(100 - proofStrength).toFixed(1)}° U.P. (Under Proof)`;
+  const targetRatioPct = ratioTarget1InX > 0 ? (100 / ratioTarget1InX) : 0;
+  const ratioStockMl = ratioStockPct > 0 ? (targetRatioPct * ratioVolMl) / ratioStockPct : 0;
+
   const filteredLatin = latinDictionary.filter((item) =>
     item.term.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.meaning.toLowerCase().includes(searchTerm.toLowerCase())
@@ -412,32 +439,34 @@ export default function GeneralPharmacyModule() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 text-slate-100 pb-12">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">PCI B.Pharm • General Pharmacy (Practical) • BP102T / BP107P</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">General Pharmacy Laboratory Suite</h2>
-        <p className="text-slate-400 text-sm mt-1">
+    <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
+        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">PCI B.Pharm &bull; General Pharmacy (Practical) &bull; BP102T / BP107P</span>
+        <h2 className="text-2xl md:text-3xl font-bold mt-1.5 text-slate-900 dark:text-white">General Pharmacy Laboratory Suite</h2>
+        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base mt-1.5 leading-relaxed">
           All 15 official IP/BPC/WHO compounding experiments (Solutions, Syrups, Powders, Suppositories, Semisolids, Gargles &amp; Mouthwashes), batch scaling, dispensing labels, and pharmaceutical calculators.
         </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
         {[
-          { id: 'experiments', label: '🧪 BP107P Wet-Lab Experiments (2–7)' },
-          { id: 'alligation', label: '⚖️ Alligation Calculator' },
-          { id: 'alcohol', label: '💧 Alcohol Dilution' },
-          { id: 'suppository', label: '💊 Suppository Displacement' },
-          { id: 'isotonicity', label: '🧫 Isotonicity Adjustment' },
-          { id: 'prescription', label: '📝 Prescription & Latin' },
-          { id: 'compendium', label: '📦 Marketed Compendia' }
+          { id: 'experiments', label: 'BP107P Wet-Lab Experiments (2–7)' },
+          { id: 'theory', label: 'BP102T Theory (Units I–V)' },
+          { id: 'posology_proof', label: 'Posology & Proof Spirit' },
+          { id: 'alligation', label: 'Alligation Calculator' },
+          { id: 'alcohol', label: 'Alcohol Dilution' },
+          { id: 'suppository', label: 'Suppository Displacement' },
+          { id: 'isotonicity', label: 'Isotonicity Adjustment' },
+          { id: 'prescription', label: 'Prescription & Latin' },
+          { id: 'compendium', label: 'Marketed Compendia' }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
               activeTab === tab.id
-                ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 shadow-lg'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             {tab.label}
@@ -448,42 +477,42 @@ export default function GeneralPharmacyModule() {
       {/* BP107P COMPOUNDING WORKBENCH */}
       {activeTab === 'experiments' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-2 max-h-[680px] overflow-y-auto">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 px-2 block pb-1">
+          <div className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm dark:shadow-xl space-y-2 max-h-[680px] overflow-y-auto">
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 px-2 block pb-1">
               BP107P Official Practicals (15 Formulations)
             </span>
             {bp107pPreparations.map((prep) => (
               <button
                 key={prep.id}
                 onClick={() => setSelectedPrepId(prep.id)}
-                className={`w-full text-left p-3 rounded-xl border transition-all ${
+                className={`w-full text-left p-3.5 rounded-xl border transition-all ${
                   selectedPrepId === prep.id
-                    ? 'bg-emerald-600/20 border-emerald-500 text-white'
-                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                    ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-slate-900 dark:text-white'
+                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                <div className="flex items-center justify-between text-[10px] font-mono text-emerald-400">
+                <div className="flex items-center justify-between text-xs font-medium text-emerald-600 dark:text-emerald-400">
                   <span>{prep.category}</span>
-                  <span>{prep.code}</span>
+                  <span className="tabular-nums">{prep.code}</span>
                 </div>
-                <p className="text-xs font-semibold mt-1">{prep.name}</p>
+                <p className="text-sm font-semibold mt-1">{prep.name}</p>
               </button>
             ))}
           </div>
 
-          <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-4">
+          <div className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
               <div>
-                <span className="text-xs font-mono text-blue-400">{selectedPrep.category} &bull; {selectedPrep.code}</span>
-                <h3 className="text-xl font-bold text-white mt-0.5">{selectedPrep.name}</h3>
-                <p className="text-xs text-slate-400 mt-1">Category: {selectedPrep.type} &bull; Use: {selectedPrep.use}</p>
+                <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">{selectedPrep.category} &bull; {selectedPrep.code}</span>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">{selectedPrep.name}</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Category: {selectedPrep.type} &bull; Use: {selectedPrep.use}</p>
               </div>
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs">
-                <label className="block text-[10px] text-slate-400 uppercase mb-1">Batch Scaling Factor</label>
+              <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-sm">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Batch Scaling Factor</label>
                 <select
                   value={batchFactor}
                   onChange={(e) => setBatchFactor(parseFloat(e.target.value))}
-                  className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-emerald-400 font-mono"
+                  className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums"
                 >
                   <option value={0.5}>0.5× (Half Batch)</option>
                   <option value={1.0}>1.0× ({selectedPrep.baseSize})</option>
@@ -494,25 +523,25 @@ export default function GeneralPharmacyModule() {
             </div>
 
             {/* Working Formula Table */}
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-3">
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mb-3">
                 Master &amp; Working Formula (Scaled {batchFactor}×)
               </h4>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
+                <table className="w-full text-sm text-left">
                   <thead>
-                    <tr className="border-b border-slate-800 text-slate-400">
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-xs">
                       <th className="pb-2">Ingredient</th>
                       <th className="pb-2 text-right">Official Qty</th>
-                      <th className="pb-2 text-right text-emerald-400">Working Qty</th>
+                      <th className="pb-2 text-right text-emerald-600 dark:text-emerald-400">Working Qty</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
                     {selectedPrep.formula.map((item, i) => (
                       <tr key={i}>
-                        <td className="py-2 text-slate-200">{item.ingredient}</td>
-                        <td className="py-2 text-right font-mono text-slate-400">{item.qty} {item.unit}</td>
-                        <td className="py-2 text-right font-mono font-bold text-emerald-400">{(item.qty * batchFactor).toFixed(2)} {item.unit}</td>
+                        <td className="py-2.5 text-slate-800 dark:text-slate-200">{item.ingredient}</td>
+                        <td className="py-2.5 text-right text-slate-600 dark:text-slate-400 tabular-nums">{item.qty} {item.unit}</td>
+                        <td className="py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{(item.qty * batchFactor).toFixed(2)} {item.unit}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -521,19 +550,19 @@ export default function GeneralPharmacyModule() {
             </div>
 
             {/* Compounding Procedure Checklist */}
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2.5">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-blue-400">Step-by-Step Compounding Procedure</h4>
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2.5">
+              <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400">Step-by-Step Compounding Procedure</h4>
               {selectedPrep.steps.map((step, idx) => {
                 const done = !!completedSteps[`${selectedPrep.id}-${idx}`];
                 return (
                   <button
                     key={idx}
                     onClick={() => toggleStep(idx)}
-                    className={`w-full text-left p-3 rounded-lg border text-xs flex items-start space-x-3 transition-all ${
-                      done ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200' : 'bg-slate-900 border-slate-800 text-slate-300'
+                    className={`w-full text-left p-3.5 rounded-lg border text-sm flex items-start space-x-3 transition-all leading-relaxed ${
+                      done ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-500/40 text-emerald-800 dark:text-emerald-200' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                     }`}
                   >
-                    <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${done ? 'text-emerald-400' : 'text-slate-600'}`} />
+                    <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${done ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-600'}`} />
                     <span><strong>Step {idx + 1}:</strong> {step}</span>
                   </button>
                 );
@@ -541,52 +570,52 @@ export default function GeneralPharmacyModule() {
             </div>
 
             {/* Pharmacopoeial Dispensing Label Preview */}
-            <div className="bg-slate-950 border-2 border-dashed border-slate-700 rounded-xl p-4 space-y-2">
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-400">
-                <span className="flex items-center space-x-1"><Tag className="w-3.5 h-3.5 text-amber-400" /><span>Dispensing Label Preview</span></span>
+            <div className="bg-slate-50 dark:bg-slate-950 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
+                <span className="flex items-center space-x-1.5"><Tag className="w-4 h-4 text-amber-600 dark:text-amber-400" /><span>Dispensing Label Preview</span></span>
                 <span>PharmLab Model Pharmacy</span>
               </div>
-              <p className="text-sm font-bold text-white">{selectedPrep.name}</p>
-              <p className="text-xs text-rose-400 font-bold uppercase">{selectedPrep.auxiliaryLabel}</p>
-              <p className="text-[11px] text-slate-400">Storage: {selectedPrep.storage}</p>
+              <p className="text-base font-bold text-slate-900 dark:text-white">{selectedPrep.name}</p>
+              <p className="text-sm text-rose-600 dark:text-rose-400 font-bold">{selectedPrep.auxiliaryLabel}</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">Storage: {selectedPrep.storage}</p>
             </div>
           </div>
         </div>
       )}
 
       {activeTab === 'alligation' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <h3 className="text-lg font-bold text-white">Alligation Medial / Alternate Calculator</h3>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Alligation Medial / Alternate Calculator</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="lg:col-span-5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Higher Concentration Stock (%)</label>
-                <input type="number" value={highConc} onChange={e => setHighConc(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Higher Concentration Stock (%)</label>
+                <input type="number" value={highConc} onChange={e => setHighConc(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Lower Concentration Stock (%)</label>
-                <input type="number" value={lowConc} onChange={e => setLowConc(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Lower Concentration Stock (%)</label>
+                <input type="number" value={lowConc} onChange={e => setLowConc(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Target Desired Concentration (%)</label>
-                <input type="number" value={targetConc} onChange={e => setTargetConc(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Target Desired Concentration (%)</label>
+                <input type="number" value={targetConc} onChange={e => setTargetConc(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Total Desired Final Volume (mL)</label>
-                <input type="number" value={totalVolume} onChange={e => setTotalVolume(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Total Desired Final Volume (mL)</label>
+                <input type="number" value={totalVolume} onChange={e => setTotalVolume(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
             </div>
-            <div className="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
+            <div className="lg:col-span-7 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-6 flex flex-col justify-between">
               <div className="space-y-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Results</span>
+                <span className="text-sm font-bold text-blue-600 dark:text-blue-400">Results</span>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">Higher Parts</span>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{highParts} parts ({highVolume.toFixed(1)} mL)</p>
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-center">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Higher Parts</span>
+                    <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">{highParts} parts ({highVolume.toFixed(1)} mL)</p>
                   </div>
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-                    <span className="text-[10px] text-slate-400 uppercase">Lower Parts</span>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{lowParts} parts ({lowVolume.toFixed(1)} mL)</p>
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-center">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Lower Parts</span>
+                    <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">{lowParts} parts ({lowVolume.toFixed(1)} mL)</p>
                   </div>
                 </div>
               </div>
@@ -596,112 +625,116 @@ export default function GeneralPharmacyModule() {
       )}
 
       {activeTab === 'alcohol' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <h3 className="text-lg font-bold text-white">Alcohol Strength &amp; Dilution Calculator</h3>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Alcohol Strength &amp; Dilution Calculator</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="lg:col-span-5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Stock Strength (%)</label>
-                <input type="number" value={stockAlcohol} onChange={e => setStockAlcohol(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Stock Strength (%)</label>
+                <input type="number" value={stockAlcohol} onChange={e => setStockAlcohol(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Target Strength (%)</label>
-                <input type="number" value={targetAlcohol} onChange={e => setTargetAlcohol(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Target Strength (%)</label>
+                <input type="number" value={targetAlcohol} onChange={e => setTargetAlcohol(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Final Volume (mL)</label>
-                <input type="number" value={finalVolumeMl} onChange={e => setFinalVolumeMl(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Final Volume (mL)</label>
+                <input type="number" value={finalVolumeMl} onChange={e => setFinalVolumeMl(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
             </div>
-            <div className="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col justify-center">
-              <p className="text-sm text-emerald-400 font-bold">Volume of Stock Alcohol: {volumeOfStock.toFixed(2)} mL</p>
-              <p className="text-sm text-blue-400 font-bold mt-2">Water to Add: {Math.max(0, volumeOfWater).toFixed(2)} mL</p>
+            <div className="lg:col-span-7 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-6 flex flex-col justify-center space-y-2">
+              <p className="text-base text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">Volume of Stock Alcohol: {volumeOfStock.toFixed(2)} mL</p>
+              <p className="text-base text-blue-600 dark:text-blue-400 font-bold tabular-nums">Water to Add: {Math.max(0, volumeOfWater).toFixed(2)} mL</p>
             </div>
           </div>
         </div>
       )}
 
       {activeTab === 'suppository' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <h3 className="text-lg font-bold text-white">Suppository Displacement Value Calculator</h3>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Suppository Displacement Value Calculator</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="lg:col-span-5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Drug Weight per Suppository (g)</label>
-                <input type="number" step="0.1" value={drugWeight} onChange={e => setDrugWeight(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Drug Weight per Suppository (g)</label>
+                <input type="number" step="0.1" value={drugWeight} onChange={e => setDrugWeight(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Displacement Value (DV)</label>
-                <input type="number" step="0.05" value={displacementValue} onChange={e => setDisplacementValue(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Displacement Value (DV)</label>
+                <input type="number" step="0.05" value={displacementValue} onChange={e => setDisplacementValue(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Mould Size (g)</label>
-                <input type="number" step="0.1" value={suppositoryMouldSize} onChange={e => setSuppositoryMouldSize(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Mould Size (g)</label>
+                <input type="number" step="0.1" value={suppositoryMouldSize} onChange={e => setSuppositoryMouldSize(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Number of Suppositories</label>
-                <input type="number" value={numSuppositories} onChange={e => setNumSuppositories(parseInt(e.target.value) || 1)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Number of Suppositories</label>
+                <input type="number" value={numSuppositories} onChange={e => setNumSuppositories(parseInt(e.target.value) || 1)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
             </div>
-            <div className="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col justify-center">
-              <p className="text-sm text-emerald-400 font-bold">Total Active Drug: {totalDrugNeeded.toFixed(2)} g</p>
-              <p className="text-sm text-amber-400 font-bold mt-2">Total Cocoa Butter Base: {Math.max(0, totalBaseNeeded).toFixed(2)} g</p>
+            <div className="lg:col-span-7 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-6 flex flex-col justify-center space-y-2">
+              <p className="text-base text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">Total Active Drug: {totalDrugNeeded.toFixed(2)} g</p>
+              <p className="text-base text-amber-600 dark:text-amber-400 font-bold tabular-nums">Total Cocoa Butter Base: {Math.max(0, totalBaseNeeded).toFixed(2)} g</p>
             </div>
           </div>
         </div>
       )}
 
       {activeTab === 'isotonicity' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <h3 className="text-lg font-bold text-white">Isotonicity Adjustment (NaCl Equivalent Method)</h3>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Isotonicity Adjustment (NaCl Equivalent Method)</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="lg:col-span-5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Drug Quantity (g)</label>
-                <input type="number" step="0.1" value={isoDrugGrams} onChange={e => setIsoDrugGrams(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Drug Quantity (g)</label>
+                <input type="number" step="0.1" value={isoDrugGrams} onChange={e => setIsoDrugGrams(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Total Volume (mL)</label>
-                <input type="number" value={isoVolumeMl} onChange={e => setIsoVolumeMl(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Total Volume (mL)</label>
+                <input type="number" value={isoVolumeMl} onChange={e => setIsoVolumeMl(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">E-value</label>
-                <input type="number" step="0.01" value={eValue} onChange={e => setEValue(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">E-value</label>
+                <input type="number" step="0.01" value={eValue} onChange={e => setEValue(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
               </div>
             </div>
-            <div className="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col justify-center">
-              <p className="text-sm text-blue-400 font-bold">NaCl Needed for 0.9%: {naclNeededForIsotonic.toFixed(3)} g</p>
-              <p className="text-sm text-emerald-400 font-bold mt-2">NaCl Equivalent of Drug: {naclEquivalentOfDrug.toFixed(3)} g</p>
-              <p className="text-sm text-amber-400 font-bold mt-2">Additional NaCl Required: {Math.max(0, additionalNaclNeeded).toFixed(3)} g</p>
+            <div className="lg:col-span-7 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-6 flex flex-col justify-center space-y-2">
+              <p className="text-base text-blue-600 dark:text-blue-400 font-bold tabular-nums">NaCl Needed for 0.9%: {naclNeededForIsotonic.toFixed(3)} g</p>
+              <p className="text-base text-emerald-600 dark:text-emerald-400 font-bold tabular-nums">NaCl Equivalent of Drug: {naclEquivalentOfDrug.toFixed(3)} g</p>
+              <p className="text-base text-amber-600 dark:text-amber-400 font-bold tabular-nums">Additional NaCl Required: {Math.max(0, additionalNaclNeeded).toFixed(3)} g</p>
             </div>
           </div>
         </div>
       )}
 
       {activeTab === 'prescription' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <h3 className="text-lg font-bold text-white">Prescription Latin Decoder &amp; Dose Safety Checker</h3>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Prescription Latin Decoder &amp; Dose Safety Checker</h3>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <label className="block text-xs text-slate-400 mb-1">Select Drug</label>
-              <select value={selectedDrug} onChange={e => setSelectedDrug(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white">
-                {Object.keys(drugDatabase).map(drug => (
-                  <option key={drug} value={drug}>{drug}</option>
-                ))}
-              </select>
-              <label className="block text-xs text-slate-400 mb-1">Prescribed Single Dose (mg)</label>
-              <input type="number" value={prescribedDose} onChange={e => setPrescribedDose(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white" />
-              <p className={`text-xs font-bold mt-2 ${isDoseSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <div className="lg:col-span-6 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Select Drug</label>
+                <select value={selectedDrug} onChange={e => setSelectedDrug(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white">
+                  {Object.keys(drugDatabase).map(drug => (
+                    <option key={drug} value={drug}>{drug}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Prescribed Single Dose (mg)</label>
+                <input type="number" value={prescribedDose} onChange={e => setPrescribedDose(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+              </div>
+              <p className={`text-sm font-bold mt-2 ${isDoseSafe ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                 {isDoseSafe ? '✓ SAFE (Within Limits)' : '⚠ WARNING: Exceeds Single Dose!'}
               </p>
             </div>
-            <div className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <input type="text" placeholder="Search Latin term..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white mb-2" />
-              <div className="h-44 overflow-y-auto space-y-2">
+            <div className="lg:col-span-6 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+              <input type="text" placeholder="Search Latin term..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+              <div className="h-48 overflow-y-auto space-y-2">
                 {filteredLatin.map((item, i) => (
-                  <div key={i} className="bg-slate-900 p-2 rounded text-xs flex justify-between">
-                    <span className="font-mono text-blue-400">{item.term}</span>
-                    <span className="text-slate-300">{item.meaning}</span>
+                  <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-transparent p-2.5 rounded-lg text-sm flex justify-between gap-2">
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">{item.term}</span>
+                    <span className="text-slate-700 dark:text-slate-300 text-right">{item.meaning}</span>
                   </div>
                 ))}
               </div>
@@ -711,18 +744,18 @@ export default function GeneralPharmacyModule() {
       )}
 
       {activeTab === 'compendium' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-          <div className="flex items-center space-x-2 text-emerald-400 border-b border-slate-800 pb-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+          <div className="flex items-center space-x-2.5 text-emerald-600 dark:text-emerald-400 border-b border-slate-200 dark:border-slate-800 pb-3">
             <Package className="w-5 h-5" />
             <div>
-              <h3 className="text-lg font-bold text-white">Compendium of Marketed Dosage Forms (BP107P Note)</h3>
-              <p className="text-xs text-slate-400">Evaluation of marketed preparations against IP/BPC/WHO labeling and patient-centric compliance.</p>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Compendium of Marketed Dosage Forms (BP107P Note)</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Evaluation of marketed preparations against IP/BPC/WHO labeling and patient-centric compliance.</p>
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
+            <table className="w-full text-sm text-left">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase">
+                <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 text-xs">
                   <th className="py-2.5 px-3">Marketed Brand</th>
                   <th className="py-2.5 px-3">Active Composition</th>
                   <th className="py-2.5 px-3">Dosage Form</th>
@@ -730,19 +763,164 @@ export default function GeneralPharmacyModule() {
                   <th className="py-2.5 px-3">Labeling &amp; Patient Counseling</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
                 {marketedCompendium.map((c, idx) => (
-                  <tr key={idx} className="hover:bg-slate-800/40">
-                    <td className="py-3 px-3 font-bold text-emerald-400">{c.brand}</td>
-                    <td className="py-3 px-3 text-slate-200">{c.generic}</td>
-                    <td className="py-3 px-3 text-blue-300">{c.form}</td>
-                    <td className="py-3 px-3 font-mono text-slate-400">{c.standard}</td>
-                    <td className="py-3 px-3 text-slate-300">{c.labelReq}</td>
+                  <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <td className="py-3 px-3 font-bold text-emerald-600 dark:text-emerald-400">{c.brand}</td>
+                    <td className="py-3 px-3 text-slate-800 dark:text-slate-200">{c.generic}</td>
+                    <td className="py-3 px-3 text-blue-600 dark:text-blue-300">{c.form}</td>
+                    <td className="py-3 px-3 font-medium text-slate-600 dark:text-slate-400">{c.standard}</td>
+                    <td className="py-3 px-3 text-slate-700 dark:text-slate-300">{c.labelReq}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* POSOLOGY, PROOF SPIRIT & RATIO DILUTION */}
+      {activeTab === 'posology_proof' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-sm">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-emerald-600 dark:text-emerald-400">Posology: Pediatric Dose Calculators</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Adult Dose (mg)</label>
+                <input type="number" value={adultDoseMg} onChange={(e) => setAdultDoseMg(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Child Age (Years)</label>
+                <input type="number" value={childAgeYrs} onChange={(e) => setChildAgeYrs(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Infant Age (Months)</label>
+                <input type="number" value={childAgeMonths} onChange={(e) => setChildAgeMonths(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Child Weight (kg)</label>
+                <input type="number" value={childWtKg} onChange={(e) => setChildWtKg(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Child BSA (m²) [Adult Ref: 1.73 m²]</label>
+                <input type="number" step="0.05" value={childBsaM2} onChange={(e) => setChildBsaM2(parseFloat(e.target.value) || 0)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {[
+                { label: "Young's Rule (Age/(Age+12))", val: youngsDose },
+                { label: "Dilling's Rule (Age/20)", val: dillingDose },
+                { label: "Clark's Rule (Weight lb/150)", val: clarkDose },
+                { label: "Fried's Rule (Months/150)", val: friedDose },
+                { label: "BSA Method (BSA/1.73)", val: bsaDose }
+              ].map((r) => (
+                <div key={r.label} className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 flex justify-between items-center gap-2">
+                  <span className="text-xs text-slate-600 dark:text-slate-400">{r.label}</span>
+                  <strong className="text-emerald-600 dark:text-emerald-400 tabular-nums shrink-0">{r.val.toFixed(1)} mg</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400">Proof Spirit &amp; Ratio Dilution Calculator</h3>
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
+              <label className="block text-sm font-medium text-slate-600 dark:text-slate-400">Ethanol Strength (% v/v) — [57.1% v/v = 100° Proof]</label>
+              <input type="number" step="0.5" value={spiritVvPct} onChange={(e) => setSpiritVvPct(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+              <div className="flex flex-wrap justify-between items-center gap-2 pt-1">
+                <span>Proof Spirit Equivalent: <strong className="text-emerald-600 dark:text-emerald-400 tabular-nums">{proofStrength.toFixed(1)}° Proof</strong></span>
+                <span className="font-bold text-amber-600 dark:text-amber-400">{proofLabel}</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
+              <p className="font-bold text-slate-900 dark:text-white">Ratio (1 in X) Solution Preparation</p>
+              <div className="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Stock (% w/v)</label>
+                  <input type="number" value={ratioStockPct} onChange={(e) => setRatioStockPct(parseFloat(e.target.value) || 1)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Target 1 in X</label>
+                  <input type="number" value={ratioTarget1InX} onChange={(e) => setRatioTarget1InX(parseFloat(e.target.value) || 1)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Final Vol (mL)</label>
+                  <input type="number" value={ratioVolMl} onChange={(e) => setRatioVolMl(parseFloat(e.target.value) || 0)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" />
+                </div>
+              </div>
+              <p className="text-emerald-700 dark:text-emerald-300 leading-relaxed">Take <strong className="tabular-nums">{ratioStockMl.toFixed(2)} mL</strong> of {ratioStockPct}% stock (Target {targetRatioPct.toFixed(3)}% w/v) + Purified Water q.s. to {ratioVolMl} mL.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BP102T THEORY (UNITS I-V) */}
+      {activeTab === 'theory' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5 text-sm leading-relaxed">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'u1', label: 'Unit I: History, Pharmacopoeias & Prescription' },
+              { id: 'u2', label: 'Unit II: Calculations, Posology & Excipients' },
+              { id: 'u3', label: 'Unit III: Solid Dosage Forms' },
+              { id: 'u4', label: 'Unit IV: Monophasic & Biphasic Liquids' },
+              { id: 'u5', label: 'Unit V: Semisolids & Suppositories' }
+            ].map((u) => (
+              <button
+                key={u.id}
+                onClick={() => setBp102Unit(u.id)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
+                  bp102Unit === u.id ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {u.label}
+              </button>
+            ))}
+          </div>
+          {bp102Unit === 'u1' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5">
+                <h4 className="font-bold text-emerald-600 dark:text-emerald-400 text-base">History &amp; Pharmacopoeias</h4>
+                <p className="text-slate-700 dark:text-slate-300"><strong>Indian Milestones:</strong> Bengal Chemical &amp; Pharmaceutical Works (1901, P.C. Ray), Chopra Committee (1931), Drugs &amp; Cosmetics Act (1940), Pharmacy Act (1948), PCI (1949), IP 1st Ed. (1955) to IP 2022.</p>
+                <p className="text-slate-700 dark:text-slate-300"><strong>Official Compendia:</strong> IP, BP, USP–NF, BPC, International Pharmacopoeia (WHO), National Formulary of India (NFI). IP Monograph includes Title, Chemical formula, Category, Dose, Description, Solubility, Identification, Tests, Assay, and Storage.</p>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5">
+                <h4 className="font-bold text-emerald-600 dark:text-emerald-400 text-base">Parts &amp; Handling of a Prescription</h4>
+                <p className="text-slate-700 dark:text-slate-300">1. Date &bull; 2. Patient Info &bull; 3. Superscription (℞ &quot;Take thou&quot;) &bull; 4. Inscription (Main ingredients &amp; quantities) &bull; 5. Subscription (Compounding directions to pharmacist) &bull; 6. Signatura (Sig. patient directions) &bull; 7. Renewal/Refill instructions &bull; 8. Prescriber Signature &amp; Reg. No.</p>
+              </div>
+            </div>
+          )}
+          {bp102Unit === 'u2' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5">
+              <h4 className="font-bold text-emerald-600 dark:text-emerald-400 text-base">Pharmaceutical Calculations, Routes &amp; Excipients</h4>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Metric System &amp; Conversions:</strong> 1 kg = 1000 g; 1 g = 1000 mg; 1 tsp = 5 mL; 1 tbsp = 15 mL; 1 fl.oz &approx; 30 mL. Geometric dilution ensures uniform blending when mixing small potent API quantities with bulk diluent.</p>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Dosage Form Classification:</strong> Solid (powders, tablets, capsules), Liquid (monophasic solutions/syrups/elixirs; biphasic suspensions/emulsions), Semisolid (ointments, creams, pastes, gels, suppositories), Gaseous (inhalers, aerosols).</p>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Excipients:</strong> Non-therapeutic adjuvants (diluents, binders, disintegrants, lubricants, preservatives, antioxidants, buffers, sweeteners, flavoring/coloring agents) ensuring stability, manufacturability, and bioavailability.</p>
+            </div>
+          )}
+          {bp102Unit === 'u3' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5">
+              <h4 className="font-bold text-emerald-600 dark:text-emerald-400 text-base">Solid Dosage Forms: Powders, Tablets &amp; Capsules</h4>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Powders:</strong> Bulk external (Dusting powders), Internal divided/bulk (ORS, Effervescent granules using citric + tartaric acid + NaHCO₃). Special problems: Efflorescent (loses crystal water &rarr; dampen), Hygroscopic/Deliquescent (absorbs moisture &rarr; double-wrap), Eutectic mixtures (menthol + camphor/thymol liquefy at room temp &rarr; add light MgCO₃/kaolin).</p>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Tablets:</strong> Compressed, Sugar/Film-coated, Enteric-coated (CAP/Eudragit), Chewable, Effervescent, Buccal/Sublingual, Lozenges, Moulded/Tablet Triturates. Methods: Wet granulation, Dry granulation (slugging/roller compaction), Direct compression.</p>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Capsules:</strong> Hard gelatin capsules (sizes #000 largest 1.37 mL to #5 smallest 0.13 mL; two-piece body &amp; cap) vs Soft gelatin capsules (one-piece hermetically sealed for oils/liquids, plasticized with glycerin/sorbitol).</p>
+            </div>
+          )}
+          {bp102Unit === 'u4' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5">
+              <h4 className="font-bold text-emerald-600 dark:text-emerald-400 text-base">Monophasic &amp; Biphasic Liquid Dosage Forms</h4>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Monophasic Internal vs External:</strong> Syrups (66.7% w/w sucrose), Elixirs (clear sweetened hydroalcoholic), Linctuses (viscous cough soothing), Aromatic waters vs Liniments (alcoholic/oily rubbed with friction — never on broken skin), Lotions (dabbed without friction), Throat paints (Mandl&apos;s), Gargles, Mouthwashes, Enemas, Ear/Eye/Nasal drops.</p>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Suspensions:</strong> Flocculated (loose porous cake, rapid sedimentation, easy redispersion, clear supernatant) vs Deflocculated (slow settling, dense non-redispersible hard cake). Stabilized via wetting agents &amp; structured vehicles.</p>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Emulsions (o/w vs w/o):</strong> Stabilized by surfactants (HLB 8–16 for o/w; 3–6 for w/o). Identification tests: Dilution test, Dye solubility test (Scarlet red / Amaranth), Electrical conductivity test, Cobalt chloride paper test.</p>
+            </div>
+          )}
+          {bp102Unit === 'u5' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5">
+              <h4 className="font-bold text-emerald-600 dark:text-emerald-400 text-base">Semisolids &amp; Suppositories / Pessaries</h4>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Semisolids:</strong> Ointments (oleaginous, absorption, emulsion, water-soluble PEG bases; prepared by trituration/fusion), Pastes (high 20–50% insoluble solids &rarr; stiff protective barrier), Creams (o/w vanishing vs w/o cold cream), Gels (transparent 3D polymeric networks e.g., Carbopol/HPMC).</p>
+              <p className="text-slate-700 dark:text-slate-300"><strong>Suppositories &amp; Pessaries:</strong> Solid conical body-cavity forms (rectal/vaginal/urethral). Cocoa butter melts at 34–35°C (watch overheating above 36°C forming unstable &alpha;/&gamma; polymorphs) vs Glycerogelatin/PEG bases which dissolve in secretions. Use Displacement Value (DV) whenever solids replace base weight.</p>
+            </div>
+          )}
         </div>
       )}
     </div>

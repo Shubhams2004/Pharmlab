@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquareHeart, Users, FileWarning, ClipboardCheck, Megaphone, BookHeart, CheckCircle2, AlertTriangle, Plus } from 'lucide-react';
 
-export default function PsychologyCommunicationModule() {
-  const [activeTab, setActiveTab] = useState('roleplay');
+export default function PsychologyCommunicationModule({ initialTab, navNonce }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'roleplay');
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab, navNonce]);
 
   // 1. Role Play & Simulation State
   const [selectedScenario, setSelectedScenario] = useState('chronic');
@@ -50,6 +54,7 @@ export default function PsychologyCommunicationModule() {
       return [];
     }
   });
+  const [theoryUnit, setTheoryUnit] = useState('u1');
 
   useEffect(() => {
     try {
@@ -212,31 +217,32 @@ export default function PsychologyCommunicationModule() {
   const activeParaphrase = paraphrasePrompts[paraphraseIdx];
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 text-slate-100 pb-12">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase">PCI B.Pharm • BP103T / BP108P • Practical Suite</span>
-        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-white">Healthcare Psychology &amp; Communication Skills Lab</h2>
-        <p className="text-slate-400 text-sm mt-1">
+    <div className="max-w-6xl mx-auto space-y-6 text-slate-900 dark:text-slate-100 pb-12">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl">
+        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">PCI B.Pharm · BP103T / BP108P · Practical Suite</span>
+        <h2 className="text-2xl md:text-3xl font-bold mt-1 text-slate-900 dark:text-white">Healthcare Psychology &amp; Communication Skills Lab</h2>
+        <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base mt-1 leading-relaxed">
           Interactive clinical role-plays (SPIKES, chronic care, crisis PFA), primary care case studies, SBAR &amp; paraphrasing practice, IEC designer, and reflective logs.
         </p>
       </div>
 
-      {/* Navigation Tabs matching BP108P 5 Practical Groups */}
+      {/* Navigation Tabs matching BP108P 5 Practical Groups + BP103T Theory */}
       <div className="flex flex-wrap gap-2">
         {[
           { id: 'roleplay', label: '1. Role Plays & Simulations' },
           { id: 'cases', label: '2. Case Study Discussions' },
           { id: 'peer', label: '3. Peer Practice (Paraphrasing & SBAR)' },
           { id: 'community', label: '4. Community IEC & Health Ed' },
-          { id: 'journal', label: '5. Self-Reflection Logs' }
+          { id: 'journal', label: '5. Self-Reflection Logs' },
+          { id: 'theory', label: 'BP103T Theory (Units I–V)' }
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+            className={`px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
               activeTab === tab.id
-                ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 shadow-lg'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-lg'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             {tab.label}
@@ -246,16 +252,16 @@ export default function PsychologyCommunicationModule() {
 
       {/* 1. ROLE PLAYS */}
       {activeTab === 'roleplay' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
             <div className="flex items-center space-x-2.5">
-              <MessageSquareHeart className="w-5 h-5 text-emerald-400" />
+              <MessageSquareHeart className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               <div>
-                <h3 className="text-lg font-bold text-white">Clinical Role-Play Simulator</h3>
-                <p className="text-xs text-slate-400">Select a BP108P scenario and choose the most therapeutic response.</p>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Clinical Role-Play Simulator</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Select a BP108P scenario and choose the most therapeutic response.</p>
               </div>
             </div>
-            <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
+            <span className="text-emerald-700 dark:text-emerald-300 text-sm font-semibold tabular-nums">
               Empathy Score: {empathyScore}%
             </span>
           </div>
@@ -269,8 +275,8 @@ export default function PsychologyCommunicationModule() {
               <button
                 key={sc.id}
                 onClick={() => { setSelectedScenario(sc.id); setSelectedChoice(null); setStepIndex(stepIndex + 1); }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold border ${
-                  selectedScenario === sc.id ? 'bg-blue-600/20 border-blue-500 text-blue-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+                className={`px-4 py-2 rounded-xl text-sm font-semibold border ${
+                  selectedScenario === sc.id ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-500 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 {sc.label}
@@ -278,23 +284,23 @@ export default function PsychologyCommunicationModule() {
             ))}
           </div>
 
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-            <h4 className="text-sm font-bold text-emerald-400">{activeRolePlay.title}</h4>
-            <div className="bg-slate-900 border-l-4 border-blue-500 p-4 rounded-r-xl text-sm text-slate-200 italic">
+          <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+            <h4 className="text-base font-bold text-emerald-700 dark:text-emerald-400">{activeRolePlay.title}</h4>
+            <div className="bg-white dark:bg-slate-900 border border-blue-500/30 p-4 rounded-xl text-base text-slate-800 dark:text-slate-200 italic">
               Patient says: {activeRolePlay.patientPrompt}
             </div>
             <div className="space-y-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 block">Select Your Response:</span>
+              <span className="text-sm font-semibold text-slate-600 dark:text-slate-400 block">Select Your Response:</span>
               {activeRolePlay.options.map((opt, idx) => (
                 <button
                   key={idx}
                   onClick={() => { setSelectedChoice(idx); setEmpathyScore(opt.score); }}
-                  className={`w-full text-left p-3.5 rounded-xl border text-xs transition-all ${
+                  className={`w-full text-left p-4 rounded-xl border text-sm leading-relaxed transition-all ${
                     selectedChoice === idx
                       ? opt.score === 100
-                        ? 'bg-emerald-500/15 border-emerald-500 text-emerald-200'
-                        : 'bg-amber-500/15 border-amber-500 text-amber-200'
-                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                        ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-200'
+                        : 'bg-amber-50 dark:bg-amber-500/15 border-amber-500 text-amber-900 dark:text-amber-200'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
                   }`}
                 >
                   {opt.text}
@@ -302,10 +308,10 @@ export default function PsychologyCommunicationModule() {
               ))}
             </div>
             {selectedChoice !== null && (
-              <div className={`p-4 rounded-xl border text-xs ${
+              <div className={`p-4 rounded-xl border text-sm leading-relaxed ${
                 activeRolePlay.options[selectedChoice].score === 100
-                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                  : 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500/40 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-rose-50 dark:bg-rose-950/30 border-rose-500/40 text-rose-800 dark:text-rose-200'
               }`}>
                 <strong>Clinical Communication Feedback:</strong> {activeRolePlay.options[selectedChoice].feedback}
               </div>
@@ -316,43 +322,43 @@ export default function PsychologyCommunicationModule() {
 
       {/* 2. CASE STUDIES */}
       {activeTab === 'cases' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
-            <FileWarning className="w-5 h-5 text-amber-400" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <div className="flex items-center space-x-2.5 border-b border-slate-200 dark:border-slate-800 pb-4">
+            <FileWarning className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             <div>
-              <h3 className="text-lg font-bold text-white">Case Study Discussions (BP108P)</h3>
-              <p className="text-xs text-slate-400">Analyze mental health presentations in primary care and healthcare miscommunication errors.</p>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Case Study Discussions (BP108P)</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Analyze mental health presentations in primary care and healthcare miscommunication errors.</p>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setActiveCase('mental_health')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold border ${
-                activeCase === 'mental_health' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border ${
+                activeCase === 'mental_health' ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
               }`}
             >
               Mental Health in Primary Care
             </button>
             <button
               onClick={() => setActiveCase('med_error')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold border ${
-                activeCase === 'med_error' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+              className={`px-4 py-2 rounded-xl text-sm font-semibold border ${
+                activeCase === 'med_error' ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
               }`}
             >
               Impact of Miscommunication in Errors
             </button>
           </div>
 
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-5">
-            <h4 className="text-sm font-bold text-white">{activeCaseData.title}</h4>
-            <p className="text-xs text-slate-300 leading-relaxed bg-slate-900 p-4 rounded-xl border border-slate-800">
+          <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-5">
+            <h4 className="text-base font-bold text-slate-900 dark:text-white">{activeCaseData.title}</h4>
+            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
               {activeCaseData.vignette}
             </p>
             <div className="space-y-4">
               {activeCaseData.questions.map((item) => (
                 <div key={item.id} className="space-y-2">
-                  <p className="text-xs font-semibold text-blue-300">{item.q}</p>
+                  <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">{item.q}</p>
                   <div className="space-y-1.5">
                     {item.choices.map((ch, idx) => {
                       const picked = caseAnswer[item.id];
@@ -361,12 +367,12 @@ export default function PsychologyCommunicationModule() {
                         <button
                           key={idx}
                           onClick={() => setCaseAnswer({ ...caseAnswer, [item.id]: idx })}
-                          className={`w-full text-left px-3.5 py-2.5 rounded-lg border text-xs transition-all ${
+                          className={`w-full text-left px-4 py-3 rounded-lg border text-sm transition-all ${
                             picked === idx
                               ? isCorrect
-                                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                                : 'bg-rose-500/20 border-rose-500 text-rose-300'
-                              : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                                ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-500 text-emerald-800 dark:text-emerald-300'
+                                : 'bg-rose-50 dark:bg-rose-500/20 border-rose-500 text-rose-800 dark:text-rose-300'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
                           }`}
                         >
                           {ch}
@@ -384,25 +390,25 @@ export default function PsychologyCommunicationModule() {
       {/* 3. PEER-TO-PEER PRACTICE */}
       {activeTab === 'peer' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center space-x-2 text-emerald-400">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-600 dark:text-emerald-400">
               <Users className="w-5 h-5" />
-              <h3 className="text-base font-bold text-white">Reflective Listening &amp; Paraphrasing Lab</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Reflective Listening &amp; Paraphrasing Lab</h3>
             </div>
             <div className="flex gap-2">
               {paraphrasePrompts.map((_, i) => (
                 <button
                   key={i}
                   onClick={() => { setParaphraseIdx(i); setParaphraseChoice(null); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs border ${
-                    paraphraseIdx === i ? 'bg-blue-600/20 border-blue-500 text-blue-300' : 'bg-slate-950 border-slate-800 text-slate-400'
+                  className={`px-3.5 py-2 rounded-lg text-sm font-medium border ${
+                    paraphraseIdx === i ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-500 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   Prompt #{i + 1}
                 </button>
               ))}
             </div>
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs text-slate-200 italic">
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-sm text-slate-800 dark:text-slate-200 italic leading-relaxed">
               {activeParaphrase.statement}
             </div>
             <div className="space-y-2">
@@ -410,12 +416,12 @@ export default function PsychologyCommunicationModule() {
                 <button
                   key={idx}
                   onClick={() => setParaphraseChoice(idx)}
-                  className={`w-full text-left p-3 rounded-xl border text-xs ${
+                  className={`w-full text-left p-3.5 rounded-xl border text-sm ${
                     paraphraseChoice === idx
                       ? opt.ok
-                        ? 'bg-emerald-500/15 border-emerald-500 text-emerald-200'
-                        : 'bg-rose-500/15 border-rose-500 text-rose-200'
-                      : 'bg-slate-950 border-slate-800 text-slate-300'
+                        ? 'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-200'
+                        : 'bg-rose-50 dark:bg-rose-500/15 border-rose-500 text-rose-900 dark:text-rose-200'
+                      : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   {opt.text}
@@ -423,19 +429,19 @@ export default function PsychologyCommunicationModule() {
               ))}
             </div>
             {paraphraseChoice !== null && (
-              <p className="text-xs text-slate-300 bg-slate-950 p-3 rounded-lg border border-slate-800">
+              <p className="text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950 p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 leading-relaxed">
                 {activeParaphrase.options[paraphraseChoice].reason}
               </p>
             )}
           </div>
 
           {/* SBAR Interdisciplinary Team Handover */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center space-x-2 text-blue-400">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
+            <div className="flex items-center space-x-2 text-blue-600 dark:text-blue-400">
               <ClipboardCheck className="w-5 h-5" />
-              <h3 className="text-base font-bold text-white">Team Decision-Making: SBAR Clinical Handover</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Team Decision-Making: SBAR Clinical Handover</h3>
             </div>
-            <div className="space-y-3 text-xs">
+            <div className="space-y-3 text-sm">
               {[
                 { key: 'situation', label: 'S — Situation' },
                 { key: 'background', label: 'B — Background' },
@@ -443,12 +449,12 @@ export default function PsychologyCommunicationModule() {
                 { key: 'recommendation', label: 'R — Recommendation' }
               ].map((field) => (
                 <div key={field.key}>
-                  <label className="block text-emerald-400 font-semibold mb-1">{field.label}</label>
+                  <label className="block text-emerald-700 dark:text-emerald-400 font-semibold mb-1">{field.label}</label>
                   <textarea
                     rows={2}
                     value={sbar[field.key]}
                     onChange={(e) => setSbar({ ...sbar, [field.key]: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-3 text-sm text-slate-900 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               ))}
@@ -459,19 +465,19 @@ export default function PsychologyCommunicationModule() {
 
       {/* 4. COMMUNITY ENGAGEMENT */}
       {activeTab === 'community' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
-            <Megaphone className="w-5 h-5 text-emerald-400" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <div className="flex items-center space-x-2.5 border-b border-slate-200 dark:border-slate-800 pb-4">
+            <Megaphone className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             <div>
-              <h3 className="text-lg font-bold text-white">Community IEC Material &amp; Mock Health Education Builder</h3>
-              <p className="text-xs text-slate-400">Design culturally inclusive Information, Education &amp; Communication (IEC) pamphlets with Teach-Back verification.</p>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Community IEC Material &amp; Mock Health Education Builder</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Design culturally inclusive Information, Education &amp; Communication (IEC) pamphlets with Teach-Back verification.</p>
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4 text-xs">
+            <div className="lg:col-span-5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4 text-sm">
               <div>
-                <label className="block text-slate-400 mb-1">Public Health Campaign Topic</label>
-                <select value={iecTopic} onChange={(e) => setIecTopic(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white">
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">Public Health Campaign Topic</label>
+                <select value={iecTopic} onChange={(e) => setIecTopic(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-slate-900 dark:text-white">
                   <option>Antimicrobial Resistance (AMR)</option>
                   <option>Hypertension &amp; Low-Sodium Adherence</option>
                   <option>Mental Health Stigma Reduction</option>
@@ -479,33 +485,33 @@ export default function PsychologyCommunicationModule() {
                 </select>
               </div>
               <div>
-                <label className="block text-slate-400 mb-1">Target Audience</label>
-                <input type="text" value={iecAudience} onChange={(e) => setIecAudience(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white" />
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">Target Audience</label>
+                <input type="text" value={iecAudience} onChange={(e) => setIecAudience(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-slate-400 mb-1">Core Actionable Health Message (Plain Language)</label>
-                <textarea rows={3} value={iecKeyMsg} onChange={(e) => setIecKeyMsg(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-white" />
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">Core Actionable Health Message (Plain Language)</label>
+                <textarea rows={3} value={iecKeyMsg} onChange={(e) => setIecKeyMsg(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 text-slate-900 dark:text-white" />
               </div>
               <div>
-                <label className="block text-slate-400 mb-1">Teach-Back Check Question</label>
-                <input type="text" value={iecTeachBack} onChange={(e) => setIecTeachBack(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white" />
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">Teach-Back Check Question</label>
+                <input type="text" value={iecTeachBack} onChange={(e) => setIecTeachBack(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-slate-900 dark:text-white" />
               </div>
             </div>
 
-            <div className="lg:col-span-7 bg-gradient-to-br from-emerald-950/60 to-slate-950 border border-emerald-500/30 rounded-2xl p-6 flex flex-col justify-between space-y-4">
+            <div className="lg:col-span-7 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/60 dark:to-slate-950 border border-emerald-500/30 rounded-2xl p-6 flex flex-col justify-between space-y-4">
               <div>
-                <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
+                <span className="text-emerald-700 dark:text-emerald-300 text-xs font-bold block">
                   IEC Community Leaflet Preview
                 </span>
-                <h4 className="text-2xl font-extrabold text-white mt-3">{iecTopic}</h4>
-                <p className="text-xs text-emerald-300 mt-1">Audience: {iecAudience}</p>
-                <div className="mt-4 bg-slate-900/90 border border-slate-800 rounded-xl p-4 text-sm text-slate-200 leading-relaxed">
+                <h4 className="text-2xl font-extrabold text-slate-900 dark:text-white mt-2">{iecTopic}</h4>
+                <p className="text-sm text-emerald-700 dark:text-emerald-300 mt-1">Audience: {iecAudience}</p>
+                <div className="mt-4 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-base text-slate-800 dark:text-slate-200 leading-relaxed">
                   {iecKeyMsg}
                 </div>
               </div>
-              <div className="bg-slate-900/80 border border-blue-500/30 rounded-xl p-4 text-xs space-y-1">
-                <span className="font-bold text-blue-400 uppercase text-[10px]">Mock Session Teach-Back Prompt</span>
-                <p className="text-slate-200">"{iecTeachBack}"</p>
+              <div className="bg-white dark:bg-slate-900/80 border border-blue-500/30 rounded-xl p-4 text-sm space-y-1">
+                <span className="font-bold text-blue-600 dark:text-blue-400 text-xs block">Mock Session Teach-Back Prompt</span>
+                <p className="text-slate-800 dark:text-slate-200">"{iecTeachBack}"</p>
               </div>
             </div>
           </div>
@@ -514,28 +520,28 @@ export default function PsychologyCommunicationModule() {
 
       {/* 5. SELF-REFLECTION LOGS */}
       {activeTab === 'journal' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center space-x-2.5 border-b border-slate-800 pb-4">
-            <BookHeart className="w-5 h-5 text-emerald-400" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-6">
+          <div className="flex items-center space-x-2.5 border-b border-slate-200 dark:border-slate-800 pb-4">
+            <BookHeart className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             <div>
-              <h3 className="text-lg font-bold text-white">Weekly Journaling &amp; Self-Reflection Log</h3>
-              <p className="text-xs text-slate-400">Record emotional responses during care simulations and track semester communication growth.</p>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Weekly Journaling &amp; Self-Reflection Log</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Record emotional responses during care simulations and track semester communication growth.</p>
             </div>
           </div>
 
-          <form onSubmit={handleAddReflection} className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <form onSubmit={handleAddReflection} className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
-                <label className="block text-slate-400 mb-1">Practical Week</label>
-                <select value={reflectionWeek} onChange={(e) => setReflectionWeek(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white">
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">Practical Week</label>
+                <select value={reflectionWeek} onChange={(e) => setReflectionWeek(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-slate-900 dark:text-white">
                   {['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8', 'Week 9', 'Week 10'].map((w) => (
                     <option key={w} value={w}>{w}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-slate-400 mb-1">Dominant Emotional Response</label>
-                <select value={reflectionEmotion} onChange={(e) => setReflectionEmotion(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white">
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">Dominant Emotional Response</label>
+                <select value={reflectionEmotion} onChange={(e) => setReflectionEmotion(e.target.value)} className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-slate-900 dark:text-white">
                   <option>Empathetic &amp; Attentive</option>
                   <option>Initially Nervous, Then Confident</option>
                   <option>Challenged by Patient Distress</option>
@@ -544,17 +550,17 @@ export default function PsychologyCommunicationModule() {
               </div>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Reflection Entry (What went well, barriers noticed, growth plan)</label>
+              <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Reflection Entry (What went well, barriers noticed, growth plan)</label>
               <textarea
                 rows={3}
                 value={reflectionText}
                 onChange={(e) => setReflectionText(e.target.value)}
                 placeholder="Describe your emotional response and communication insights from today's simulation..."
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                 required
               />
             </div>
-            <button type="submit" className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center space-x-2">
+            <button type="submit" className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-xl flex items-center space-x-2">
               <Plus className="w-4 h-4" />
               <span>Save Reflection Entry</span>
             </button>
@@ -562,15 +568,74 @@ export default function PsychologyCommunicationModule() {
 
           <div className="space-y-3">
             {reflectionLogs.map((log) => (
-              <div key={log.id} className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-emerald-400">{log.week} &bull; {log.emotion}</span>
-                  <span className="text-slate-500 font-mono">{log.date}</span>
+              <div key={log.id} className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-bold text-emerald-700 dark:text-emerald-400">{log.week} &bull; {log.emotion}</span>
+                  <span className="text-slate-500 tabular-nums text-xs">{log.date}</span>
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">{log.note}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{log.note}</p>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 6. BP103T THEORY (UNITS I-V) */}
+      {activeTab === 'theory' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-5 text-sm leading-relaxed">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'u1', label: 'Unit I: Psychology & Learning' },
+              { id: 'u2', label: 'Unit II: Development & Disorders' },
+              { id: 'u3', label: 'Unit III: Health Communication' },
+              { id: 'u4', label: 'Unit IV: Professional & Legal Ethics' },
+              { id: 'u5', label: 'Unit V: HBM, CBT, TTM & PFA' }
+            ].map((u) => (
+              <button
+                key={u.id}
+                onClick={() => setTheoryUnit(u.id)}
+                className={`px-4 py-2 rounded-xl font-semibold border ${
+                  theoryUnit === u.id ? 'bg-emerald-50 dark:bg-emerald-600/20 border-emerald-500 text-emerald-700 dark:text-emerald-300' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {u.label}
+              </button>
+            ))}
+          </div>
+          {theoryUnit === 'u1' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5 text-slate-700 dark:text-slate-300">
+              <h4 className="font-bold text-emerald-700 dark:text-emerald-400 text-base">Branches, Perception &amp; Learning in Healthcare</h4>
+              <p><strong>Branches:</strong> Clinical, Health, Behavioural, and Developmental Psychology. Sensation/perception/attention shape how patients interpret symptoms and pain.</p>
+              <p><strong>Learning &amp; Motivation:</strong> Positive/negative reinforcement (Skinner operant conditioning) drives medication adherence; Maslow's hierarchy &amp; intrinsic motivation sustain lifestyle modification.</p>
+            </div>
+          )}
+          {theoryUnit === 'u2' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5 text-slate-700 dark:text-slate-300">
+              <h4 className="font-bold text-emerald-700 dark:text-emerald-400 text-base">Human Development, Anxiety, Depression &amp; Coping</h4>
+              <p><strong>Developmental Stages (Erikson):</strong> Pediatric, adolescent, adult, and geriatric psychological needs require tailored counseling (e.g., sensory aids &amp; regimen simplification for elderly).</p>
+              <p><strong>Disorders &amp; Coping:</strong> Anxiety, depression, and somatization (psychological distress expressed as physical symptoms). Problem-focused vs emotion-focused coping build resilience.</p>
+            </div>
+          )}
+          {theoryUnit === 'u3' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5 text-slate-700 dark:text-slate-300">
+              <h4 className="font-bold text-emerald-700 dark:text-emerald-400 text-base">Communication Models, Types &amp; Barriers</h4>
+              <p><strong>Process:</strong> Sender → Encoding → Message/Channel → Receiver → Decoding → Feedback. Modes: Interpersonal, Group, Mass IEC, and Telehealth.</p>
+              <p><strong>Barriers &amp; Overcoming Them:</strong> Language jargon, noisy environment, cultural stigma, hearing deficits, and emotional shock; overcome via active listening, open-ended questions, and empathy.</p>
+            </div>
+          )}
+          {theoryUnit === 'u4' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5 text-slate-700 dark:text-slate-300">
+              <h4 className="font-bold text-emerald-700 dark:text-emerald-400 text-base">Clinical Communication, Legal Ethics &amp; Digital Documentation</h4>
+              <p><strong>Frameworks:</strong> SBAR handover for interprofessional teams; SPIKES protocol for breaking bad news. Maintain patient confidentiality (privacy), informed consent, and accurate EHR/discharge summaries.</p>
+            </div>
+          )}
+          {theoryUnit === 'u5' && (
+            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2.5 text-slate-700 dark:text-slate-300">
+              <h4 className="font-bold text-emerald-700 dark:text-emerald-400 text-base">Behavioural Interventions &amp; Psychological First Aid (PFA)</h4>
+              <p><strong>Health Belief Model (HBM):</strong> Perceived susceptibility, severity, benefits, barriers, cues to action, and self-efficacy predict adherence.</p>
+              <p><strong>CBT &amp; TTM:</strong> Cognitive Behavioral Therapy reframes maladaptive beliefs; Transtheoretical Model (Stages of Change: Precontemplation → Contemplation → Preparation → Action → Maintenance) guides motivational interviewing &amp; crisis PFA.</p>
+            </div>
+          )}
         </div>
       )}
     </div>
