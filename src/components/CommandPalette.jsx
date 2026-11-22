@@ -13,16 +13,21 @@ import {
   Library,
   Images,
   FileText,
-  MapPin
+  MapPin,
+  Globe
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 import { getAllBooks } from '../modules/knowledge-library/libraryDb';
-import { runAcademicSearch } from '../modules/visual-library/academicSearch';
 import { getAllVisuals } from '../modules/visual-library/visualDb';
+import { searchAcademicEngine } from '../utils/academicEngineUtils';
+import { ENGINE_DEPARTMENTS } from '../data/academicEngineRegistry';
 
 export const QUICK_INDEX = [
-  // Knowledge & Visual Libraries
+  // Anatomy Explorer & Libraries
+  { title: 'Anatomy Explorer (60 Cataloged Organs, Parts & Tissues)', sub: 'BP104T · Search, Filter 10 Body Systems, View Plates & Textbook Links', module: 'anatomy', tab: 'explorer', cat: 'Explorer', icon: Activity },
+  { title: 'Anatomy Identification Practice', sub: 'BP104T · Structure & Function MCQs and Calibrated Visual Pin Quiz', module: 'anatomy', tab: 'practice', cat: 'Practice', icon: Compass },
   { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search, Notes & Diagram Crop', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
+  { title: 'Scientific Resource Hub (PubMed, Europe PMC, OpenStax, Wikimedia)', sub: 'Discover Open-Access Papers, Textbooks, Reference Chapters & Scientific Visuals', module: 'resource_hub', tab: null, cat: 'Resource Hub', icon: Globe },
   { title: 'Academic Visual Learning Library & Atlas', sub: 'Interactive Diagrams, Structure Labels, Mechanisms, MCQs & Open-Access Search', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
   { title: 'Equipment & Apparatus Directory', sub: 'Compound Microscope, Gutzeit Apparatus, Nessler Cylinders & Lab Glassware', module: 'visual_library', category: 'equipment', tab: null, cat: 'Equipment', icon: Microscope },
   { title: 'Human Nephron & Glomerular Filtration (Visual Plate)', sub: 'Interactive Pins: Glomerulus, PCT, Loop of Henle, DCT & Collecting Duct', module: 'visual_library', visualId: 'builtin_nephron_anatomy', tab: null, cat: 'Anatomy', icon: Activity },
@@ -70,7 +75,7 @@ export const QUICK_INDEX = [
 ];
 
 export default function CommandPalette({ isOpen, onClose, onNavigate }) {
-  const { openVisualLibrary, openKnowledgeLibrary } = useLibraryNavigation();
+  const { openVisualLibrary, openKnowledgeLibrary, openResourceHub } = useLibraryNavigation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [books, setBooks] = useState([]);
@@ -111,42 +116,94 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
 
     if (!q) return indexHits;
 
-    const bookHits = books
-      .filter(
-        (b) =>
-          b.title.toLowerCase().includes(q) ||
-          b.fileName.toLowerCase().includes(q)
-      )
-      .slice(0, 4)
-      .map((b) => ({
-        title: b.title,
-        sub: `PDF Knowledge Library · Page ${b.lastReadPage || 1} of ${b.pageCount}`,
-        bookId: b.id,
-        pageNumber: b.lastReadPage || 1,
-        cat: 'PDF Book',
-        icon: FileText
-      }));
+    const unified = searchAcademicEngine(q, { visuals, books });
 
-    const academic = runAcademicSearch(q, visuals);
-    const structureHits = academic.structures.slice(0, 3).map(({ annotation, visual }) => ({
-      title: annotation.label,
-      sub: `${visual.title} · ${annotation.functionRole}`,
-      visualId: visual.id,
-      annotationId: annotation.id,
-      cat: 'Structure Pin',
+    const structureResults = unified.structures.slice(0, 6).map((hit) => ({
+      title: hit.title,
+      sub: hit.subtitle,
+      module: 'anatomy',
+      tab: 'explorer',
+      structureId: hit.payload.id,
+      cat: hit.typeLabel,
+      icon: Activity
+    }));
+
+    const subtopicResults = unified.subtopics.slice(0, 3).map((hit) => ({
+      title: hit.title,
+      sub: hit.subtitle,
+      module: ENGINE_DEPARTMENTS[hit.payload.departmentId]?.moduleId || 'anatomy',
+      tab: 'explorer',
+      structureId: hit.payload.structureId || null,
+      cat: hit.typeLabel,
+      icon: BookOpen
+    }));
+
+    const topicResults = unified.topics.slice(0, 3).map((hit) => ({
+      title: hit.title,
+      sub: hit.subtitle,
+      module: ENGINE_DEPARTMENTS[hit.payload.departmentId]?.moduleId || 'anatomy',
+      tab: hit.payload.linkedTab || null,
+      cat: hit.typeLabel,
+      icon: Compass
+    }));
+
+    const visualResults = unified.visuals.slice(0, 3).map((hit) => ({
+      title: hit.title,
+      sub: hit.subtitle,
+      visualId: hit.payload.id,
+      cat: hit.typeLabel,
+      icon: Images
+    }));
+
+    const pinResults = unified.structurePins.slice(0, 3).map((hit) => ({
+      title: hit.title,
+      sub: hit.subtitle,
+      visualId: hit.payload.visual.id,
+      annotationId: hit.payload.annotation.id,
+      cat: hit.typeLabel,
       icon: MapPin
     }));
 
-    return [...indexHits.slice(0, 8), ...structureHits, ...bookHits];
+    const bookResults = unified.books.slice(0, 3).map((hit) => ({
+      title: hit.title,
+      sub: hit.subtitle,
+      bookId: hit.payload.id,
+      pageNumber: hit.payload.lastReadPage || 1,
+      cat: hit.typeLabel,
+      icon: FileText
+    }));
+
+    const externalAction = {
+      title: `Search Scientific Resource Hub for "${query.trim()}"`,
+      sub: 'Live Open-Access Search · PubMed, Europe PMC, PMC, NCBI Bookshelf, OpenStax & Wikimedia',
+      resourceHubQuery: query.trim(),
+      cat: 'External Search',
+      icon: Globe
+    };
+
+    return [
+      ...structureResults,
+      ...subtopicResults,
+      ...topicResults,
+      ...visualResults,
+      ...pinResults,
+      ...indexHits.slice(0, 5),
+      ...bookResults,
+      externalAction
+    ];
   }, [query, books, visuals]);
 
   const launchPick = (pick) => {
-    if (pick.bookId) {
+    if (pick.resourceHubQuery) {
+      openResourceHub({ query: pick.resourceHubQuery });
+    } else if (pick.bookId) {
       openKnowledgeLibrary({ bookId: pick.bookId, pageNumber: pick.pageNumber || 1 });
     } else if (pick.visualId) {
       openVisualLibrary({ visualId: pick.visualId, annotationId: pick.annotationId || null });
     } else if (pick.category) {
       openVisualLibrary({ category: pick.category });
+    } else if (pick.structureId) {
+      onNavigate(pick.module || 'anatomy', pick.tab || 'explorer', { structureId: pick.structureId });
     } else {
       onNavigate(pick.module, pick.tab);
     }

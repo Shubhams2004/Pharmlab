@@ -1,4 +1,10 @@
-export type StudyActivityKind = 'department' | 'experiment' | 'book' | 'visual' | 'equipment';
+export type StudyActivityKind =
+  | 'department'
+  | 'experiment'
+  | 'book'
+  | 'visual'
+  | 'equipment'
+  | 'structure';
 
 export interface RecentStudyItem {
   key: string;
@@ -10,6 +16,7 @@ export interface RecentStudyItem {
   bookId?: string | null;
   pageNumber?: number | null;
   visualId?: string | null;
+  structureId?: string | null;
   category?: string | null;
   timestamp: number;
 }

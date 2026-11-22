@@ -1,4 +1,5 @@
 import React, { createContext, useContext } from 'react';
+import { AcademicContextRef, ResourceHubTab, ResourceType } from '../modules/resource-hub/types';
 import {
   DEFAULT_STUDY_PREFERENCES,
   RecentStudyItem,
@@ -18,13 +19,28 @@ export interface VisualJumpTarget {
   query?: string | null;
   visualId?: string | null;
   annotationId?: string | null;
+  tab?: 'repository' | 'discover' | null;
+  openUpload?: boolean;
+  nonce: number;
+}
+
+export interface ResourceJumpTarget {
+  query?: string | null;
+  tab?: ResourceHubTab | null;
+  resourceType?: ResourceType | null;
+  context?: AcademicContextRef | null;
   nonce: number;
 }
 
 interface LibraryNavigationContextValue {
   openKnowledgeLibrary: (opts?: Omit<KnowledgeJumpTarget, 'nonce'>) => void;
   openVisualLibrary: (opts?: Omit<VisualJumpTarget, 'nonce'>) => void;
-  navigateToModule: (moduleId: string, tab?: string | null) => void;
+  openResourceHub: (opts?: Omit<ResourceJumpTarget, 'nonce'>) => void;
+  navigateToModule: (
+    moduleId: string,
+    tab?: string | null,
+    opts?: { structureId?: string | null }
+  ) => void;
   setWorkspaceSection: (sectionLabel: string | null, detailLabel?: string | null) => void;
   recordActivity: (item: Omit<RecentStudyItem, 'timestamp'>) => void;
   preferences: StudyPreferences;
@@ -36,6 +52,7 @@ const noop = () => {};
 export const LibraryNavigationContext = createContext<LibraryNavigationContextValue>({
   openKnowledgeLibrary: noop,
   openVisualLibrary: noop,
+  openResourceHub: noop,
   navigateToModule: noop,
   setWorkspaceSection: noop,
   recordActivity: noop,

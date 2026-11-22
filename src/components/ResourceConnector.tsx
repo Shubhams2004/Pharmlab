@@ -2,14 +2,19 @@ import React, { useEffect, useState } from 'react';
 import {
   BookOpen,
   ChevronRight,
+  ExternalLink,
   Eye,
   FileText,
+  Globe,
   Images,
   Loader2,
   Search,
   Upload
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
+import { getAttachedResourcesForContext } from '../modules/resource-hub/resourceHubStorage';
+import { SavedResourceRecord } from '../modules/resource-hub/types';
+import { sanitizeHttpUrl } from '../modules/resource-hub/utils';
 import { getAllBooks, searchAllBooks } from '../modules/knowledge-library/libraryDb';
 import {
   BookDepartmentTag,
@@ -48,7 +53,7 @@ export default function ResourceConnector({
   defaultSearchQuery = '',
   title = 'Linked Visuals & Textbook References'
 }: ResourceConnectorProps) {
-  const { openKnowledgeLibrary, openVisualLibrary } = useLibraryNavigation();
+  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub } = useLibraryNavigation();
 
   const [visuals, setVisuals] = useState<VisualMediaItem[]>([]);
   const [allVisuals, setAllVisuals] = useState<VisualMediaItem[]>([]);
@@ -59,12 +64,21 @@ export default function ResourceConnector({
   const [query, setQuery] = useState(defaultSearchQuery);
   const [textResults, setTextResults] = useState<CrossBookSearchResult[]>([]);
   const [searchingBooks, setSearchingBooks] = useState(false);
+  const [attachedRefs, setAttachedRefs] = useState<SavedResourceRecord[]>([]);
 
   useEffect(() => {
     setQuery(defaultSearchQuery);
   }, [defaultSearchQuery]);
 
   useEffect(() => {
+    setAttachedRefs(
+      getAttachedResourcesForContext({
+        departmentId: department,
+        topicLabel: topic,
+        experiment,
+        equipment
+      }).slice(0, 4)
+    );
     let cancelled = false;
     setLoadingVisuals(true);
     Promise.all([
@@ -153,6 +167,26 @@ export default function ResourceConnector({
           >
             <BookOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Knowledge Library</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const targetTopic = defaultSearchQuery || topic || equipment || experiment || 'pharmacy';
+              openResourceHub({
+                query: targetTopic,
+                context: {
+                  id: `dept:${department}`,
+                  kind: 'department',
+                  label: topic || experiment || equipment || department,
+                  departmentId: department,
+                  moduleId: department
+                }
+              });
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+          >
+            <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Resource Hub</span>
           </button>
         </div>
       </div>
@@ -337,6 +371,54 @@ export default function ResourceConnector({
           )}
         </div>
       </div>
+
+      {attachedRefs.length > 0 && (
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              Saved External References ({attachedRefs.length})
+            </span>
+            <button
+              type="button"
+              onClick={() => openResourceHub({ tab: 'saved' })}
+              className="text-emerald-600 dark:text-emerald-400 font-medium hover:underline"
+            >
+              Manage in Resource Hub
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {attachedRefs.map((rec) => {
+              const safeUrl = sanitizeHttpUrl(rec.resource.sourceUrl);
+              return (
+                <div
+                  key={rec.id}
+                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                      {rec.resource.title}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      {rec.resource.providerName} · {rec.resource.publicationDate}
+                    </p>
+                  </div>
+                  {safeUrl && (
+                    <a
+                      href={safeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open</span>
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <ImageViewerModal
         item={viewerItem}

@@ -13,6 +13,7 @@ import AnatomyModule from './modules/bp104t-anatomy/AnatomyModule';
 import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyModule';
 import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
+import ResourceHubModule from './modules/resource-hub/ResourceHubModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
 import {
@@ -26,7 +27,12 @@ import {
 
 export default function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
-  const [navTarget, setNavTarget] = useState({ module: 'dashboard', tab: null, nonce: 0 });
+  const [navTarget, setNavTarget] = useState({
+    module: 'dashboard',
+    tab: null,
+    structureId: null,
+    nonce: 0
+  });
   const [workspaceSection, setWorkspaceSectionState] = useState({
     section: null,
     detail: null
@@ -43,6 +49,15 @@ export default function App() {
     query: null,
     visualId: null,
     annotationId: null,
+    tab: null,
+    openUpload: false,
+    nonce: 0
+  });
+  const [resourceJump, setResourceJump] = useState({
+    query: null,
+    tab: null,
+    resourceType: null,
+    context: null,
     nonce: 0
   });
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -114,9 +129,15 @@ export default function App() {
   }, []);
 
   const navigateTo = useCallback(
-    (moduleId, tab = null) => {
+    (moduleId, tab = null, opts = {}) => {
+      const nextStructureId = opts?.structureId ?? null;
       setActiveModule(moduleId);
-      setNavTarget((prev) => ({ module: moduleId, tab, nonce: prev.nonce + 1 }));
+      setNavTarget((prev) => ({
+        module: moduleId,
+        tab,
+        structureId: nextStructureId,
+        nonce: prev.nonce + 1
+      }));
       setWorkspaceSectionState({ section: null, detail: null });
       window.scrollTo({
         top: 0,
@@ -126,7 +147,8 @@ export default function App() {
       if (
         moduleId !== 'dashboard' &&
         moduleId !== 'knowledge_library' &&
-        moduleId !== 'visual_library'
+        moduleId !== 'visual_library' &&
+        moduleId !== 'resource_hub'
       ) {
         setLastModule(moduleId);
         try {
@@ -185,6 +207,8 @@ export default function App() {
         query: opts.query ?? null,
         visualId: opts.visualId ?? null,
         annotationId: opts.annotationId ?? null,
+        tab: opts.tab ?? null,
+        openUpload: Boolean(opts.openUpload),
         nonce: prev.nonce + 1
       }));
       if (opts.category === 'equipment') {
@@ -204,6 +228,20 @@ export default function App() {
     [navigateTo]
   );
 
+  const openResourceHub = useCallback(
+    (opts = {}) => {
+      setResourceJump((prev) => ({
+        query: opts.query ?? null,
+        tab: opts.tab ?? null,
+        resourceType: opts.resourceType ?? null,
+        context: opts.context ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('resource_hub');
+    },
+    [navigateTo]
+  );
+
   const handleOpenRecentItem = useCallback(
     (item) => {
       if (item.kind === 'book' && item.bookId) {
@@ -216,6 +254,10 @@ export default function App() {
       }
       if (item.kind === 'equipment' && item.category) {
         openVisualLibrary({ category: item.category });
+        return;
+      }
+      if (item.kind === 'structure' && item.structureId) {
+        navigateTo('anatomy', 'explorer', { structureId: item.structureId });
         return;
       }
       navigateTo(item.moduleId, item.tab ?? null);
@@ -240,6 +282,7 @@ export default function App() {
     () => ({
       openKnowledgeLibrary,
       openVisualLibrary,
+      openResourceHub,
       navigateToModule: navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -249,6 +292,7 @@ export default function App() {
     [
       openKnowledgeLibrary,
       openVisualLibrary,
+      openResourceHub,
       navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -337,6 +381,7 @@ export default function App() {
         {activeModule === 'anatomy' && (
           <AnatomyModule
             initialTab={navTarget.module === 'anatomy' ? navTarget.tab : null}
+            initialStructureId={navTarget.module === 'anatomy' ? navTarget.structureId : null}
             navNonce={navTarget.nonce}
           />
         )}
@@ -362,7 +407,18 @@ export default function App() {
             initialQuery={visualJump.query}
             initialVisualId={visualJump.visualId}
             initialAnnotationId={visualJump.annotationId}
+            initialTab={visualJump.tab}
+            initialOpenUpload={visualJump.openUpload}
             navNonce={visualJump.nonce}
+          />
+        )}
+        {activeModule === 'resource_hub' && (
+          <ResourceHubModule
+            initialQuery={resourceJump.query}
+            initialTab={resourceJump.tab}
+            initialResourceType={resourceJump.resourceType}
+            initialContext={resourceJump.context}
+            navNonce={resourceJump.nonce}
           />
         )}
       </DashboardLayout>

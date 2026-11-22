@@ -4,6 +4,7 @@ import {
   BookOpen,
   CheckCircle2,
   FileText,
+  Globe,
   HardDrive,
   Loader2,
   Search,
@@ -73,7 +74,7 @@ function formatDate(ts: number): string {
 export default function KnowledgeLibraryModule({
   jumpTarget
 }: KnowledgeLibraryModuleProps) {
-  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
+  const { setWorkspaceSection, recordActivity, openResourceHub } = useLibraryNavigation();
 
   const [books, setBooks] = useState<LibraryBookMeta[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(true);
@@ -348,6 +349,15 @@ export default function KnowledgeLibraryModule({
             onChange={(e) => handleFilesSelected(e.target.files)}
             className="hidden"
           />
+          <button
+            type="button"
+            onClick={() => openResourceHub({ resourceType: 'textbook', query: 'Anatomy and Physiology' })}
+            className="min-h-[44px] sm:min-h-[40px] px-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-500/40 text-sm font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
+          >
+            <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Discover in Resource Hub</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setImportPanelOpen((prev) => !prev)}

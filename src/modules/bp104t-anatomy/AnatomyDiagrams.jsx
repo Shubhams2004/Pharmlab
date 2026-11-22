@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Image as ImageIcon, Layers } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AlertTriangle, BookOpen, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Image as ImageIcon, Layers } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
 import { BUILT_IN_VISUALS } from '../visual-library/builtInVisuals';
 import ImageViewerModal from '../visual-library/ImageViewerModal';
@@ -22,12 +22,19 @@ const SEARCH_BY_DIAGRAM = {
   neuron: 'neuron action potential synapse'
 };
 
-export default function AnatomyDiagrams() {
-  const [selectedDiagram, setSelectedDiagram] = useState('heart');
+export default function AnatomyDiagrams({ initialDiagram = null, navNonce = 0 }) {
+  const [selectedDiagram, setSelectedDiagram] = useState(initialDiagram || 'heart');
   const [selectedPin, setSelectedPin] = useState(0);
   const [zoomed, setZoomed] = useState(false);
   const [visualMode, setVisualMode] = useState('schematic');
   const [viewerItem, setViewerItem] = useState(null);
+
+  useEffect(() => {
+    if (initialDiagram) {
+      setSelectedDiagram(initialDiagram);
+      setSelectedPin(0);
+    }
+  }, [initialDiagram, navNonce]);
 
   const diagrams = {
     heart: {
@@ -276,6 +283,14 @@ export default function AnatomyDiagrams() {
                     Zoom Plate
                   </button>
                 </div>
+                {activePlate.id === 'builtin_heart_anatomy' && (
+                  <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 flex items-start gap-2 leading-relaxed">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Illustration Accuracy Notice:</strong> This bundled raster plate contains printed text defects (&ldquo;Left Pulmonary Arterie&rdquo;, misplaced &ldquo;Inferior Vena Cava&rdquo; upper-left label, and duplicate &ldquo;Aortic Valve&rdquo; text). Switch to <strong>Pin Schematic</strong> to verify anatomical landmarks accurately.
+                    </span>
+                  </div>
+                )}
               </div>
             ) : (
             <svg

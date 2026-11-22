@@ -8,6 +8,7 @@ import {
   Compass,
   FileText,
   FlaskConical,
+  Globe,
   Images,
   Library,
   MapPin,
@@ -21,9 +22,9 @@ import {
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 import { getAllBooks, searchAllBooks } from '../modules/knowledge-library/libraryDb';
-import { runAcademicSearch } from '../modules/visual-library/academicSearch';
 import { getAllVisuals } from '../modules/visual-library/visualDb';
 import { CORE_DEPARTMENT_CARDS, DEPARTMENT_WORKSPACES } from '../types/academicArchitecture';
+import { searchAcademicEngine } from '../utils/academicEngineUtils';
 import { formatRelativeTime } from '../utils/studyWorkspace';
 import { QUICK_INDEX } from './CommandPalette';
 
@@ -45,7 +46,7 @@ export default function Dashboard({
   visitedModules = [],
   lastModule = 'anatomy'
 }) {
-  const { openKnowledgeLibrary, openVisualLibrary } = useLibraryNavigation();
+  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub } = useLibraryNavigation();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
@@ -124,15 +125,11 @@ export default function Dashboard({
     ).slice(0, 4);
   }, [searchQuery]);
 
-  const visualHits = useMemo(() => {
+  const engineHits = useMemo(() => {
     const q = searchQuery.trim();
-    if (q.length < 2 || visuals.length === 0) return { structures: [], images: [] };
-    const res = runAcademicSearch(q, visuals);
-    return {
-      structures: res.structures.slice(0, 2),
-      images: res.images.slice(0, 2)
-    };
-  }, [searchQuery, visuals]);
+    if (q.length < 2) return null;
+    return searchAcademicEngine(q, { visuals, books });
+  }, [searchQuery, visuals, books]);
 
   // Real Continue Learning book candidate (last opened or furthest along)
   const continueBook = useMemo(() => {
@@ -214,11 +211,88 @@ export default function Dashboard({
           )}
 
           {(directHits.length > 0 ||
-            visualHits.structures.length > 0 ||
-            visualHits.images.length > 0 ||
+            (engineHits &&
+              (engineHits.structures.length > 0 ||
+                engineHits.topics.length > 0 ||
+                engineHits.subtopics.length > 0 ||
+                engineHits.visuals.length > 0 ||
+                engineHits.structurePins.length > 0)) ||
             pdfHits.length > 0) && (
             <div className="mt-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-200 dark:divide-slate-800 overflow-hidden shadow-lg">
-              {directHits.map((hit) => (
+              {engineHits?.structures.slice(0, 4).map((hit) => (
+                <button
+                  key={hit.id}
+                  type="button"
+                  onClick={() =>
+                    onSelectModule('anatomy', 'explorer', { structureId: hit.payload.id })
+                  }
+                  className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900 flex items-center justify-between gap-3 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                        {hit.title}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        {hit.typeLabel} · {hit.subtitle}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
+                </button>
+              ))}
+
+              {engineHits?.visuals.slice(0, 2).map((hit) => (
+                <button
+                  key={hit.id}
+                  type="button"
+                  onClick={() => openVisualLibrary({ visualId: hit.payload.id })}
+                  className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900 flex items-center justify-between gap-3 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Images className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                        {hit.title}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        {hit.typeLabel} · {hit.subtitle}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
+                </button>
+              ))}
+
+              {engineHits?.structurePins.slice(0, 2).map((hit) => (
+                <button
+                  key={hit.id}
+                  type="button"
+                  onClick={() =>
+                    openVisualLibrary({
+                      visualId: hit.payload.visual.id,
+                      annotationId: hit.payload.annotation.id
+                    })
+                  }
+                  className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900 flex items-center justify-between gap-3 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                        {hit.title}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        {hit.typeLabel} · {hit.subtitle}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
+                </button>
+              ))}
+
+              {directHits.slice(0, 3).map((hit) => (
                 <button
                   key={`${hit.module}-${hit.title}`}
                   type="button"
@@ -238,30 +312,6 @@ export default function Dashboard({
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
                       {hit.cat} · {hit.sub}
                     </p>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
-                </button>
-              ))}
-
-              {visualHits.structures.map(({ annotation, visual }) => (
-                <button
-                  key={`${visual.id}_${annotation.id}`}
-                  type="button"
-                  onClick={() =>
-                    openVisualLibrary({ visualId: visual.id, annotationId: annotation.id })
-                  }
-                  className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900 flex items-center justify-between gap-3 transition-colors"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                        {annotation.label}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        Visual Structure · {visual.title}
-                      </p>
-                    </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
                 </button>
@@ -299,6 +349,27 @@ export default function Dashboard({
                   </button>
                 );
               })}
+
+              {searchQuery.trim().length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => openResourceHub({ query: searchQuery.trim() })}
+                  className="w-full text-left px-4 py-3 bg-emerald-500/5 hover:bg-emerald-500/10 flex items-center justify-between gap-3 transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 truncate">
+                        Search Scientific Resource Hub for &ldquo;{searchQuery.trim()}&rdquo;
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        Query PubMed, Europe PMC, PMC, NCBI Bookshelf, OpenStax &amp; Wikimedia
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -306,6 +377,11 @@ export default function Dashboard({
         {/* Quick Access Bar */}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {[
+            {
+              label: 'Anatomy Explorer (60)',
+              icon: Activity,
+              action: () => onSelectModule('anatomy', 'explorer')
+            },
             { label: 'Departments', icon: Compass, action: scrollToDepartments },
             { label: 'Experiments', icon: FlaskConical, action: onOpenPalette },
             {
@@ -322,6 +398,11 @@ export default function Dashboard({
               label: 'Visual Library',
               icon: Images,
               action: () => openVisualLibrary()
+            },
+            {
+              label: 'Resource Hub',
+              icon: Globe,
+              action: () => openResourceHub()
             },
             { label: 'Quick Glossary', icon: BookOpen, action: onOpenGlossary }
           ].map((shortcut) => {

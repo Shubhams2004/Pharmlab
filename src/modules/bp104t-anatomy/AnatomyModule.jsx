@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Microscope, Bone, Droplet, HeartPulse, FileText, CheckCircle2, RefreshCcw, Layers, BookOpen } from 'lucide-react';
 import AnatomyDiagrams from './AnatomyDiagrams';
+import AnatomyExplorer from './AnatomyExplorer';
+import AnatomyIdentificationPractice from './AnatomyIdentificationPractice';
 import AnatomyTheory from './AnatomyTheory';
 import ResourceConnector from '../../components/ResourceConnector';
 import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
@@ -8,6 +10,8 @@ import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 
 const ANATOMY_TABS = [
+  { id: 'explorer', label: 'Anatomy Explorer (60)' },
+  { id: 'practice', label: 'Identification Practice' },
   { id: 'diagrams', label: 'Annotated Diagrams (2D/3D)' },
   { id: 'theory', label: 'Theory (Units I–V)' },
   { id: 'hematology', label: 'Hematology (Exp 6–13)' },
@@ -17,22 +21,42 @@ const ANATOMY_TABS = [
   { id: 'cases', label: 'Clinical Case Files (Exp 17)' }
 ];
 
-export default function AnatomyModule({ initialTab, navNonce }) {
+export default function AnatomyModule({ initialTab, initialStructureId = null, navNonce = 0 }) {
   const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
-  const [activeTab, setActiveTab] = useState(initialTab || 'diagrams');
+  const [activeTab, setActiveTab] = useState(initialTab || (initialStructureId ? 'explorer' : 'explorer'));
+  const [activeStructureDetail, setActiveStructureDetail] = useState(null);
+  const [deepStructureId, setDeepStructureId] = useState(initialStructureId);
+  const [structureJumpNonce, setStructureJumpNonce] = useState(0);
+  const [diagramTarget, setDiagramTarget] = useState(null);
+  const [diagramNonce, setDiagramNonce] = useState(0);
+  const [practiceCategory, setPracticeCategory] = useState('all');
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
-  }, [initialTab, navNonce]);
+    if (initialStructureId) {
+      setActiveTab('explorer');
+      setDeepStructureId(initialStructureId);
+      setStructureJumpNonce((n) => n + 1);
+    } else if (navNonce > 0) {
+      setDeepStructureId(null);
+    }
+  }, [initialTab, initialStructureId, navNonce]);
 
   useEffect(() => {
     const label = ANATOMY_TABS.find((t) => t.id === activeTab)?.label || null;
-    setWorkspaceSection(label);
+    const detail =
+      activeTab === 'explorer' && activeStructureDetail
+        ? `#${activeStructureDetail.catalogNumber} ${activeStructureDetail.name}`
+        : null;
+    setWorkspaceSection(label, detail);
     return () => setWorkspaceSection(null);
-  }, [activeTab, setWorkspaceSection]);
+  }, [activeTab, activeStructureDetail, setWorkspaceSection]);
 
   const handleSelectTab = (tabId) => {
     setActiveTab(tabId);
+    if (tabId !== 'explorer') {
+      setActiveStructureDetail(null);
+    }
     const label = ANATOMY_TABS.find((t) => t.id === tabId)?.label;
     if (label) {
       recordActivity({
@@ -261,7 +285,36 @@ export default function AnatomyModule({ initialTab, navNonce }) {
         ariaLabel="BP104T Anatomy and Physiology Sections"
       />
 
-      {activeTab === 'diagrams' && <AnatomyDiagrams />}
+      {activeTab === 'explorer' && (
+        <AnatomyExplorer
+          initialStructureId={deepStructureId}
+          navNonce={structureJumpNonce}
+          onClearInitialStructure={() => setDeepStructureId(null)}
+          onActiveStructureChange={setActiveStructureDetail}
+          onOpenDiagramSchematic={(diagramKey) => {
+            setDiagramTarget(diagramKey);
+            setDiagramNonce((n) => n + 1);
+            setActiveTab('diagrams');
+          }}
+          onStartPracticeForCategory={(categoryId) => {
+            setPracticeCategory(categoryId);
+            setActiveTab('practice');
+          }}
+        />
+      )}
+      {activeTab === 'practice' && (
+        <AnatomyIdentificationPractice
+          initialCategory={practiceCategory}
+          onOpenStructureDetail={(structureId) => {
+            setDeepStructureId(structureId);
+            setStructureJumpNonce((n) => n + 1);
+            setActiveTab('explorer');
+          }}
+        />
+      )}
+      {activeTab === 'diagrams' && (
+        <AnatomyDiagrams initialDiagram={diagramTarget} navNonce={diagramNonce} />
+      )}
       {activeTab === 'theory' && <AnatomyTheory />}
 
       {/* TAB 1: HEMATOLOGY (Exp 6 - 13) */}
@@ -697,7 +750,7 @@ export default function AnatomyModule({ initialTab, navNonce }) {
         </div>
       )}
 
-      {activeTab !== 'diagrams' && (
+      {activeTab !== 'diagrams' && activeTab !== 'explorer' && activeTab !== 'practice' && (
         <ResourceConnector
           department="anatomy"
           topic={activeTab === 'cardio' ? 'heart' : activeTab === 'hematology' ? 'microscope' : 'anatomy'}

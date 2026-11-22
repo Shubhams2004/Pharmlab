@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, ChevronDown, ChevronRight, Images, Microscope } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronRight, Globe, Images, Microscope } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 import { DepartmentWorkspaceMeta } from '../types/academicArchitecture';
 
@@ -16,7 +16,7 @@ export function DepartmentHeader({
   accentColorClass = 'text-emerald-600 dark:text-emerald-400',
   activeTabLabel
 }: DepartmentHeaderProps) {
-  const { openVisualLibrary, openKnowledgeLibrary } = useLibraryNavigation();
+  const { openVisualLibrary, openKnowledgeLibrary, openResourceHub } = useLibraryNavigation();
 
   return (
     <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-sm dark:shadow-none space-y-4">
@@ -74,6 +74,26 @@ export function DepartmentHeader({
           >
             <BookOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Textbooks</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              openResourceHub({
+                query: meta.shortLabel,
+                context: {
+                  id: `dept:${meta.visualDepartmentId}`,
+                  kind: 'department',
+                  label: meta.title,
+                  departmentId: meta.visualDepartmentId,
+                  moduleId: meta.id
+                }
+              })
+            }
+            className="min-h-[40px] px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-300 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+          >
+            <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Find Resources</span>
           </button>
         </div>
       </div>

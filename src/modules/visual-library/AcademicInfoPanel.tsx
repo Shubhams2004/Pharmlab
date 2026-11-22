@@ -22,6 +22,7 @@ import {
   X
 } from 'lucide-react';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { findStructureForVisual, getCategoryLabel } from '../../utils/academicEngineUtils';
 import { getAllBooks, searchAllBooks } from '../knowledge-library/libraryDb';
 import { CrossBookSearchResult, LibraryBookMeta } from '../knowledge-library/types';
 import {
@@ -209,6 +210,7 @@ export default function AcademicInfoPanel({
   }, [item.id, context.textbookKeywords]);
 
   const candidateSubjects = useMemo(() => findCandidateSubjectsForVisual(item), [item]);
+  const matchedCatalogStructure = useMemo(() => findStructureForVisual(item), [item]);
 
   const relatedVisuals = useMemo(() => {
     const relatedSubjIds = new Set(context.relatedSubjectIds || []);
@@ -1735,6 +1737,41 @@ export default function AcademicInfoPanel({
             {/* REFERENCES & CONNECTED RESOURCES TAB */}
             {activeTab === 'references' && (
               <div className="space-y-5">
+                {/* Anatomy Explorer Structure Link */}
+                {matchedCatalogStructure && (
+                  <section className="space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Anatomy Explorer Catalog Entry
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigateToModule('anatomy', 'explorer', {
+                          structureId: matchedCatalogStructure.id
+                        });
+                        onCloseViewer();
+                      }}
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-left flex items-center justify-between gap-3 transition-colors group"
+                    >
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold tabular-nums">
+                          Catalog #{matchedCatalogStructure.catalogNumber} ·{' '}
+                          {getCategoryLabel(matchedCatalogStructure.primaryCategory)}
+                        </p>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                          Open {matchedCatalogStructure.name} in Anatomy Explorer
+                        </p>
+                        {matchedCatalogStructure.overview && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                            {matchedCatalogStructure.overview}
+                          </p>
+                        )}
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-500 shrink-0" />
+                    </button>
+                  </section>
+                )}
+
                 {/* Connected PharmaLab Modules, Experiments & Case Studies */}
                 {context.pharmaLabLinks.length > 0 && (
                   <section className="space-y-2">

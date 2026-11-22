@@ -53,10 +53,12 @@ export const DEPARTMENT_WORKSPACES: Record<string, DepartmentWorkspaceMeta> = {
     category: 'bio',
     overview:
       'Annotated organ systems, histology, osteology (80 axial + 126 appendicular bones), hemocytometry, ECG waveforms, and Units I–V pathophysiology.',
-    practicalCountLabel: '17 Practicals · 7 Interactive Diagrams · Units I–V Theory',
+    practicalCountLabel: '60-Structure Catalog · 17 Practicals · 8 Diagrams · Units I–V',
     theorySummary: 'Cell physiology, tissues, integumentary, skeletal, nervous, special senses & cardiovascular system.',
-    defaultTab: 'diagrams',
+    defaultTab: 'explorer',
     tabs: [
+      { id: 'explorer', label: 'Anatomy Explorer (60)' },
+      { id: 'practice', label: 'Identification Practice' },
       { id: 'diagrams', label: 'Diagrams & Plates' },
       { id: 'theory', label: 'Theory (Units I–V)' },
       { id: 'hematology', label: 'Hematology Bench' },

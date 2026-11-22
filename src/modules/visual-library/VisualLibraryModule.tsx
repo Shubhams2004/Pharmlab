@@ -59,6 +59,8 @@ interface VisualLibraryModuleProps {
   initialQuery?: string | null;
   initialVisualId?: string | null;
   initialAnnotationId?: string | null;
+  initialTab?: LibraryTab | null;
+  initialOpenUpload?: boolean;
   navNonce?: number;
 }
 
@@ -80,18 +82,22 @@ export default function VisualLibraryModule({
   initialQuery,
   initialVisualId,
   initialAnnotationId,
+  initialTab,
+  initialOpenUpload = false,
   navNonce
 }: VisualLibraryModuleProps) {
-  const { openKnowledgeLibrary, navigateToModule, setWorkspaceSection, recordActivity } =
+  const { openKnowledgeLibrary, openResourceHub, navigateToModule, setWorkspaceSection, recordActivity } =
     useLibraryNavigation();
 
-  const [activeTab, setActiveTab] = useState<LibraryTab>('repository');
+  const [activeTab, setActiveTab] = useState<LibraryTab>(initialTab || 'repository');
   const [visuals, setVisuals] = useState<VisualMediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const [searchQuery, setSearchQuery] = useState(initialQuery || '');
+  const [searchQuery, setSearchQuery] = useState(
+    initialTab === 'discover' || initialOpenUpload ? '' : initialQuery || ''
+  );
   const [categoryFilter, setCategoryFilter] = useState<'all' | VisualCategory>(
     initialCategory || 'all'
   );
@@ -106,6 +112,7 @@ export default function VisualLibraryModule({
   );
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const handledJumpNonceRef = useRef<number | undefined>(undefined);
+  const handledActionNonceRef = useRef<number | undefined>(undefined);
 
   // Live Knowledge Library PDF search integration for Academic Search
   const [books, setBooks] = useState<LibraryBookMeta[]>([]);
@@ -141,9 +148,42 @@ export default function VisualLibraryModule({
   useEffect(() => {
     setDepartmentFilter(initialDepartment || 'all');
     setCategoryFilter(initialCategory || 'all');
+    if (initialTab === 'discover') {
+      setActiveTab('discover');
+      setSearchQuery('');
+      const dq = (initialQuery || '').trim();
+      setDiscoverQuery(dq);
+      if (dq.length >= 2 && handledActionNonceRef.current !== navNonce) {
+        handledActionNonceRef.current = navNonce;
+        void handleRunDiscovery(dq);
+      }
+      return;
+    }
+
+    if (initialOpenUpload && handledActionNonceRef.current !== navNonce) {
+      handledActionNonceRef.current = navNonce;
+      setActiveTab('repository');
+      setSearchQuery('');
+      const prefillCat = (
+        initialCategory && initialCategory !== 'all' ? initialCategory : 'anatomy'
+      ) as VisualCategory;
+      setUploadFile(null);
+      setUploadTitle(initialQuery || '');
+      setUploadTags(initialQuery || '');
+      setUploadCategory(prefillCat);
+      setUploadDomain(inferDomainFromCategory(prefillCat));
+      if (initialDepartment && initialDepartment !== 'all') {
+        setUploadDepartments([initialDepartment]);
+      }
+      setError(null);
+      setUploadOpen(true);
+      return;
+    }
+
+    if (initialTab) setActiveTab(initialTab);
     if (typeof initialQuery === 'string') setSearchQuery(initialQuery);
     else if (navNonce) setSearchQuery('');
-  }, [initialDepartment, initialCategory, initialQuery, navNonce]);
+  }, [initialDepartment, initialCategory, initialQuery, initialTab, initialOpenUpload, navNonce]);
 
   const loadVisuals = useCallback(async () => {
     try {
@@ -243,7 +283,7 @@ export default function VisualLibraryModule({
 
   const handleOpenUploadWithFile = (file: File) => {
     setUploadFile(file);
-    setUploadTitle(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
+    setUploadTitle((prev) => prev.trim() || file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
     setUploadScientificName('');
     setUploadOpen(true);
     setError(null);
@@ -404,6 +444,15 @@ export default function VisualLibraryModule({
             <span>
               {activeTab === 'discover' ? 'Back to My Library' : 'Discover Open Images'}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openResourceHub({ tab: 'visuals' })}
+            className="h-10 px-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-500/40 text-sm font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
+          >
+            <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Resource Hub</span>
           </button>
         </div>
       </section>
@@ -1223,7 +1272,7 @@ export default function VisualLibraryModule({
       )}
 
       {/* Upload Image Modal */}
-      {uploadOpen && uploadFile && (
+      {uploadOpen && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => !uploading && setUploadOpen(false)}
@@ -1250,12 +1299,37 @@ export default function VisualLibraryModule({
             </div>
 
             <form onSubmit={handleSubmitUpload} className="space-y-3.5 text-sm">
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-center justify-between gap-2">
-                <span className="truncate font-medium">{uploadFile.name}</span>
-                <span className="tabular-nums shrink-0">
-                  {(uploadFile.size / 1024).toFixed(1)} KB
-                </span>
-              </div>
+              {uploadFile ? (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-center justify-between gap-2">
+                  <span className="truncate font-medium">{uploadFile.name}</span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="tabular-nums">
+                      {(uploadFile.size / 1024).toFixed(1)} KB
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline"
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-dashed border-emerald-500/50 text-center space-y-2">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    Select a PNG, JPG, or WebP scientific diagram or photograph to link to this entry.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="min-h-[38px] px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                  >
+                    <ImagePlus className="w-4 h-4" />
+                    <span>Select Image File</span>
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1452,8 +1526,8 @@ export default function VisualLibraryModule({
                 </button>
                 <button
                   type="submit"
-                  disabled={uploading}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold inline-flex items-center gap-2"
+                  disabled={uploading || !uploadFile || !uploadTitle.trim()}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold inline-flex items-center gap-2"
                 >
                   {uploading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
