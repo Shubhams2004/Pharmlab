@@ -18,6 +18,8 @@ import {
 } from '../modules/knowledge-library/types';
 import ImageViewerModal from '../modules/visual-library/ImageViewerModal';
 import VisualThumbnail from '../modules/visual-library/VisualThumbnail';
+import { resolveAcademicContextForVisual } from '../modules/visual-library/academicRegistry';
+import { ACADEMIC_DOMAIN_LABELS } from '../modules/visual-library/academicTypes';
 import {
   CATEGORY_LABELS,
   DepartmentId,
@@ -194,28 +196,33 @@ export default function ResourceConnector({
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {visuals.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setViewerItem(item)}
-                  className="group flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 transition-colors text-left"
-                >
-                  <VisualThumbnail
-                    item={item}
-                    className="w-16 h-12 rounded-lg shrink-0"
-                    imgClassName="w-full h-full object-contain p-0.5"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
-                      {item.title}
-                    </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                      {CATEGORY_LABELS[item.category]} · {item.sourceName}
-                    </p>
-                  </div>
-                </button>
-              ))}
+              {visuals.map((item) => {
+                const ctx = resolveAcademicContextForVisual(item);
+                const pinCount = ctx.annotations.length;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setViewerItem(item)}
+                    className="group flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 transition-colors text-left"
+                  >
+                    <VisualThumbnail
+                      item={item}
+                      className="w-16 h-12 rounded-lg shrink-0"
+                      imgClassName="w-full h-full object-contain p-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
+                        {item.title}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        {ACADEMIC_DOMAIN_LABELS[ctx.domain].split(' & ')[0]}
+                        {pinCount > 0 ? ` · ${pinCount} Pins` : ` · ${CATEGORY_LABELS[item.category]}`}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

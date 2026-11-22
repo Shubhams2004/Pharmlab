@@ -2,38 +2,35 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Contrast,
-  Edit3,
-  ExternalLink,
   ImageOff,
-  Info,
   Loader2,
+  MapPin,
   Maximize2,
   Minimize2,
+  Plus,
   RefreshCw,
   RotateCcw,
-  ShieldCheck,
-  Trash2,
+  Tag,
   X,
   ZoomIn,
   ZoomOut
 } from 'lucide-react';
-import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import AcademicInfoPanel from './AcademicInfoPanel';
+import { resolveAcademicContextForVisual } from './academicRegistry';
+import { ACADEMIC_DOMAIN_LABELS, InteractiveAnnotation } from './academicTypes';
 import VisualThumbnail from './VisualThumbnail';
-import {
-  CATEGORY_LABELS,
-  DEPARTMENT_LABELS,
-  DepartmentId,
-  VisualCategory,
-  VisualMediaItem
-} from './types';
+import { CATEGORY_LABELS, VisualMediaItem } from './types';
 import { resolveVisualImageSrc, updateVisualMetadata } from './visualDb';
 
 interface ImageViewerModalProps {
   item: VisualMediaItem | null;
   allVisuals: VisualMediaItem[];
+  initialAnnotationId?: string | null;
   onClose: () => void;
   onSelectVisual: (item: VisualMediaItem) => void;
   onUpdated?: (updated: VisualMediaItem) => void;
@@ -41,13 +38,6 @@ interface ImageViewerModalProps {
 }
 
 type StageBackdrop = 'auto' | 'dark' | 'light';
-
-function formatBytes(bytes: number): string {
-  if (!bytes) return 'Bundled Plate';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
 
 function getTouchDistance(t1: React.Touch | Touch, t2: React.Touch | Touch): number {
   return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
@@ -65,8 +55,8 @@ function clampPan(
   if (zoom <= 1.02) return { x: 0, y: 0 };
   const w = stageEl?.clientWidth || 600;
   const h = stageEl?.clientHeight || 500;
-  const maxX = Math.max(120, (w * (zoom - 1)) / 2 + 120);
-  const maxY = Math.max(120, (h * (zoom - 1)) / 2 + 120);
+  const maxX = Math.max(140, (w * (zoom - 1)) / 2 + 140);
+  const maxY = Math.max(140, (h * (zoom - 1)) / 2 + 140);
   return {
     x: Math.max(-maxX, Math.min(maxX, nextPan.x)),
     y: Math.max(-maxY, Math.min(maxY, nextPan.y))
@@ -76,35 +66,49 @@ function clampPan(
 export default function ImageViewerModal({
   item,
   allVisuals,
+  initialAnnotationId,
   onClose,
   onSelectVisual,
   onUpdated,
   onDelete
 }: ImageViewerModalProps) {
-  const { openKnowledgeLibrary } = useLibraryNavigation();
-
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [naturalDims, setNaturalDims] = useState<{ w: number; h: number } | null>(null);
+  const [stageDims, setStageDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [backdrop, setBackdrop] = useState<StageBackdrop>('auto');
 
-  const [infoOpen, setInfoOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
-  );
+  const [infoOpen, setInfoOpen] = useState<boolean>(true);
+  const [mobilePanelExpanded, setMobilePanelExpanded] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(
+    initialAnnotationId || null
+  );
+  const [showLabels, setShowLabels] = useState<boolean>(true);
+  const [pinPlacementMode, setPinPlacementMode] = useState<boolean>(false);
+  const [draftPinCoords, setDraftPinCoords] = useState<{ xPercent: number; yPercent: number } | null>(
+    null
+  );
+  const [draftLabel, setDraftLabel] = useState('');
+  const [draftLocation, setDraftLocation] = useState('');
+  const [draftDefinition, setDraftDefinition] = useState('');
+  const [draftFunction, setDraftFunction] = useState('');
+  const [draftImportance, setDraftImportance] = useState('');
+  const [savingPin, setSavingPin] = useState(false);
 
   const viewerRootRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
   const dragStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
-  // Touch pinch, drag, swipe & double-tap refs
   const touchPinchRef = useRef<{
     active: boolean;
     startDist: number;
@@ -135,18 +139,38 @@ export default function ImageViewerModal({
     y: 0
   });
 
-  const [editing, setEditing] = useState(false);
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const academicContext = useMemo(
+    () => (item ? resolveAcademicContextForVisual(item) : null),
+    [item]
+  );
 
-  const [editTitle, setEditTitle] = useState('');
-  const [editCaption, setEditCaption] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editCategory, setEditCategory] = useState<VisualCategory>('anatomy');
-  const [editDepartments, setEditDepartments] = useState<DepartmentId[]>([]);
-  const [editExperiments, setEditExperiments] = useState('');
-  const [editEquipment, setEditEquipment] = useState('');
-  const [editTags, setEditTags] = useState('');
+  // Measure stage dimensions so the image + annotation overlay share exact fitted pixel bounds
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || !item) return;
+
+    const measure = () => {
+      const style = window.getComputedStyle(el);
+      const padX = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0');
+      const padY = parseFloat(style.paddingTop || '0') + parseFloat(style.paddingBottom || '0');
+      setStageDims({
+        w: Math.max(0, el.clientWidth - padX),
+        h: Math.max(0, el.clientHeight - padY)
+      });
+    };
+
+    measure();
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(measure);
+      observer.observe(el);
+    }
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [item, infoOpen, mobilePanelExpanded, isFullscreen]);
 
   useEffect(() => {
     if (!item) return;
@@ -156,18 +180,10 @@ export default function ImageViewerModal({
     setPan({ x: 0, y: 0 });
     setLoadError(false);
     setImgLoaded(false);
-    setNaturalDims(null);
-    setEditing(false);
-    setConfirmDelete(false);
-
-    setEditTitle(item.title);
-    setEditCaption(item.caption);
-    setEditDescription(item.description);
-    setEditCategory(item.category);
-    setEditDepartments(item.departments);
-    setEditExperiments(item.experiments.join(', '));
-    setEditEquipment(item.equipment.join(', '));
-    setEditTags(item.tags.join(', '));
+    setNaturalDims(item.width && item.height ? { w: item.width, h: item.height } : null);
+    setPinPlacementMode(false);
+    setDraftPinCoords(null);
+    setSelectedAnnotationId(initialAnnotationId || null);
 
     if (item.assetUrl) {
       setImgSrc(item.assetUrl);
@@ -193,7 +209,13 @@ export default function ImageViewerModal({
     return () => {
       cancelled = true;
     };
-  }, [item, retryNonce]);
+  }, [item?.id, item?.assetUrl, retryNonce, initialAnnotationId]);
+
+  useEffect(() => {
+    if (academicContext && academicContext.annotations.length > 0) {
+      setShowLabels(true);
+    }
+  }, [item?.id, academicContext?.annotations.length]);
 
   const currentIndex = useMemo(() => {
     if (!item || allVisuals.length === 0) return -1;
@@ -218,7 +240,11 @@ export default function ImageViewerModal({
       const typing = tag === 'input' || tag === 'textarea' || tag === 'select';
 
       if (e.key === 'Escape') {
-        if (isFullscreen && document.fullscreenElement) {
+        if (draftPinCoords) {
+          setDraftPinCoords(null);
+        } else if (pinPlacementMode) {
+          setPinPlacementMode(false);
+        } else if (isFullscreen && document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
         } else if (isFullscreen) {
           setIsFullscreen(false);
@@ -228,7 +254,7 @@ export default function ImageViewerModal({
         return;
       }
 
-      if (typing || editing) return;
+      if (typing) return;
 
       if (e.key === 'ArrowLeft' && hasSiblings) {
         e.preventDefault();
@@ -254,7 +280,7 @@ export default function ImageViewerModal({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [item, isFullscreen, onClose, editing, hasSiblings, stepSibling]);
+  }, [item, isFullscreen, onClose, hasSiblings, stepSibling, draftPinCoords, pinPlacementMode]);
 
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -262,7 +288,6 @@ export default function ImageViewerModal({
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  // Non-passive wheel & multi-touch prevention on stage so zooming never scrolls background
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage || !item) return;
@@ -292,19 +317,39 @@ export default function ImageViewerModal({
 
   const relatedVisuals = useMemo(() => {
     if (!item) return [];
+    const relatedIds = new Set(academicContext?.relatedSubjectIds || []);
     return allVisuals
-      .filter(
-        (candidate) =>
-          candidate.id !== item.id &&
-          (candidate.category === item.category ||
-            candidate.departments.some((d) => item.departments.includes(d)))
-      )
+      .filter((candidate) => {
+        if (candidate.id === item.id) return false;
+        if (candidate.subjectId && relatedIds.has(candidate.subjectId)) return true;
+        return (
+          candidate.category === item.category ||
+          candidate.departments.some((d) => item.departments.includes(d))
+        );
+      })
       .slice(0, 6);
-  }, [item, allVisuals]);
+  }, [item, allVisuals, academicContext?.relatedSubjectIds]);
 
-  if (!item) return null;
+  const selectedAnnotation: InteractiveAnnotation | null = useMemo(() => {
+    if (!academicContext || !selectedAnnotationId) return null;
+    return academicContext.annotations.find((a) => a.id === selectedAnnotationId) || null;
+  }, [academicContext, selectedAnnotationId]);
+
+  const fittedBox = useMemo(() => {
+    if (!naturalDims || naturalDims.w <= 0 || naturalDims.h <= 0 || stageDims.w <= 0 || stageDims.h <= 0) {
+      return null;
+    }
+    const scale = Math.min(stageDims.w / naturalDims.w, stageDims.h / naturalDims.h);
+    return {
+      width: Math.max(80, Math.floor(naturalDims.w * scale)),
+      height: Math.max(80, Math.floor(naturalDims.h * scale))
+    };
+  }, [naturalDims, stageDims]);
+
+  if (!item || !academicContext) return null;
 
   const toggleZoomAtPoint = (clientX: number, clientY: number) => {
+    if (pinPlacementMode) return;
     if (zoom > 1.15) {
       setZoom(1);
       setPan({ x: 0, y: 0 });
@@ -312,17 +357,17 @@ export default function ImageViewerModal({
     }
     const stage = stageRef.current;
     if (!stage) {
-      setZoom(2.4);
+      setZoom(2.2);
       return;
     }
     const rect = stage.getBoundingClientRect();
     const offsetX = clientX - (rect.left + rect.width / 2);
     const offsetY = clientY - (rect.top + rect.height / 2);
-    const targetZoom = 2.4;
+    const targetZoom = 2.2;
     setZoom(targetZoom);
     setPan(
       clampPan(
-        { x: -offsetX * 0.95, y: -offsetY * 0.95 },
+        { x: -offsetX * 0.9, y: -offsetY * 0.9 },
         targetZoom,
         stage
       )
@@ -409,22 +454,21 @@ export default function ImageViewerModal({
       const dy = t.clientY - touchPanSwipeRef.current.startY;
       const dt = Date.now() - touchPanSwipeRef.current.startTime;
 
-      // Swipe Left / Right between images when fitted at 1x zoom
       if (
         touchPanSwipeRef.current.active &&
         zoom <= 1.05 &&
         hasSiblings &&
         dt < 450 &&
         Math.abs(dx) > 64 &&
-        Math.abs(dx) > Math.abs(dy) * 1.8
+        Math.abs(dx) > Math.abs(dy) * 1.8 &&
+        !pinPlacementMode
       ) {
         touchPanSwipeRef.current.active = false;
         stepSibling(dx < 0 ? 1 : -1);
         return;
       }
 
-      // Double-tap to zoom / reset
-      if (!touchPanSwipeRef.current.moved) {
+      if (!touchPanSwipeRef.current.moved && !pinPlacementMode) {
         const now = Date.now();
         const dtTap = now - lastTapRef.current.time;
         const distTap = Math.hypot(
@@ -476,45 +520,75 @@ export default function ImageViewerModal({
     });
   };
 
-  const handleSaveMetadata = async (e: React.FormEvent) => {
+  const handleImageClickForPin = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!pinPlacementMode || !imgRef.current) return;
+    e.stopPropagation();
+    const rect = imgRef.current.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const xPercent = Math.max(2, Math.min(98, Number((((e.clientX - rect.left) / rect.width) * 100).toFixed(1))));
+    const yPercent = Math.max(2, Math.min(98, Number((((e.clientY - rect.top) / rect.height) * 100).toFixed(1))));
+    setDraftPinCoords({ xPercent, yPercent });
+    setDraftLabel('');
+    setDraftLocation('');
+    setDraftDefinition('');
+    setDraftFunction('');
+    setDraftImportance('');
+  };
+
+  const handleSaveCustomPin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavingEdit(true);
+    if (!draftPinCoords || !draftLabel.trim()) return;
+    setSavingPin(true);
     try {
-      const splitList = (val: string) =>
-        val
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-
+      const existingUserPins = item.annotations || [];
+      const newPin: InteractiveAnnotation = {
+        id: `user_pin_${Date.now()}`,
+        label: draftLabel.trim(),
+        shortCode: String(academicContext.annotations.length + 1),
+        xPercent: draftPinCoords.xPercent,
+        yPercent: draftPinCoords.yPercent,
+        definition: draftDefinition.trim() || `${draftLabel.trim()} (user-annotated structure).`,
+        location: draftLocation.trim() || undefined,
+        functionRole: draftFunction.trim() || 'User-recorded structure observation.',
+        physiologicalOrClinicalImportance: draftImportance.trim() || undefined,
+        isUserAdded: true
+      };
       const updated = await updateVisualMetadata(item.id, {
-        title: editTitle.trim() || item.title,
-        caption: editCaption.trim(),
-        description: editDescription.trim(),
-        category: editCategory,
-        departments: editDepartments,
-        experiments: splitList(editExperiments),
-        equipment: splitList(editEquipment),
-        tags: splitList(editTags)
+        annotations: [...existingUserPins, newPin]
       });
-
       if (updated) {
         onUpdated?.(updated);
         onSelectVisual(updated);
+        setSelectedAnnotationId(newPin.id);
       }
-      setEditing(false);
+      setDraftPinCoords(null);
+      setPinPlacementMode(false);
+      setShowLabels(true);
     } finally {
-      setSavingEdit(false);
+      setSavingPin(false);
     }
   };
 
-  const toggleDept = (dept: DepartmentId) => {
-    setEditDepartments((prev) =>
-      prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]
-    );
+  const handleDeleteUserAnnotation = async (annotationId: string) => {
+    const remaining = (item.annotations || []).filter((a) => a.id !== annotationId);
+    const updated = await updateVisualMetadata(item.id, { annotations: remaining });
+    if (updated) {
+      onUpdated?.(updated);
+      onSelectVisual(updated);
+      if (selectedAnnotationId === annotationId) {
+        setSelectedAnnotationId(null);
+      }
+    }
+  };
+
+  const handleSelectAnnotation = (ann: InteractiveAnnotation | null) => {
+    setSelectedAnnotationId(ann ? ann.id : null);
+    if (ann) setShowLabels(true);
   };
 
   const displayWidth = item.width || naturalDims?.w;
   const displayHeight = item.height || naturalDims?.h;
+  const hasAnnotations = academicContext.annotations.length > 0;
 
   const stageBgClass =
     backdrop === 'dark'
@@ -523,361 +597,13 @@ export default function ImageViewerModal({
         ? 'bg-white'
         : 'bg-slate-100 dark:bg-slate-950';
 
-  const metadataContent = (
-    <>
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-          Scientific Metadata &amp; License
-        </h3>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setEditing((prev) => !prev)}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-emerald-500/40"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>{editing ? 'Cancel' : 'Edit'}</span>
-          </button>
-          {item.sourceType !== 'built-in' && onDelete && (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete((prev) => !prev)}
-              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-rose-600 dark:hover:text-rose-400"
-              aria-label="Delete image"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setInfoOpen(false)}
-            className="lg:hidden p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
-            aria-label="Close details sheet"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {confirmDelete && onDelete && (
-        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/35 flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-rose-800 dark:text-rose-200">
-            Remove from Visual Library?
-          </span>
-          <button
-            type="button"
-            onClick={async () => {
-              await onDelete(item.id);
-              onClose();
-            }}
-            className="px-2.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold"
-          >
-            Confirm Delete
-          </button>
-        </div>
-      )}
-
-      {editing ? (
-        <form onSubmit={handleSaveMetadata} className="space-y-3 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Title
-            </label>
-            <input
-              type="text"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Caption
-            </label>
-            <input
-              type="text"
-              value={editCaption}
-              onChange={(e) => setEditCaption(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Scientific Description
-            </label>
-            <textarea
-              rows={3}
-              value={editDescription}
-              onChange={(e) => setEditDescription(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Category
-            </label>
-            <select
-              value={editCategory}
-              onChange={(e) => setEditCategory(e.target.value as VisualCategory)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-            >
-              {Object.entries(CATEGORY_LABELS).map(([k, label]) => (
-                <option key={k} value={k}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Associated Departments
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(DEPARTMENT_LABELS) as DepartmentId[]).map((dept) => {
-                const active = editDepartments.includes(dept);
-                return (
-                  <button
-                    key={dept}
-                    type="button"
-                    onClick={() => toggleDept(dept)}
-                    className={`px-2 py-1 rounded-md border text-[11px] font-medium ${
-                      active
-                        ? 'bg-emerald-600 border-emerald-600 text-white'
-                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    {DEPARTMENT_LABELS[dept].split(' (')[0]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Experiments (comma-separated)
-            </label>
-            <input
-              type="text"
-              value={editExperiments}
-              onChange={(e) => setEditExperiments(e.target.value)}
-              placeholder="e.g. Exp 14, Exp 16a"
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Equipment (comma-separated)
-            </label>
-            <input
-              type="text"
-              value={editEquipment}
-              onChange={(e) => setEditEquipment(e.target.value)}
-              placeholder="e.g. Compound Microscope, Burette"
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Tags (comma-separated)
-            </label>
-            <input
-              type="text"
-              value={editTags}
-              onChange={(e) => setEditTags(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={savingEdit}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
-          >
-            <Check className="w-4 h-4" />
-            <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
-          </button>
-        </form>
-      ) : (
-        <>
-          {item.caption && (
-            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-              {item.caption}
-            </p>
-          )}
-
-          {item.description && item.description !== item.caption && (
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              {item.description}
-            </p>
-          )}
-
-          {item.linkedBookId && item.linkedBookPage && (
-            <button
-              type="button"
-              onClick={() => {
-                openKnowledgeLibrary({
-                  bookId: item.linkedBookId,
-                  pageNumber: item.linkedBookPage
-                });
-                onClose();
-              }}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors"
-            >
-              <BookOpen className="w-4 h-4" />
-              <span>Open Source Textbook (Page {item.linkedBookPage})</span>
-            </button>
-          )}
-
-          <dl className="space-y-2.5 text-xs pt-3 border-t border-slate-200 dark:border-slate-800">
-            <div className="flex justify-between gap-3">
-              <dt className="text-slate-500 dark:text-slate-400">Source</dt>
-              <dd className="text-slate-900 dark:text-slate-200 font-medium text-right">
-                {item.sourceName}
-              </dd>
-            </div>
-            {item.creator && (
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Creator</dt>
-                <dd className="text-slate-900 dark:text-slate-200 font-medium text-right">
-                  {item.creator}
-                </dd>
-              </div>
-            )}
-            <div className="flex justify-between gap-3">
-              <dt className="text-slate-500 dark:text-slate-400">License</dt>
-              <dd className="text-emerald-700 dark:text-emerald-400 font-semibold text-right inline-flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                <span>{item.license}</span>
-              </dd>
-            </div>
-            {displayWidth && displayHeight && (
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Resolution</dt>
-                <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums text-right">
-                  {displayWidth} × {displayHeight} px
-                </dd>
-              </div>
-            )}
-            <div className="flex justify-between gap-3">
-              <dt className="text-slate-500 dark:text-slate-400">Storage</dt>
-              <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums text-right">
-                {formatBytes(item.fileSize)}
-              </dd>
-            </div>
-          </dl>
-
-          {item.attribution && (
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              <span className="font-semibold text-slate-700 dark:text-slate-300 block mb-0.5">
-                Attribution
-              </span>
-              {item.attribution}
-            </div>
-          )}
-
-          {item.sourceUrl && (
-            <a
-              href={item.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
-            >
-              <span>View Original Repository Record</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
-
-          {(item.departments.length > 0 ||
-            item.experiments.length > 0 ||
-            item.equipment.length > 0 ||
-            item.tags.length > 0) && (
-            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-              {item.departments.length > 0 && (
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400 block mb-0.5">
-                    Departments
-                  </span>
-                  <p className="text-slate-800 dark:text-slate-200 font-medium">
-                    {item.departments.map((d) => DEPARTMENT_LABELS[d]).join(' · ')}
-                  </p>
-                </div>
-              )}
-              {item.experiments.length > 0 && (
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400 block mb-0.5">
-                    Associated Practicals
-                  </span>
-                  <p className="text-slate-800 dark:text-slate-200 font-medium">
-                    {item.experiments.join(' · ')}
-                  </p>
-                </div>
-              )}
-              {item.equipment.length > 0 && (
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400 block mb-0.5">
-                    Equipment
-                  </span>
-                  <p className="text-slate-800 dark:text-slate-200 font-medium">
-                    {item.equipment.join(' · ')}
-                  </p>
-                </div>
-              )}
-              {item.tags.length > 0 && (
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400 block mb-0.5">
-                    Tags
-                  </span>
-                  <p className="text-slate-600 dark:text-slate-300">
-                    {item.tags.join(' · ')}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Related Scientific Visuals inside Mobile Sheet as well */}
-          {relatedVisuals.length > 0 && (
-            <div className="lg:hidden pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 block">
-                Related Scientific Visuals
-              </span>
-              <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
-                {relatedVisuals.map((rel) => (
-                  <button
-                    key={rel.id}
-                    type="button"
-                    onClick={() => onSelectVisual(rel)}
-                    className="flex items-center gap-2 p-1.5 pr-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shrink-0 text-left max-w-[210px]"
-                  >
-                    <VisualThumbnail
-                      item={rel}
-                      className="w-10 h-9 rounded-lg shrink-0"
-                      imgClassName="w-full h-full object-cover"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                        {rel.title}
-                      </p>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                        {CATEGORY_LABELS[rel.category]}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </>
-  );
-
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-0 sm:p-3 lg:p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={`Image viewer: ${item.title}`}
+      aria-label={`Academic visual viewer: ${item.title}`}
     >
       <div
         ref={viewerRootRef}
@@ -885,22 +611,24 @@ export default function ImageViewerModal({
         className={`w-full bg-white dark:bg-slate-900 border-0 sm:border sm:border-slate-200 sm:dark:border-slate-800 flex flex-col overflow-hidden shadow-2xl ${
           isFullscreen
             ? 'h-[100dvh] max-w-none rounded-none'
-            : 'max-w-6xl h-[100dvh] sm:h-[92dvh] rounded-none sm:rounded-2xl'
+            : 'max-w-[1440px] h-[100dvh] sm:h-[94dvh] rounded-none sm:rounded-2xl'
         }`}
       >
         {/* Top Viewer Bar */}
-        <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2.5 shrink-0">
+        <header className="px-3 sm:px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2.5 shrink-0 bg-white dark:bg-slate-900">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
               <span className="font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
-                {CATEGORY_LABELS[item.category]}
+                {ACADEMIC_DOMAIN_LABELS[academicContext.domain]}
               </span>
               <span aria-hidden="true">·</span>
-              <span className="truncate">{item.sourceName}</span>
+              <span className="truncate">{CATEGORY_LABELS[item.category]}</span>
+              <span aria-hidden="true" className="hidden sm:inline">·</span>
+              <span className="hidden sm:inline truncate">{item.sourceName}</span>
               {hasSiblings && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="tabular-nums shrink-0">
+                  <span className="tabular-nums shrink-0 font-medium">
                     {currentIndex + 1}/{allVisuals.length}
                   </span>
                 </>
@@ -911,14 +639,14 @@ export default function ImageViewerModal({
                 </span>
               )}
             </div>
-            <h2 className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white truncate mt-0.5">
+            <h2 className="text-sm sm:text-base lg:text-lg font-bold text-slate-900 dark:text-white truncate mt-0.5">
               {item.title}
             </h2>
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* Desktop Zoom Pill */}
-            <div className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+            {/* Desktop Zoom Controls */}
+            <div className="hidden md:flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => {
@@ -958,25 +686,41 @@ export default function ImageViewerModal({
               </button>
             </div>
 
+            {hasAnnotations && (
+              <button
+                type="button"
+                onClick={() => setShowLabels((s) => !s)}
+                className={`hidden sm:inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-semibold transition-colors shrink-0 ${
+                  showLabels
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
+                }`}
+                title="Show or hide interactive anatomical/apparatus labels"
+              >
+                <Tag className="w-3.5 h-3.5" />
+                <span>Labels ({academicContext.annotations.length})</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setInfoOpen((prev) => !prev)}
-              className={`inline-flex items-center justify-center gap-1.5 h-10 sm:h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors shrink-0 ${
+              className={`inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-semibold transition-colors shrink-0 ${
                 infoOpen
                   ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
                   : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
               }`}
-              aria-label="Toggle scientific metadata and license panel"
+              aria-label="Toggle academic information panel"
               aria-expanded={infoOpen}
             >
-              <Info className="w-4 h-4" />
-              <span className="hidden xs:inline sm:inline">Details</span>
+              <BookOpen className="w-4 h-4" />
+              <span className="hidden xs:inline sm:inline">Academic Guide</span>
             </button>
 
             <button
               type="button"
               onClick={handleToggleFullscreen}
-              className="w-10 h-10 sm:w-9 sm:h-9 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 shrink-0"
+              className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 shrink-0"
               aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
@@ -986,30 +730,64 @@ export default function ImageViewerModal({
             <button
               type="button"
               onClick={onClose}
-              className="w-10 h-10 sm:w-9 sm:h-9 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 shrink-0"
+              className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700 shrink-0"
               aria-label="Close image viewer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Main Split Viewport */}
+        {/* Main Academic Split Viewport */}
         <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden relative">
-          {/* Image Stage Wrapper (overlays sit outside stageRef so touch prevention never blocks taps) */}
-          <div className={`flex-1 relative overflow-hidden transition-colors ${stageBgClass}`}>
-            {/* High-Resolution Image Canvas */}
+          {/* Left/Top: Interactive Image Stage */}
+          <div
+            className={`relative overflow-hidden transition-colors flex flex-col ${stageBgClass} ${
+              infoOpen
+                ? mobilePanelExpanded
+                  ? 'h-[26dvh] lg:h-auto lg:flex-1 shrink-0'
+                  : 'h-[43dvh] sm:h-[46dvh] lg:h-auto lg:flex-1 shrink-0'
+                : 'flex-1'
+            }`}
+          >
+            {/* Pin Placement Mode Banner */}
+            {pinPlacementMode && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-semibold shadow-lg flex items-center gap-2 max-w-[92%]">
+                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">
+                  Click anywhere on the image to place a study pin
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinPlacementMode(false);
+                    setDraftPinCoords(null);
+                  }}
+                  className="ml-1 px-1.5 py-0.5 rounded bg-white/20 hover:bg-white/30 text-[11px]"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* High-Resolution Interactive Canvas */}
             <div
               ref={stageRef}
               className={`w-full h-full flex items-center justify-center overflow-hidden relative select-none touch-none p-3 sm:p-5 ${
-                zoom > 1.02 ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'
+                pinPlacementMode
+                  ? 'cursor-crosshair'
+                  : zoom > 1.02
+                    ? dragging
+                      ? 'cursor-grabbing'
+                      : 'cursor-grab'
+                    : 'cursor-zoom-in'
               }`}
               onDoubleClick={(e) => {
-                if (loading || loadError) return;
+                if (loading || loadError || pinPlacementMode) return;
                 toggleZoomAtPoint(e.clientX, e.clientY);
               }}
               onMouseDown={(e) => {
-                if (zoom <= 1.02) return;
+                if (zoom <= 1.02 || pinPlacementMode) return;
                 setDragging(true);
                 dragStartRef.current = {
                   x: e.clientX,
@@ -1047,7 +825,7 @@ export default function ImageViewerModal({
                 <div className="flex flex-col items-center gap-2">
                   <Loader2 className="w-7 h-7 animate-spin text-emerald-600 dark:text-emerald-400" />
                   <span className="text-xs text-slate-500 dark:text-slate-400">
-                    Loading high-resolution image...
+                    Loading high-resolution visual...
                   </span>
                 </div>
               ) : loadError || !imgSrc ? (
@@ -1057,7 +835,7 @@ export default function ImageViewerModal({
                     Image could not be loaded
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Verify your connection if this item references a remote repository URL.
+                    Verify your network connection if this record links to an external repository.
                   </p>
                   <button
                     type="button"
@@ -1069,28 +847,234 @@ export default function ImageViewerModal({
                   </button>
                 </div>
               ) : (
-                <img
-                  src={imgSrc}
-                  alt={item.title}
-                  referrerPolicy="no-referrer"
-                  draggable={false}
-                  onLoad={(e) => {
-                    setImgLoaded(true);
-                    const imgEl = e.currentTarget;
-                    if (imgEl.naturalWidth && imgEl.naturalHeight) {
-                      setNaturalDims({ w: imgEl.naturalWidth, h: imgEl.naturalHeight });
-                    }
-                  }}
-                  onError={() => setLoadError(true)}
-                  className={`max-w-full max-h-full object-contain transition-opacity duration-150 ${
-                    imgLoaded ? 'opacity-100' : 'opacity-0'
-                  } ${dragging || touchPinchRef.current.active ? '' : 'transition-transform duration-150'}`}
+                <div
+                  className={`relative shrink-0 flex items-center justify-center ${
+                    dragging || touchPinchRef.current.active ? '' : 'transition-transform duration-150'
+                  }`}
                   style={{
+                    width: fittedBox ? `${fittedBox.width}px` : undefined,
+                    height: fittedBox ? `${fittedBox.height}px` : undefined,
+                    maxWidth: fittedBox ? undefined : '100%',
+                    maxHeight: fittedBox ? undefined : '100%',
                     transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
                   }}
-                />
+                >
+                  <img
+                    ref={imgRef}
+                    src={imgSrc}
+                    alt={item.title}
+                    referrerPolicy="no-referrer"
+                    draggable={false}
+                    onClick={handleImageClickForPin}
+                    onLoad={(e) => {
+                      setImgLoaded(true);
+                      const imgEl = e.currentTarget;
+                      if (imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) {
+                        setNaturalDims({ w: imgEl.naturalWidth, h: imgEl.naturalHeight });
+                      }
+                    }}
+                    onError={() => setLoadError(true)}
+                    className={`w-full h-full object-contain block transition-opacity duration-150 ${
+                      imgLoaded ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  />
+
+                  {/* Interactive Structure Pins & Region Highlight Overlay (exact same box as image) */}
+                  {imgLoaded && showLabels && academicContext.annotations.length > 0 && (
+                    <div className="absolute inset-0 pointer-events-none">
+                      {selectedAnnotation?.regionBox && (
+                        <div
+                          className="absolute rounded-lg border-2 border-emerald-400 bg-emerald-400/15 shadow-[0_0_0_2px_rgba(15,23,42,0.35)] transition-all"
+                          style={{
+                            left: `${selectedAnnotation.regionBox.x}%`,
+                            top: `${selectedAnnotation.regionBox.y}%`,
+                            width: `${selectedAnnotation.regionBox.width}%`,
+                            height: `${selectedAnnotation.regionBox.height}%`
+                          }}
+                        />
+                      )}
+
+                      {academicContext.annotations.map((ann, idx) => {
+                        const isSelected = selectedAnnotationId === ann.id;
+                        const badgeText = ann.shortCode || String(idx + 1);
+                        return (
+                          <button
+                            key={ann.id}
+                            type="button"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (pinPlacementMode) return;
+                              handleSelectAnnotation(isSelected ? null : ann);
+                            }}
+                            style={{
+                              left: `${ann.xPercent}%`,
+                              top: `${ann.yPercent}%`,
+                              transform: `translate(-50%, -50%) scale(${Math.max(0.65, 1 / Math.sqrt(Math.max(1, zoom)))})`
+                            }}
+                            className={`pointer-events-auto absolute group flex items-center justify-center rounded-full border-2 font-bold tabular-nums shadow-md transition-all focus:outline-none ${
+                              isSelected
+                                ? 'w-7 h-7 text-xs bg-emerald-500 border-white text-white ring-4 ring-emerald-400/40 z-20'
+                                : ann.isUserAdded
+                                  ? 'w-6 h-6 text-[11px] bg-amber-500 border-white text-white hover:scale-110 z-10'
+                                  : 'w-6 h-6 text-[11px] bg-slate-900/90 border-emerald-400 text-white hover:bg-emerald-600 hover:border-white hover:scale-110 z-10'
+                            }`}
+                            title={ann.label}
+                            aria-label={`Inspect structure ${badgeText}: ${ann.label}`}
+                          >
+                            {badgeText}
+                            <span
+                              className={`hidden sm:block pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap bg-slate-900/95 text-white border border-slate-700 shadow-lg transition-opacity ${
+                                isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                              }`}
+                            >
+                              {ann.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                      {draftPinCoords && (
+                        <div
+                          style={{
+                            left: `${draftPinCoords.xPercent}%`,
+                            top: `${draftPinCoords.yPercent}%`,
+                            transform: 'translate(-50%, -50%)'
+                          }}
+                          className="absolute w-6 h-6 rounded-full bg-amber-500 border-2 border-white shadow-lg ring-4 ring-amber-400/40 z-30"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
+
+            {/* Selected Structure Floating Callout Card */}
+            {selectedAnnotation && !draftPinCoords && (
+              <div
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                className="absolute top-3 left-3 z-20 max-w-sm w-[calc(100%-24px)] sm:w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-emerald-500/45 rounded-xl p-3 shadow-xl space-y-1.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400 block">
+                      {selectedAnnotation.isUserAdded ? 'Custom Study Pin' : 'Interactive Structure'}
+                      {selectedAnnotation.shortCode ? ` · #${selectedAnnotation.shortCode}` : ''}
+                    </span>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-snug">
+                      {selectedAnnotation.label}
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAnnotationId(null)}
+                    className="p-1 rounded-md text-slate-400 hover:text-slate-900 dark:hover:text-white shrink-0"
+                    aria-label="Clear selected structure"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {selectedAnnotation.location && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    <strong className="text-slate-700 dark:text-slate-300">Location:</strong>{' '}
+                    {selectedAnnotation.location}
+                  </p>
+                )}
+                <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
+                  {selectedAnnotation.definition}
+                </p>
+                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                  <strong className="text-emerald-700 dark:text-emerald-400">Role:</strong>{' '}
+                  {selectedAnnotation.functionRole}
+                </p>
+                {selectedAnnotation.physiologicalOrClinicalImportance && (
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-200/80 dark:border-slate-800 pt-1">
+                    {selectedAnnotation.physiologicalOrClinicalImportance}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Custom Pin Creation Form Overlay */}
+            {draftPinCoords && (
+              <div
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                className="absolute inset-x-3 bottom-16 sm:inset-x-auto sm:right-3 sm:top-3 sm:bottom-auto z-30 sm:w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-2xl space-y-2.5 max-h-[75%] overflow-y-auto"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                    Add Study Annotation ({draftPinCoords.xPercent}%, {draftPinCoords.yPercent}%)
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setDraftPinCoords(null)}
+                    className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <form onSubmit={handleSaveCustomPin} className="space-y-2 text-xs">
+                  <input
+                    type="text"
+                    required
+                    value={draftLabel}
+                    onChange={(e) => setDraftLabel(e.target.value)}
+                    placeholder="Structure or component name *"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  />
+                  <input
+                    type="text"
+                    value={draftLocation}
+                    onChange={(e) => setDraftLocation(e.target.value)}
+                    placeholder="Anatomical / setup location"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  />
+                  <textarea
+                    rows={2}
+                    value={draftDefinition}
+                    onChange={(e) => setDraftDefinition(e.target.value)}
+                    placeholder="Definition / identification"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  />
+                  <textarea
+                    rows={2}
+                    value={draftFunction}
+                    onChange={(e) => setDraftFunction(e.target.value)}
+                    placeholder="Function or physiological role"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  />
+                  <input
+                    type="text"
+                    value={draftImportance}
+                    onChange={(e) => setDraftImportance(e.target.value)}
+                    placeholder="Clinical or exam note (optional)"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  />
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setDraftPinCoords(null)}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingPin || !draftLabel.trim()}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{savingPin ? 'Saving...' : 'Save Pin'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
 
             {/* Desktop Prev / Next Image Overlay Buttons */}
             {hasSiblings && (
@@ -1098,7 +1082,7 @@ export default function ImageViewerModal({
                 <button
                   type="button"
                   onClick={() => stepSibling(-1)}
-                  className="hidden sm:inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:border-emerald-500 shadow-md absolute left-3 top-1/2 -translate-y-1/2 z-10 transition-colors"
+                  className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:border-emerald-500 shadow-md absolute left-3 top-1/2 -translate-y-1/2 z-10 transition-colors"
                   aria-label="Previous image"
                   title="Previous image (Left Arrow)"
                 >
@@ -1107,7 +1091,7 @@ export default function ImageViewerModal({
                 <button
                   type="button"
                   onClick={() => stepSibling(1)}
-                  className="hidden sm:inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/85 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:border-emerald-500 shadow-md absolute right-3 top-1/2 -translate-y-1/2 z-10 transition-colors"
+                  className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:border-emerald-500 shadow-md absolute right-3 top-1/2 -translate-y-1/2 z-10 transition-colors"
                   aria-label="Next image"
                   title="Next image (Right Arrow)"
                 >
@@ -1116,14 +1100,14 @@ export default function ImageViewerModal({
               </>
             )}
 
-            {/* Floating Bottom Inspector Bar (Mobile Zoom/Pan/Browse + Backdrop Contrast) */}
+            {/* Floating Stage Control Dock */}
             {!loading && !loadError && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-2 py-1.5 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-lg max-w-[95vw]">
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-2 py-1 rounded-2xl bg-white/92 dark:bg-slate-900/92 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-lg max-w-[95%]">
                 {hasSiblings && (
                   <button
                     type="button"
                     onClick={() => stepSibling(-1)}
-                    className="sm:hidden w-9 h-9 inline-flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="sm:hidden w-8 h-8 inline-flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                     aria-label="Previous image"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -1137,7 +1121,7 @@ export default function ImageViewerModal({
                     setZoom(next);
                     setPan((p) => clampPan(p, next, stageRef.current));
                   }}
-                  className="sm:hidden w-9 h-9 inline-flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="md:hidden w-8 h-8 inline-flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                   aria-label="Zoom out"
                 >
                   <ZoomOut className="w-4 h-4" />
@@ -1149,7 +1133,7 @@ export default function ImageViewerModal({
                     setZoom(1);
                     setPan({ x: 0, y: 0 });
                   }}
-                  className="sm:hidden px-2 h-9 inline-flex items-center justify-center rounded-xl text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100"
+                  className="md:hidden px-1.5 h-8 inline-flex items-center justify-center rounded-xl text-xs font-semibold tabular-nums text-slate-800 dark:text-slate-100"
                   aria-label="Reset zoom to 100%"
                 >
                   {Math.round(zoom * 100)}%
@@ -1158,16 +1142,48 @@ export default function ImageViewerModal({
                 <button
                   type="button"
                   onClick={() => setZoom((z) => clampZoom(z + 0.35))}
-                  className="sm:hidden w-9 h-9 inline-flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="md:hidden w-8 h-8 inline-flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                   aria-label="Zoom in"
                 >
                   <ZoomIn className="w-4 h-4" />
                 </button>
 
+                {hasAnnotations && (
+                  <button
+                    type="button"
+                    onClick={() => setShowLabels((s) => !s)}
+                    className={`sm:hidden h-8 px-2 inline-flex items-center gap-1 rounded-xl text-xs font-semibold ${
+                      showLabels
+                        ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10'
+                        : 'text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>{academicContext.annotations.length}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinPlacementMode((p) => !p);
+                    setDraftPinCoords(null);
+                  }}
+                  className={`h-8 px-2.5 inline-flex items-center gap-1 rounded-xl text-xs font-medium whitespace-nowrap ${
+                    pinPlacementMode
+                      ? 'bg-amber-500 text-white'
+                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                  title="Place a custom study annotation pin on this visual"
+                >
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Add Pin</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleCycleBackdrop}
-                  className="h-9 px-2.5 inline-flex items-center gap-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
+                  className="h-8 px-2.5 inline-flex items-center gap-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
                   title="Switch canvas backdrop (Auto / Dark / Light paper)"
                 >
                   <Contrast className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -1181,7 +1197,7 @@ export default function ImageViewerModal({
                       setZoom(1);
                       setPan({ x: 0, y: 0 });
                     }}
-                    className="h-9 px-2.5 inline-flex items-center gap-1 rounded-xl text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 whitespace-nowrap"
+                    className="h-8 px-2 inline-flex items-center gap-1 rounded-xl text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 whitespace-nowrap"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Fit</span>
@@ -1192,7 +1208,7 @@ export default function ImageViewerModal({
                   <button
                     type="button"
                     onClick={() => stepSibling(1)}
-                    className="sm:hidden w-9 h-9 inline-flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="sm:hidden w-8 h-8 inline-flex items-center justify-center rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                     aria-label="Next image"
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -1202,57 +1218,90 @@ export default function ImageViewerModal({
             )}
           </div>
 
-          {/* Desktop Right Metadata Panel (when infoOpen) */}
+          {/* Right (Desktop) / Below Image (Mobile): Structured Academic Information Panel */}
           {infoOpen && (
-            <aside className="hidden lg:block w-96 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto p-5 space-y-5 shrink-0">
-              {metadataContent}
-            </aside>
-          )}
-
-          {/* Mobile & Tablet Metadata Bottom Sheet Overlay (never crushes image canvas!) */}
-          {infoOpen && (
-            <>
-              <div
-                onClick={() => setInfoOpen(false)}
-                className="lg:hidden fixed inset-0 bg-slate-950/50 backdrop-blur-[1px] z-20"
-                aria-hidden="true"
-              />
-              <aside className="lg:hidden fixed inset-x-0 bottom-0 max-h-[76dvh] rounded-t-2xl border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-y-auto px-4 pb-6 pt-2 space-y-4 z-30 shadow-2xl">
-                <div className="flex justify-center py-1">
-                  <span className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+            <aside className="flex-1 lg:flex-initial lg:w-[440px] xl:w-[480px] min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-hidden shrink-0">
+              {/* Mobile Docked Bar to Expand / Collapse Reading Height */}
+              <div className="lg:hidden px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+                <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 truncate">
+                  Academic Learning Information · {academicContext.completeness.completenessPercent}% Complete
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setMobilePanelExpanded((e) => !e)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+                  >
+                    {mobilePanelExpanded ? (
+                      <>
+                        <ChevronDown className="w-3.5 h-3.5" />
+                        <span>Show Image</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                        <span>Expand</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInfoOpen(false)}
+                    className="p-1 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                    aria-label="Hide academic panel"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                {metadataContent}
-              </aside>
-            </>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                <AcademicInfoPanel
+                  item={item}
+                  context={academicContext}
+                  allVisuals={allVisuals}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onSelectAnnotation={handleSelectAnnotation}
+                  pinPlacementMode={pinPlacementMode}
+                  onTogglePinPlacement={() => {
+                    setPinPlacementMode((p) => !p);
+                    setDraftPinCoords(null);
+                  }}
+                  onDeleteUserAnnotation={handleDeleteUserAnnotation}
+                  onSelectVisual={onSelectVisual}
+                  onUpdated={onUpdated}
+                  onDeleteVisual={onDelete}
+                  onCloseViewer={onClose}
+                />
+              </div>
+            </aside>
           )}
         </div>
 
-        {/* Desktop Related Images Strip */}
+        {/* Desktop Related Visuals Strip */}
         {relatedVisuals.length > 0 && (
-          <div className="hidden lg:block px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                Related Scientific Visuals
+          <div className="hidden lg:block px-4 py-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 shrink-0">
+            <div className="flex items-center gap-3 overflow-x-auto pb-0.5">
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+                Related Visuals:
               </span>
-            </div>
-            <div className="flex items-center gap-3 overflow-x-auto pb-1">
               {relatedVisuals.map((rel) => (
                 <button
                   key={rel.id}
                   type="button"
                   onClick={() => onSelectVisual(rel)}
-                  className="flex items-center gap-2.5 p-1.5 pr-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 transition-colors shrink-0 text-left max-w-[240px]"
+                  className="flex items-center gap-2 p-1 pr-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 transition-colors shrink-0 text-left max-w-[230px]"
                 >
                   <VisualThumbnail
                     item={rel}
-                    className="w-12 h-10 rounded-lg shrink-0"
-                    imgClassName="w-full h-full object-cover"
+                    className="w-10 h-8 rounded-lg shrink-0"
+                    imgClassName="w-full h-full object-contain"
                   />
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                    <p className="text-[11px] font-semibold text-slate-900 dark:text-white truncate">
                       {rel.title}
                     </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
                       {CATEGORY_LABELS[rel.category]}
                     </p>
                   </div>

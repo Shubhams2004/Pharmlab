@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Image as ImageIcon, Layers } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Image as ImageIcon, Layers } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
 import { BUILT_IN_VISUALS } from '../visual-library/builtInVisuals';
 import ImageViewerModal from '../visual-library/ImageViewerModal';
 
 const PLATE_BY_DIAGRAM = {
   heart: BUILT_IN_VISUALS.find((v) => v.id === 'builtin_heart_anatomy') || null,
+  nephron: BUILT_IN_VISUALS.find((v) => v.id === 'builtin_nephron_anatomy') || null,
   cell: BUILT_IN_VISUALS.find((v) => v.id === 'builtin_eukaryotic_cell') || null,
   microscope: BUILT_IN_VISUALS.find((v) => v.id === 'builtin_compound_microscope') || null
 };
 
 const SEARCH_BY_DIAGRAM = {
   heart: 'cardiac valves conduction',
+  nephron: 'nephron glomerulus filtration',
   cell: 'eukaryotic cell organelles',
   skin: 'epidermis dermis integumentary',
   skeleton: 'axial appendicular skeleton',
@@ -123,6 +125,18 @@ export default function AnatomyDiagrams() {
         { id: 5, x: 295, y: 112, label: 'Axon Terminal & ACh Vesicles', loc: 'Presynaptic bulb at Neuromuscular Junction', fn: 'Depolarization opens Ca²⁺ channels → exocytosis of Acetylcholine (ACh) into synaptic cleft.' },
         { id: 6, x: 332, y: 155, label: 'Sarcolemma & Sarcomere (Actin/Myosin)', loc: 'Skeletal Muscle Fiber Motor End Plate', fn: 'ACh binds nicotinic Nm receptors → Na⁺ influx → SR Ca²⁺ release → Troponin/Tropomyosin shift → Actin-Myosin cross-bridge sliding.' }
       ]
+    },
+    nephron: {
+      title: 'Human Nephron — Glomerular Filtration & Tubular Processing (Renal Physiology)',
+      subtitle: 'Click pins 1–6 to trace ultrafiltration, countercurrent concentration, and hormone-regulated urine formation.',
+      pins: [
+        { id: 1, x: 76, y: 84, label: 'Glomerulus (Capillary Tuft)', loc: 'Inside Bowman Capsule (Renal Cortex)', fn: 'Fenestrated capillary network filtering plasma under high hydrostatic pressure (~55 mmHg) to form protein-free ultrafiltrate (~125 mL/min GFR).' },
+        { id: 2, x: 60, y: 122, label: 'Bowman Capsule', loc: 'Cup-shaped proximal nephron sac', fn: 'Podocyte filtration slits & basement membrane restrict plasma proteins while collecting filtrate into Bowman space.' },
+        { id: 3, x: 146, y: 88, label: 'Proximal Convoluted Tubule (PCT)', loc: 'Renal Cortex', fn: 'Reabsorbs ~65% filtered Na⁺/water, 100% glucose/amino acids (SGLT2), and secretes organic acids/drugs.' },
+        { id: 4, x: 172, y: 206, label: 'Loop of Henle', loc: 'Descends into Renal Medulla', fn: 'Establishes corticomedullary osmotic gradient (NKCC2 in thick ascending limb) required to concentrate or dilute urine.' },
+        { id: 5, x: 238, y: 82, label: 'Distal Convoluted Tubule (DCT)', loc: 'Renal Cortex (next to JGA)', fn: 'Fine-tunes Na⁺/Cl⁻ reabsorption (NCC, thiazide site) and PTH-regulated Ca²⁺ reabsorption.' },
+        { id: 6, x: 298, y: 145, label: 'Collecting Duct', loc: 'Cortex → Medullary Papilla', fn: 'ADH (Vasopressin) inserts Aquaporin-2 water channels; Aldosterone acts on principal cells to reabsorb Na⁺ and excrete K⁺.' }
+      ]
     }
   };
 
@@ -144,6 +158,7 @@ export default function AnatomyDiagrams() {
       <div className="flex flex-wrap gap-2">
         {[
           { id: 'heart', label: 'Heart & Conduction' },
+          { id: 'nephron', label: 'Nephron & Renal Filtration' },
           { id: 'cell', label: 'Eukaryotic Cell' },
           { id: 'skin', label: 'Skin Cross-Section' },
           { id: 'skeleton', label: 'Axial & Appendicular Skeleton' },
@@ -200,6 +215,16 @@ export default function AnatomyDiagrams() {
                   <span>Scientific Atlas Plate</span>
                 </button>
               </div>
+            )}
+            {activePlate && (
+              <button
+                type="button"
+                onClick={() => setViewerItem(activePlate)}
+                className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>Full Academic Profile</span>
+              </button>
             )}
             <button
               onClick={() =>
@@ -452,6 +477,26 @@ export default function AnatomyDiagrams() {
                   <circle cx="298" cy="116" r="10" fill="#a855f7" fillOpacity="0.5" stroke="#c084fc" strokeWidth="1.5" />
                   <rect x="275" y="142" width="75" height="34" rx="6" fill="#be123c" fillOpacity="0.45" stroke="#fb7185" strokeWidth="1.8" />
                   <text x="312" y="163" textAnchor="middle" fill="#fecdd3" fontSize="8" fontWeight="bold">MUSCLE FIBER</text>
+                </g>
+              )}
+
+              {/* NEPHRON SVG */}
+              {selectedDiagram === 'nephron' && (
+                <g>
+                  <line x1="25" y1="145" x2="335" y2="145" stroke="#475569" strokeWidth="1" strokeDasharray="4,3" />
+                  <text x="45" y="138" fill="#94a3b8" fontSize="8">CORTEX</text>
+                  <text x="45" y="158" fill="#64748b" fontSize="8">MEDULLA</text>
+                  {/* Bowman Capsule & Glomerulus */}
+                  <path d="M 86 68 C 52 68, 44 128, 88 124" fill="none" stroke="#38bdf8" strokeWidth="5" strokeLinecap="round" />
+                  <circle cx="76" cy="84" r="14" fill="#dc2626" fillOpacity="0.55" stroke="#f87171" strokeWidth="1.8" />
+                  {/* PCT */}
+                  <path d="M 88 124 Q 112 115 118 88 Q 126 68 144 88 Q 156 105 156 140" fill="none" stroke="#f59e0b" strokeWidth="5" strokeLinecap="round" />
+                  {/* Loop of Henle */}
+                  <path d="M 156 140 L 156 218 Q 172 232 188 218 L 188 140" fill="none" stroke="#10b981" strokeWidth="4.5" strokeLinecap="round" />
+                  {/* DCT */}
+                  <path d="M 188 140 Q 204 78 236 82 Q 262 86 298 92" fill="none" stroke="#38bdf8" strokeWidth="5" strokeLinecap="round" />
+                  {/* Collecting Duct */}
+                  <line x1="298" y1="54" x2="298" y2="232" stroke="#a855f7" strokeWidth="8" strokeLinecap="round" />
                 </g>
               )}
 

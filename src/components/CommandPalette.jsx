@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, ArrowRight, Compass, BookOpen, FlaskConical, Activity, Microscope, Code, MessageSquareHeart, Library, Images } from 'lucide-react';
+import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 
 export const QUICK_INDEX = [
   // Knowledge & Visual Libraries
   { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search, Notes & Diagram Crop', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
-  { title: 'Scientific Visual Library & Open-Access Atlas', sub: 'Anatomical Plates, Microscopy, Apparatus & Open-Access Discovery', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
+  { title: 'Academic Visual Learning Library & Atlas', sub: 'Interactive Diagrams, Structure Labels, Mechanisms, MCQs & Open-Access Search', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
+  { title: 'Human Nephron & Glomerular Filtration (Visual Plate)', sub: 'Interactive Pins: Glomerulus, PCT, Loop of Henle, DCT & Collecting Duct', module: 'visual_library', visualId: 'builtin_nephron_anatomy', tab: null, cat: 'Anatomy', icon: Activity },
+  { title: 'Diuretic Sites of Action Along the Nephron (Visual Plate)', sub: 'Pharmacology · Loop Diuretics, Thiazides, Acetazolamide & Spironolactone', module: 'visual_library', visualId: 'builtin_diuretic_pharmacology', tab: null, cat: 'Pharmacology', icon: FlaskConical },
+  { title: 'Aspirin (Acetylsalicylic Acid) Structure & COX Acetylation', sub: 'Medicinal Chemistry · Functional Groups, Esterification & Antiplatelet Mechanism', module: 'visual_library', visualId: 'builtin_aspirin_molecule', tab: null, cat: 'Chemistry', icon: FlaskConical },
+  { title: 'Gram-Positive vs Gram-Negative Bacterial Cell Envelope', sub: 'Microbiology · Peptidoglycan, LPS Endotoxin & Beta-Lactam Targets', module: 'visual_library', visualId: 'builtin_bacterial_cell_wall', tab: null, cat: 'Microbiology', icon: Microscope },
 
   // Anatomy & Diagrams
   { title: 'Heart, Valves & Conduction Diagram', sub: 'BP104T · Interactive Annotated 2D/3D Diagram', module: 'anatomy', tab: 'diagrams', cat: 'Diagram', icon: Activity },
@@ -46,9 +51,19 @@ export const QUICK_INDEX = [
 ];
 
 export default function CommandPalette({ isOpen, onClose, onNavigate }) {
+  const { openVisualLibrary } = useLibraryNavigation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
+
+  const launchPick = (pick) => {
+    if (pick.visualId) {
+      openVisualLibrary({ visualId: pick.visualId });
+    } else {
+      onNavigate(pick.module, pick.tab);
+    }
+    onClose();
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -85,14 +100,12 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
         setSelectedIndex((prev) => (results.length ? (prev - 1 + results.length) % results.length : 0));
       } else if (e.key === 'Enter' && results[selectedIndex]) {
         e.preventDefault();
-        const pick = results[selectedIndex];
-        onNavigate(pick.module, pick.tab);
-        onClose();
+        launchPick(results[selectedIndex]);
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [isOpen, results, selectedIndex, onClose, onNavigate]);
+  }, [isOpen, results, selectedIndex, onClose, onNavigate, openVisualLibrary]);
 
   if (!isOpen) return null;
 
@@ -135,10 +148,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
               return (
                 <button
                   key={`${item.module}-${item.title}`}
-                  onClick={() => {
-                    onNavigate(item.module, item.tab);
-                    onClose();
-                  }}
+                  onClick={() => launchPick(item)}
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={`w-full text-left px-4 py-3.5 flex items-center justify-between gap-4 transition-colors ${
                     isSelected ? 'bg-emerald-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'

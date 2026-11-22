@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Image as ImageIcon, Layers } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Image as ImageIcon, Layers } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
 import { BUILT_IN_VISUALS } from '../visual-library/builtInVisuals';
 import ImageViewerModal from '../visual-library/ImageViewerModal';
 
 const APPARATUS_PLATE = BUILT_IN_VISUALS.find((v) => v.id === 'builtin_chemistry_apparatus') || null;
+const GUTZEIT_PLATE = BUILT_IN_VISUALS.find((v) => v.id === 'builtin_gutzeit_apparatus') || null;
+
+const PLATE_BY_DIAGRAM = {
+  gutzeit: GUTZEIT_PLATE,
+  nessler: APPARATUS_PLATE,
+  titration_setup: APPARATUS_PLATE
+};
 
 const INORG_SEARCH_MAP = {
   gutzeit: 'limit test arsenic gutzeit',
@@ -91,14 +98,13 @@ export default function InorganicDiagrams() {
 
   const current = diagrams[selectedDiagram];
   const activePin = current.pins[selectedPin] || current.pins[0];
-  const hasPlate =
-    Boolean(APPARATUS_PLATE) &&
-    (selectedDiagram === 'titration_setup' || selectedDiagram === 'nessler');
+  const activePlate = PLATE_BY_DIAGRAM[selectedDiagram] || null;
+  const hasPlate = Boolean(activePlate);
 
   const handleSelectDiagram = (key) => {
     setSelectedDiagram(key);
     setSelectedPin(0);
-    if (key !== 'titration_setup' && key !== 'nessler') {
+    if (!PLATE_BY_DIAGRAM[key]) {
       setVisualMode('schematic');
     }
   };
@@ -163,10 +169,20 @@ export default function InorganicDiagrams() {
                 </button>
               </div>
             )}
+            {activePlate && (
+              <button
+                type="button"
+                onClick={() => setViewerItem(activePlate)}
+                className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>Full Academic Profile</span>
+              </button>
+            )}
             <button
               onClick={() =>
                 hasPlate && visualMode === 'plate'
-                  ? setViewerItem(APPARATUS_PLATE)
+                  ? setViewerItem(activePlate)
                   : setZoomed((z) => !z)
               }
               className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
@@ -189,24 +205,24 @@ export default function InorganicDiagrams() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-7 bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex items-center justify-center overflow-auto">
-            {hasPlate && visualMode === 'plate' && APPARATUS_PLATE ? (
+            {hasPlate && visualMode === 'plate' && activePlate ? (
               <div className="w-full space-y-3">
                 <button
                   type="button"
-                  onClick={() => setViewerItem(APPARATUS_PLATE)}
+                  onClick={() => setViewerItem(activePlate)}
                   className="w-full aspect-[4/3] rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-800 block group focus:outline-none"
                 >
                   <img
-                    src={APPARATUS_PLATE.assetUrl}
-                    alt={APPARATUS_PLATE.title}
+                    src={activePlate.assetUrl}
+                    alt={activePlate.title}
                     className="w-full h-full object-contain p-1 group-hover:scale-[1.02] transition-transform duration-200"
                   />
                 </button>
                 <div className="flex items-center justify-between gap-3 text-xs text-slate-400 px-1">
-                  <span className="truncate">{APPARATUS_PLATE.caption}</span>
+                  <span className="truncate">{activePlate.caption}</span>
                   <button
                     type="button"
-                    onClick={() => setViewerItem(APPARATUS_PLATE)}
+                    onClick={() => setViewerItem(activePlate)}
                     className="text-emerald-400 font-semibold whitespace-nowrap hover:underline shrink-0"
                   >
                     Zoom Plate

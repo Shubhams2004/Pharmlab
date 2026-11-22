@@ -1,3 +1,9 @@
+import type {
+  AcademicDomain,
+  InteractiveAnnotation,
+  UserAcademicEnrichment
+} from './academicTypes';
+
 export type DepartmentId =
   | 'anatomy'
   | 'general_pharmacy'
@@ -8,10 +14,12 @@ export type DepartmentId =
 
 export type VisualCategory =
   | 'anatomy'
+  | 'pharmacology'
   | 'microscopy'
   | 'apparatus'
   | 'botany'
   | 'chemistry'
+  | 'microbiology'
   | 'formulation'
   | 'clinical';
 
@@ -49,6 +57,14 @@ export interface VisualMediaItem {
   hasLocalBlob: boolean;
   createdAt: number;
   updatedAt: number;
+  /** Link to a reusable AcademicSubjectResource in academicRegistry.ts */
+  subjectId?: string;
+  /** Optional explicit academic domain override */
+  academicDomain?: AcademicDomain;
+  /** User-supplied academic enrichment stored in IndexedDB */
+  academicData?: UserAcademicEnrichment;
+  /** User-added or enriched interactive pin annotations stored in IndexedDB */
+  annotations?: InteractiveAnnotation[];
 }
 
 export interface OpenAccessCandidate {
@@ -90,10 +106,12 @@ export const DEPARTMENT_LABELS: Record<DepartmentId, string> = {
 
 export const CATEGORY_LABELS: Record<VisualCategory, string> = {
   anatomy: 'Anatomy',
-  microscopy: 'Microscopy',
-  apparatus: 'Lab Apparatus',
+  pharmacology: 'Pharmacology',
+  microscopy: 'Microscopy & Histology',
+  apparatus: 'Lab Equipment',
   botany: 'Botanical / Crude Drugs',
   chemistry: 'Chemistry & Structures',
+  microbiology: 'Microbiology',
   formulation: 'Formulations',
   clinical: 'Clinical & Communication'
 };

@@ -27,6 +27,8 @@ export default function App() {
     department: null,
     category: null,
     query: null,
+    visualId: null,
+    annotationId: null,
     nonce: 0
   });
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -122,6 +124,8 @@ export default function App() {
         department: opts.department ?? null,
         category: opts.category ?? null,
         query: opts.query ?? null,
+        visualId: opts.visualId ?? null,
+        annotationId: opts.annotationId ?? null,
         nonce: prev.nonce + 1
       }));
       navigateTo('visual_library');
@@ -132,9 +136,10 @@ export default function App() {
   const libraryContextValue = useMemo(
     () => ({
       openKnowledgeLibrary,
-      openVisualLibrary
+      openVisualLibrary,
+      navigateToModule: navigateTo
     }),
-    [openKnowledgeLibrary, openVisualLibrary]
+    [openKnowledgeLibrary, openVisualLibrary, navigateTo]
   );
 
   useEffect(() => {
@@ -214,6 +219,8 @@ export default function App() {
             initialDepartment={visualJump.department}
             initialCategory={visualJump.category}
             initialQuery={visualJump.query}
+            initialVisualId={visualJump.visualId}
+            initialAnnotationId={visualJump.annotationId}
             navNonce={visualJump.nonce}
           />
         )}

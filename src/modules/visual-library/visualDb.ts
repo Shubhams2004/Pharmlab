@@ -1,3 +1,4 @@
+import { ACADEMIC_SUBJECTS } from './academicRegistry';
 import { BUILT_IN_VISUALS } from './builtInVisuals';
 import {
   DepartmentId,
@@ -413,6 +414,10 @@ export async function updateVisualMetadata(
       | 'creator'
       | 'license'
       | 'attribution'
+      | 'subjectId'
+      | 'academicDomain'
+      | 'academicData'
+      | 'annotations'
     >
   >
 ): Promise<VisualMediaItem | null> {
@@ -463,6 +468,7 @@ export async function getVisualsForContext(
         score += 10;
       }
 
+      const subj = item.subjectId ? ACADEMIC_SUBJECTS[item.subjectId] : undefined;
       const haystack = [
         item.title,
         item.caption,
@@ -470,7 +476,17 @@ export async function getVisualsForContext(
         ...item.topics,
         ...item.tags,
         ...item.experiments,
-        ...item.equipment
+        ...item.equipment,
+        ...(subj
+          ? [
+              subj.identification.primaryName,
+              subj.identification.scientificOrChemicalName || '',
+              ...subj.searchKeywords,
+              ...subj.textbookKeywords,
+              ...(subj.drugNames || []),
+              ...(subj.diseaseNames || [])
+            ]
+          : [])
       ]
         .join(' ')
         .toLowerCase();
