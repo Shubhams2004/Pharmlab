@@ -1,5 +1,6 @@
 import { classifyPdfError, pdfjsLib } from './pdfWorker';
 import {
+  BookDepartmentTag,
   BookPageText,
   DocumentCategory,
   ExtractionStatus,
@@ -58,7 +59,8 @@ export interface ExtractedPdfPackage {
 export async function processPdfFile(
   file: File,
   category: DocumentCategory,
-  onProgress: (progress: ProcessingProgress) => void
+  onProgress: (progress: ProcessingProgress) => void,
+  department: BookDepartmentTag = 'all'
 ): Promise<ExtractedPdfPackage> {
   const isPdfExtension = /\.pdf$/i.test(file.name);
   const isPdfMime = file.type === 'application/pdf' || file.type === 'application/x-pdf';
@@ -179,7 +181,8 @@ export async function processPdfFile(
       searchablePagesCount,
       isScannedOrEmpty,
       extractionStatus,
-      category
+      category,
+      department
     };
 
     onProgress({

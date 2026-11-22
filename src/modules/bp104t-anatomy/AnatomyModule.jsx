@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Activity, Microscope, Bone, Droplet, HeartPulse, FileText, CheckCircle2, RefreshCcw, Layers, BookOpen } from 'lucide-react';
 import AnatomyDiagrams from './AnatomyDiagrams';
 import AnatomyTheory from './AnatomyTheory';
+import ResourceConnector from '../../components/ResourceConnector';
 
 export default function AnatomyModule({ initialTab, navNonce }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'diagrams');
@@ -676,6 +677,23 @@ export default function AnatomyModule({ initialTab, navNonce }) {
             <p className="text-emerald-700 dark:text-emerald-300"><strong>Pharmacotherapy &amp; Management:</strong> {caseFiles[selectedCase].management}</p>
           </div>
         </div>
+      )}
+
+      {activeTab !== 'diagrams' && (
+        <ResourceConnector
+          department="anatomy"
+          topic={activeTab === 'cardio' ? 'heart' : activeTab === 'hematology' ? 'microscope' : 'anatomy'}
+          defaultSearchQuery={
+            activeTab === 'cardio'
+              ? 'cardiac output ECG'
+              : activeTab === 'hematology'
+                ? 'hemoglobin WBC'
+                : activeTab === 'cases'
+                  ? selectedCase
+                  : 'anatomy physiology'
+          }
+          title="BP104T / BP109P Linked Visuals & Textbook References"
+        />
       )}
     </div>
   );

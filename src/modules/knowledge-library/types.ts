@@ -1,5 +1,24 @@
 export type DocumentCategory = 'textbook' | 'manual' | 'notes' | 'research';
 
+export type BookDepartmentTag =
+  | 'all'
+  | 'anatomy'
+  | 'general_pharmacy'
+  | 'inorganic'
+  | 'pharmacognosy'
+  | 'psychology'
+  | 'python';
+
+export const BOOK_DEPARTMENT_LABELS: Record<BookDepartmentTag, string> = {
+  all: 'All Subjects / General',
+  anatomy: 'Anatomy & Physiology (BP104T)',
+  general_pharmacy: 'Pharmaceutics (BP102T)',
+  inorganic: 'Inorganic Chemistry (BP106T)',
+  pharmacognosy: 'Pharmacognosy (BP105T)',
+  psychology: 'Psychology & Comm. (BP103T)',
+  python: 'Python & PK Data (BP101T)'
+};
+
 export type ExtractionStatus = 'ready' | 'partial' | 'no-text';
 
 export interface LibraryBookMeta {
@@ -16,6 +35,7 @@ export interface LibraryBookMeta {
   isScannedOrEmpty: boolean;
   extractionStatus: ExtractionStatus;
   category: DocumentCategory;
+  department?: BookDepartmentTag;
 }
 
 export interface BookPageText {
@@ -33,6 +53,18 @@ export interface BookBookmark {
   createdAt: number;
 }
 
+export type HighlightColor = 'amber' | 'emerald' | 'blue' | 'rose';
+
+export interface BookHighlightNote {
+  id: string;
+  bookId: string;
+  pageNumber: number;
+  quote: string;
+  note: string;
+  color: HighlightColor;
+  createdAt: number;
+}
+
 export interface SearchMatch {
   id: string;
   bookId: string;
@@ -43,6 +75,11 @@ export interface SearchMatch {
   beforeContext: string;
   matchedText: string;
   afterContext: string;
+}
+
+export interface CrossBookSearchResult {
+  book: LibraryBookMeta;
+  matches: SearchMatch[];
 }
 
 export interface ProcessingProgress {

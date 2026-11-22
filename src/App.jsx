@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { LibraryNavigationContext } from './context/LibraryNavigationContext';
 import DashboardLayout from './components/DashboardLayout';
 import Dashboard from './components/Dashboard';
 import CommandPalette from './components/CommandPalette';
@@ -11,10 +12,23 @@ import AnatomyModule from './modules/bp104t-anatomy/AnatomyModule';
 import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyModule';
 import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
+import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
   const [navTarget, setNavTarget] = useState({ module: 'dashboard', tab: null, nonce: 0 });
+  const [knowledgeJump, setKnowledgeJump] = useState({
+    bookId: null,
+    pageNumber: null,
+    searchQuery: null,
+    nonce: 0
+  });
+  const [visualJump, setVisualJump] = useState({
+    department: null,
+    category: null,
+    query: null,
+    nonce: 0
+  });
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
 
@@ -65,7 +79,11 @@ export default function App() {
     setNavTarget((prev) => ({ module: moduleId, tab, nonce: prev.nonce + 1 }));
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    if (moduleId !== 'dashboard' && moduleId !== 'knowledge_library') {
+    if (
+      moduleId !== 'dashboard' &&
+      moduleId !== 'knowledge_library' &&
+      moduleId !== 'visual_library'
+    ) {
       setLastModule(moduleId);
       try {
         localStorage.setItem('pharmlab_last_module', moduleId);
@@ -85,6 +103,40 @@ export default function App() {
     }
   }, []);
 
+  const openKnowledgeLibrary = useCallback(
+    (opts = {}) => {
+      setKnowledgeJump((prev) => ({
+        bookId: opts.bookId ?? null,
+        pageNumber: opts.pageNumber ?? null,
+        searchQuery: opts.searchQuery ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('knowledge_library');
+    },
+    [navigateTo]
+  );
+
+  const openVisualLibrary = useCallback(
+    (opts = {}) => {
+      setVisualJump((prev) => ({
+        department: opts.department ?? null,
+        category: opts.category ?? null,
+        query: opts.query ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('visual_library');
+    },
+    [navigateTo]
+  );
+
+  const libraryContextValue = useMemo(
+    () => ({
+      openKnowledgeLibrary,
+      openVisualLibrary
+    }),
+    [openKnowledgeLibrary, openVisualLibrary]
+  );
+
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -98,7 +150,7 @@ export default function App() {
   }, []);
 
   return (
-    <>
+    <LibraryNavigationContext.Provider value={libraryContextValue}>
       <DashboardLayout
         activeModule={activeModule}
         onSelectModule={navigateTo}
@@ -154,7 +206,17 @@ export default function App() {
             navNonce={navTarget.nonce}
           />
         )}
-        {activeModule === 'knowledge_library' && <KnowledgeLibraryModule />}
+        {activeModule === 'knowledge_library' && (
+          <KnowledgeLibraryModule jumpTarget={knowledgeJump} />
+        )}
+        {activeModule === 'visual_library' && (
+          <VisualLibraryModule
+            initialDepartment={visualJump.department}
+            initialCategory={visualJump.category}
+            initialQuery={visualJump.query}
+            navNonce={visualJump.nonce}
+          />
+        )}
       </DashboardLayout>
 
       <CommandPalette
@@ -169,6 +231,6 @@ export default function App() {
         activeModule={activeModule}
         onNavigate={navigateTo}
       />
-    </>
+    </LibraryNavigationContext.Provider>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Database, Filter, RefreshCw, CheckCircle2, FileSpreadsheet, BarChart3, Terminal } from 'lucide-react';
+import ResourceConnector from '../../components/ResourceConnector';
 
 export default function PandasModule() {
   const [datasetType, setDatasetType] = useState('pk');
@@ -303,6 +304,13 @@ export default function PandasModule() {
           </div>
         )}
       </div>
+
+      <ResourceConnector
+        department="python"
+        topic="pharmacokinetics"
+        defaultSearchQuery={datasetType === 'pk' ? 'AUC Cmax bioavailability' : 'adverse drug reaction'}
+        title="BP101T Linked PK / ADR Dataset References"
+      />
     </div>
   );
 }

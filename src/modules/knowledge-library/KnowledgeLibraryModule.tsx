@@ -11,6 +11,7 @@ import {
   Upload,
   X
 } from 'lucide-react';
+import { KnowledgeJumpTarget } from '../../context/LibraryNavigationContext';
 import {
   deleteBook,
   getAllBooks,
@@ -20,11 +21,17 @@ import {
 import { processPdfFile } from './pdfExtractor';
 import PdfReader from './PdfReader';
 import {
+  BOOK_DEPARTMENT_LABELS,
+  BookDepartmentTag,
   DocumentCategory,
   LibraryBookMeta,
   ProcessingProgress,
   StorageSummary
 } from './types';
+
+interface KnowledgeLibraryModuleProps {
+  jumpTarget?: KnowledgeJumpTarget | null;
+}
 
 const CATEGORY_OPTIONS: Array<{ id: DocumentCategory; label: string }> = [
   { id: 'textbook', label: 'Textbook' },
@@ -60,7 +67,9 @@ function formatDate(ts: number): string {
   }
 }
 
-export default function KnowledgeLibraryModule() {
+export default function KnowledgeLibraryModule({
+  jumpTarget
+}: KnowledgeLibraryModuleProps) {
   const [books, setBooks] = useState<LibraryBookMeta[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [libraryError, setLibraryError] = useState<string | null>(null);
@@ -70,13 +79,21 @@ export default function KnowledgeLibraryModule() {
   });
 
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
+  const [readerJump, setReaderJump] = useState<{
+    pageNumber?: number | null;
+    searchQuery?: string | null;
+    nonce: number;
+  }>({ nonce: 0 });
+
   const [uploadCategory, setUploadCategory] = useState<DocumentCategory>('textbook');
+  const [uploadDepartment, setUploadDepartment] = useState<BookDepartmentTag>('all');
   const [processing, setProcessing] = useState<ProcessingProgress | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | DocumentCategory>('all');
+  const [departmentFilter, setDepartmentFilter] = useState<'all' | BookDepartmentTag>('all');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -107,6 +124,21 @@ export default function KnowledgeLibraryModule() {
     refreshLibrary();
   }, [refreshLibrary]);
 
+  // Handle cross-module deep links to a specific book/page/query
+  useEffect(() => {
+    if (!jumpTarget || !jumpTarget.nonce) return;
+    if (jumpTarget.bookId) {
+      setActiveBookId(jumpTarget.bookId);
+      setReaderJump({
+        pageNumber: jumpTarget.pageNumber,
+        searchQuery: jumpTarget.searchQuery,
+        nonce: jumpTarget.nonce
+      });
+    } else {
+      setActiveBookId(null);
+    }
+  }, [jumpTarget]);
+
   const handleFilesSelected = useCallback(
     async (fileList: FileList | null) => {
       if (!fileList || fileList.length === 0 || processing) return;
@@ -119,9 +151,14 @@ export default function KnowledgeLibraryModule() {
 
       for (const file of files) {
         try {
-          const pkg = await processPdfFile(file, uploadCategory, (progress) => {
-            setProcessing(progress);
-          });
+          const pkg = await processPdfFile(
+            file,
+            uploadCategory,
+            (progress) => {
+              setProcessing(progress);
+            },
+            uploadDepartment
+          );
 
           await saveBookPackage(pkg.meta, pkg.fileBuffer, pkg.pages);
           importedCount += 1;
@@ -156,7 +193,7 @@ export default function KnowledgeLibraryModule() {
         fileInputRef.current.value = '';
       }
     },
-    [processing, uploadCategory]
+    [processing, uploadCategory, uploadDepartment]
   );
 
   const handleConfirmDelete = async (bookId: string) => {
@@ -193,6 +230,10 @@ export default function KnowledgeLibraryModule() {
     []
   );
 
+  const handleBookMetaChange = useCallback((updated: LibraryBookMeta) => {
+    setBooks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+  }, []);
+
   const activeBook = useMemo(
     () => books.find((b) => b.id === activeBookId) || null,
     [books, activeBookId]
@@ -203,13 +244,16 @@ export default function KnowledgeLibraryModule() {
     return books.filter((book) => {
       const matchesCat =
         categoryFilter === 'all' || book.category === categoryFilter;
+      const matchesDept =
+        departmentFilter === 'all' ||
+        (book.department || 'all') === departmentFilter;
       const matchesQuery =
         !q ||
         book.title.toLowerCase().includes(q) ||
         book.fileName.toLowerCase().includes(q);
-      return matchesCat && matchesQuery;
+      return matchesCat && matchesDept && matchesQuery;
     });
-  }, [books, searchQuery, categoryFilter]);
+  }, [books, searchQuery, categoryFilter, departmentFilter]);
 
   if (activeBook) {
     return (
@@ -217,6 +261,10 @@ export default function KnowledgeLibraryModule() {
         book={activeBook}
         onBack={() => setActiveBookId(null)}
         onBookProgressChange={handleBookProgressChange}
+        onBookMetaChange={handleBookMetaChange}
+        initialPage={readerJump.pageNumber}
+        initialSearchQuery={readerJump.searchQuery}
+        jumpNonce={readerJump.nonce}
       />
     );
   }
@@ -247,29 +295,38 @@ export default function KnowledgeLibraryModule() {
             Knowledge Library
           </h1>
           <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed">
-            Upload pharmaceutical textbooks, practical manuals, and research PDFs. Files and full-book search indexes are stored locally in your browser via IndexedDB with zero external servers.
+            Upload pharmaceutical textbooks, practical manuals, and research PDFs. Files, highlights, study notes, and full-book search indexes are stored locally in IndexedDB with zero external servers.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <label htmlFor="upload-category" className="sr-only">
-              Document type
-            </label>
-            <select
-              id="upload-category"
-              value={uploadCategory}
-              onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
-              disabled={Boolean(processing)}
-              className="h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
-            >
-              {CATEGORY_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <select
+            aria-label="Document type"
+            value={uploadCategory}
+            onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
+            disabled={Boolean(processing)}
+            className="h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
+          >
+            {CATEGORY_OPTIONS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Subject department"
+            value={uploadDepartment}
+            onChange={(e) => setUploadDepartment(e.target.value as BookDepartmentTag)}
+            disabled={Boolean(processing)}
+            className="h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
+          >
+            {(Object.keys(BOOK_DEPARTMENT_LABELS) as BookDepartmentTag[]).map((dept) => (
+              <option key={dept} value={dept}>
+                {BOOK_DEPARTMENT_LABELS[dept]}
+              </option>
+            ))}
+          </select>
 
           <input
             ref={fileInputRef}
@@ -365,7 +422,7 @@ export default function KnowledgeLibraryModule() {
       )}
 
       {/* Search, Filter & Storage Summary */}
-      <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <section className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -404,6 +461,19 @@ export default function KnowledgeLibraryModule() {
               </button>
             ))}
           </div>
+
+          <select
+            aria-label="Filter by subject"
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value as BookDepartmentTag)}
+            className="h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-700 dark:text-slate-200"
+          >
+            {(Object.keys(BOOK_DEPARTMENT_LABELS) as BookDepartmentTag[]).map((dept) => (
+              <option key={dept} value={dept}>
+                {BOOK_DEPARTMENT_LABELS[dept]}
+              </option>
+            ))}
+          </select>
 
           {storage.usageBytes !== null && (
             <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums px-1">
@@ -455,7 +525,7 @@ export default function KnowledgeLibraryModule() {
               Your Pharmaceutical Library is Empty
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Click or drag and drop a PDF textbook, lab manual, or research paper (such as Tortora Anatomy, Remington, or pharmacopoeia notes) to index its pages and read offline.
+              Click or drag and drop a PDF textbook, lab manual, or research paper (such as Tortora Anatomy, Remington, or pharmacopoeia notes) to index its pages, take study notes, crop figures, and read offline.
             </p>
           </div>
           <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold">
@@ -466,13 +536,14 @@ export default function KnowledgeLibraryModule() {
       ) : filteredBooks.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-12 text-center space-y-2">
           <p className="text-base font-medium text-slate-700 dark:text-slate-300">
-            No uploaded books match "{searchQuery}".
+            No uploaded books match your active filters.
           </p>
           <button
             type="button"
             onClick={() => {
               setSearchQuery('');
               setCategoryFilter('all');
+              setDepartmentFilter('all');
             }}
             className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
           >
@@ -486,6 +557,10 @@ export default function KnowledgeLibraryModule() {
             const pct = Math.round((readPage / book.pageCount) * 100);
             const categoryLabel =
               CATEGORY_OPTIONS.find((c) => c.id === book.category)?.label || 'Document';
+            const deptLabel =
+              book.department && book.department !== 'all'
+                ? BOOK_DEPARTMENT_LABELS[book.department]
+                : null;
             const isConfirmingDelete = pendingDeleteId === book.id;
 
             return (
@@ -494,9 +569,10 @@ export default function KnowledgeLibraryModule() {
                 className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-sm dark:shadow-none transition-colors"
               >
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <span className="font-semibold text-emerald-700 dark:text-emerald-400">
                       {categoryLabel}
+                      {deptLabel ? ` · ${deptLabel.split(' (')[0]}` : ''}
                     </span>
                     <span className="tabular-nums">
                       {formatBytes(book.fileSize)} · {book.pageCount} pages · {formatDate(book.uploadedAt)}
@@ -549,7 +625,7 @@ export default function KnowledgeLibraryModule() {
                   {isConfirmingDelete ? (
                     <div className="w-full flex items-center justify-between gap-2 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">
                       <span className="text-xs font-medium text-rose-800 dark:text-rose-200">
-                        Delete this book &amp; bookmarks?
+                        Delete this book, notes &amp; bookmarks?
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
@@ -586,7 +662,10 @@ export default function KnowledgeLibraryModule() {
 
                       <button
                         type="button"
-                        onClick={() => setActiveBookId(book.id)}
+                        onClick={() => {
+                          setReaderJump({ pageNumber: null, searchQuery: null, nonce: 0 });
+                          setActiveBookId(book.id);
+                        }}
                         className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0"
                       >
                         <BookOpen className="w-4 h-4" />

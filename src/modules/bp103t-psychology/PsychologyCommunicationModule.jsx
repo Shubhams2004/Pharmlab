@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquareHeart, Users, FileWarning, ClipboardCheck, Megaphone, BookHeart, CheckCircle2, AlertTriangle, Plus } from 'lucide-react';
+import ResourceConnector from '../../components/ResourceConnector';
 
 export default function PsychologyCommunicationModule({ initialTab, navNonce }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'roleplay');
@@ -638,6 +639,19 @@ export default function PsychologyCommunicationModule({ initialTab, navNonce }) 
           )}
         </div>
       )}
+
+      <ResourceConnector
+        department="psychology"
+        topic="clinical"
+        defaultSearchQuery={
+          activeTab === 'roleplay'
+            ? 'SPIKES communication counseling'
+            : activeTab === 'peer'
+              ? 'SBAR clinical handover'
+              : 'health belief model CBT'
+        }
+        title="BP103T / BP108P Clinical Communication & Case References"
+      />
     </div>
   );
 }

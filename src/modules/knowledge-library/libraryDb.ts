@@ -1,17 +1,22 @@
+import { searchBookPages } from './searchEngine';
 import {
   BookBookmark,
+  BookDepartmentTag,
+  BookHighlightNote,
   BookPageText,
+  CrossBookSearchResult,
   LibraryBookMeta,
   StorageSummary
 } from './types';
 
 const DB_NAME = 'pharmlab_knowledge_library';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORE_BOOKS = 'books';
 const STORE_FILES = 'files';
 const STORE_PAGES = 'pages';
 const STORE_BOOKMARKS = 'bookmarks';
+const STORE_NOTES = 'notes';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -50,6 +55,13 @@ function openLibraryDb(): Promise<IDBDatabase> {
           keyPath: 'id'
         });
         bookmarksStore.createIndex('byBookId', 'bookId', { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(STORE_NOTES)) {
+        const notesStore = db.createObjectStore(STORE_NOTES, {
+          keyPath: 'id'
+        });
+        notesStore.createIndex('byBookId', 'bookId', { unique: false });
       }
     };
 
@@ -163,7 +175,7 @@ export async function updateBookReadingProgress(
 
 export async function updateBookMeta(
   bookId: string,
-  patch: Partial<Pick<LibraryBookMeta, 'title' | 'category'>>
+  patch: Partial<Pick<LibraryBookMeta, 'title' | 'category' | 'department'>>
 ): Promise<LibraryBookMeta | null> {
   const db = await openLibraryDb();
   const tx = db.transaction(STORE_BOOKS, 'readwrite');
@@ -180,7 +192,7 @@ export async function updateBookMeta(
 export async function deleteBook(bookId: string): Promise<void> {
   const db = await openLibraryDb();
   const tx = db.transaction(
-    [STORE_BOOKS, STORE_FILES, STORE_PAGES, STORE_BOOKMARKS],
+    [STORE_BOOKS, STORE_FILES, STORE_PAGES, STORE_BOOKMARKS, STORE_NOTES],
     'readwrite'
   );
 
@@ -202,6 +214,7 @@ export async function deleteBook(bookId: string): Promise<void> {
 
   deleteByIndex(STORE_PAGES);
   deleteByIndex(STORE_BOOKMARKS);
+  deleteByIndex(STORE_NOTES);
 
   await wrapTransaction(tx);
 }
@@ -228,6 +241,61 @@ export async function removeBookmark(bookmarkId: string): Promise<void> {
   const tx = db.transaction(STORE_BOOKMARKS, 'readwrite');
   tx.objectStore(STORE_BOOKMARKS).delete(bookmarkId);
   await wrapTransaction(tx);
+}
+
+export async function getBookNotes(bookId: string): Promise<BookHighlightNote[]> {
+  const db = await openLibraryDb();
+  const tx = db.transaction(STORE_NOTES, 'readonly');
+  const index = tx.objectStore(STORE_NOTES).index('byBookId');
+  const list = await wrapRequest(
+    index.getAll(IDBKeyRange.only(bookId)) as IDBRequest<BookHighlightNote[]>
+  );
+  return list.sort((a, b) => a.pageNumber - b.pageNumber || b.createdAt - a.createdAt);
+}
+
+export async function addBookNote(note: BookHighlightNote): Promise<void> {
+  const db = await openLibraryDb();
+  const tx = db.transaction(STORE_NOTES, 'readwrite');
+  tx.objectStore(STORE_NOTES).put(note);
+  await wrapTransaction(tx);
+}
+
+export async function removeBookNote(noteId: string): Promise<void> {
+  const db = await openLibraryDb();
+  const tx = db.transaction(STORE_NOTES, 'readwrite');
+  tx.objectStore(STORE_NOTES).delete(noteId);
+  await wrapTransaction(tx);
+}
+
+export async function searchAllBooks(
+  rawQuery: string,
+  department?: BookDepartmentTag,
+  maxPerBook = 3
+): Promise<CrossBookSearchResult[]> {
+  const trimmed = rawQuery.trim();
+  if (trimmed.length < 2) return [];
+
+  const allBooks = await getAllBooks();
+  const searchableBooks = allBooks.filter((b) => b.hasSearchableText);
+  if (searchableBooks.length === 0) return [];
+
+  // Prioritize books tagged with this department or untagged/all, then others
+  const sortedBooks = [...searchableBooks].sort((a, b) => {
+    const aMatch = !department || department === 'all' || a.department === department ? 1 : 0;
+    const bMatch = !department || department === 'all' || b.department === department ? 1 : 0;
+    return bMatch - aMatch;
+  });
+
+  const results: CrossBookSearchResult[] = [];
+  for (const book of sortedBooks) {
+    const pages = await getBookPages(book.id);
+    const matches = searchBookPages(pages, trimmed, maxPerBook);
+    if (matches.length > 0) {
+      results.push({ book, matches });
+    }
+  }
+
+  return results;
 }
 
 export async function getStorageSummary(): Promise<StorageSummary> {

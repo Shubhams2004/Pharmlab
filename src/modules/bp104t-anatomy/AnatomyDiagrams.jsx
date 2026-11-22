@@ -1,10 +1,31 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Image as ImageIcon, Layers } from 'lucide-react';
+import ResourceConnector from '../../components/ResourceConnector';
+import { BUILT_IN_VISUALS } from '../visual-library/builtInVisuals';
+import ImageViewerModal from '../visual-library/ImageViewerModal';
+
+const PLATE_BY_DIAGRAM = {
+  heart: BUILT_IN_VISUALS.find((v) => v.id === 'builtin_heart_anatomy') || null,
+  cell: BUILT_IN_VISUALS.find((v) => v.id === 'builtin_eukaryotic_cell') || null,
+  microscope: BUILT_IN_VISUALS.find((v) => v.id === 'builtin_compound_microscope') || null
+};
+
+const SEARCH_BY_DIAGRAM = {
+  heart: 'cardiac valves conduction',
+  cell: 'eukaryotic cell organelles',
+  skin: 'epidermis dermis integumentary',
+  skeleton: 'axial appendicular skeleton',
+  senses: 'retina cochlea anatomy',
+  microscope: 'microscope hemocytometer',
+  neuron: 'neuron action potential synapse'
+};
 
 export default function AnatomyDiagrams() {
   const [selectedDiagram, setSelectedDiagram] = useState('heart');
   const [selectedPin, setSelectedPin] = useState(0);
   const [zoomed, setZoomed] = useState(false);
+  const [visualMode, setVisualMode] = useState('schematic');
+  const [viewerItem, setViewerItem] = useState(null);
 
   const diagrams = {
     heart: {
@@ -107,10 +128,14 @@ export default function AnatomyDiagrams() {
 
   const current = diagrams[selectedDiagram];
   const activePin = current.pins[selectedPin] || current.pins[0];
+  const activePlate = PLATE_BY_DIAGRAM[selectedDiagram] || null;
 
   const handleSelectDiagram = (key) => {
     setSelectedDiagram(key);
     setSelectedPin(0);
+    if (!PLATE_BY_DIAGRAM[key]) {
+      setVisualMode('schematic');
+    }
   };
 
   return (
@@ -118,13 +143,13 @@ export default function AnatomyDiagrams() {
       {/* Diagram Selector */}
       <div className="flex flex-wrap gap-2">
         {[
-          { id: 'heart', label: '❤️ Heart & Conduction' },
-          { id: 'cell', label: '🧬 Eukaryotic Cell' },
-          { id: 'skin', label: '🩹 Skin Cross-Section' },
-          { id: 'skeleton', label: '🦴 Axial & Appendicular Skeleton' },
-          { id: 'senses', label: '👁️ Eye & Ear (Special Senses)' },
-          { id: 'microscope', label: '🔬 Microscope & Neubauer Grid' },
-          { id: 'neuron', label: '⚡ Neuron & NMJ' }
+          { id: 'heart', label: 'Heart & Conduction' },
+          { id: 'cell', label: 'Eukaryotic Cell' },
+          { id: 'skin', label: 'Skin Cross-Section' },
+          { id: 'skeleton', label: 'Axial & Appendicular Skeleton' },
+          { id: 'senses', label: 'Eye & Ear (Special Senses)' },
+          { id: 'microscope', label: 'Microscope & Neubauer Grid' },
+          { id: 'neuron', label: 'Neuron & NMJ' }
         ].map((d) => (
           <button
             key={d.id}
@@ -147,18 +172,87 @@ export default function AnatomyDiagrams() {
             <h3 className="text-xl font-bold text-slate-900 dark:text-white">{current.title}</h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{current.subtitle}</p>
           </div>
-          <button
-            onClick={() => setZoomed((z) => !z)}
-            className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
-          >
-            {zoomed ? <ZoomOut className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <ZoomIn className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
-            <span className="tabular-nums">{zoomed ? 'Reset 1.0×' : 'Inspect 1.25×'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {activePlate && (
+              <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setVisualMode('schematic')}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    visualMode === 'schematic'
+                      ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Pin Schematic</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisualMode('plate')}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    visualMode === 'plate'
+                      ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>Scientific Atlas Plate</span>
+                </button>
+              </div>
+            )}
+            <button
+              onClick={() =>
+                activePlate && visualMode === 'plate'
+                  ? setViewerItem(activePlate)
+                  : setZoomed((z) => !z)
+              }
+              className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+            >
+              {zoomed && visualMode === 'schematic' ? (
+                <ZoomOut className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <ZoomIn className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              )}
+              <span className="tabular-nums">
+                {activePlate && visualMode === 'plate'
+                  ? 'Full Viewer'
+                  : zoomed
+                    ? 'Reset 1.0×'
+                    : 'Inspect 1.25×'}
+              </span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Interactive SVG Canvas */}
+          {/* Interactive SVG Canvas OR High-Res Scientific Atlas Plate */}
           <div className="lg:col-span-7 bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex items-center justify-center overflow-auto">
+            {activePlate && visualMode === 'plate' ? (
+              <div className="w-full space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setViewerItem(activePlate)}
+                  className="w-full aspect-[4/3] rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-800 block group focus:outline-none"
+                >
+                  <img
+                    src={activePlate.assetUrl}
+                    alt={activePlate.title}
+                    className="w-full h-full object-contain p-1 group-hover:scale-[1.02] transition-transform duration-200"
+                  />
+                </button>
+                <div className="flex items-center justify-between gap-3 text-xs text-slate-400 px-1">
+                  <span className="truncate">{activePlate.caption}</span>
+                  <button
+                    type="button"
+                    onClick={() => setViewerItem(activePlate)}
+                    className="text-emerald-400 font-semibold whitespace-nowrap hover:underline shrink-0"
+                  >
+                    Zoom Plate
+                  </button>
+                </div>
+              </div>
+            ) : (
             <svg
               viewBox="0 0 360 270"
               className={`w-full max-w-[540px] h-auto select-none transition-transform duration-200 ${zoomed ? 'scale-125 origin-center my-6' : 'scale-100'}`}
@@ -395,6 +489,7 @@ export default function AnatomyDiagrams() {
                 );
               })}
             </svg>
+            )}
           </div>
 
           {/* Pin Details & Clickable Legend */}
@@ -450,6 +545,20 @@ export default function AnatomyDiagrams() {
           </div>
         </div>
       </div>
+
+      <ResourceConnector
+        department="anatomy"
+        topic={selectedDiagram}
+        defaultSearchQuery={SEARCH_BY_DIAGRAM[selectedDiagram] || 'anatomy'}
+        title={`Linked Visuals & Textbook Passages — ${current.title.split('(')[0].trim()}`}
+      />
+
+      <ImageViewerModal
+        item={viewerItem}
+        allVisuals={BUILT_IN_VISUALS}
+        onClose={() => setViewerItem(null)}
+        onSelectVisual={(item) => setViewerItem(item)}
+      />
     </div>
   );
 }

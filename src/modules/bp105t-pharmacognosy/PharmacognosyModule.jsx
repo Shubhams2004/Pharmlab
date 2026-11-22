@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Microscope, Leaf, FlaskConical, Ruler, BookOpen, Tag } from 'lucide-react';
+import { Microscope, Leaf, FlaskConical, Ruler, BookOpen, Tag, ZoomIn } from 'lucide-react';
+import ResourceConnector from '../../components/ResourceConnector';
+import { BUILT_IN_VISUALS } from '../visual-library/builtInVisuals';
+import ImageViewerModal from '../visual-library/ImageViewerModal';
+
+const BOTANICAL_PLATE = BUILT_IN_VISUALS.find((v) => v.id === 'builtin_botanical_microscopy') || null;
+const MICROSCOPE_PLATE = BUILT_IN_VISUALS.find((v) => v.id === 'builtin_compound_microscope') || null;
 
 export default function PharmacognosyModule({ initialTab, navNonce }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'leaf_constants');
+  const [viewerItem, setViewerItem] = useState(null);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -437,6 +444,39 @@ export default function PharmacognosyModule({ initialTab, navNonce }) {
               </div>
             ))}
           </div>
+
+          {BOTANICAL_PLATE && MICROSCOPE_PLATE && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-200 dark:border-slate-800">
+              {[BOTANICAL_PLATE, MICROSCOPE_PLATE].map((plate) => (
+                <button
+                  key={plate.id}
+                  type="button"
+                  onClick={() => setViewerItem(plate)}
+                  className="group flex items-center gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 transition-colors text-left"
+                >
+                  <div className="w-24 aspect-[4/3] rounded-lg overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0">
+                    <img
+                      src={plate.assetUrl}
+                      alt={plate.title}
+                      className="w-full h-full object-contain p-0.5 group-hover:scale-105 transition-transform"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
+                      {plate.title}
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
+                      {plate.caption}
+                    </p>
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                      <ZoomIn className="w-3.5 h-3.5" />
+                      <span>Inspect High-Res Plate</span>
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -649,6 +689,26 @@ export default function PharmacognosyModule({ initialTab, navNonce }) {
           )}
         </div>
       )}
+
+      <ResourceConnector
+        department="pharmacognosy"
+        topic={activeTab === 'morphology' ? 'stomata' : 'microscopy'}
+        defaultSearchQuery={
+          activeTab === 'morphology'
+            ? 'Withania Ocimum Terminalia'
+            : activeTab === 'leaf_constants'
+              ? 'stomatal index vein islet'
+              : 'pharmacognosy microscopy trichomes'
+        }
+        title="BP105T / BP110P Botanical Microscopy & Textbook References"
+      />
+
+      <ImageViewerModal
+        item={viewerItem}
+        allVisuals={BUILT_IN_VISUALS}
+        onClose={() => setViewerItem(null)}
+        onSelectVisual={(item) => setViewerItem(item)}
+      />
     </div>
   );
 }

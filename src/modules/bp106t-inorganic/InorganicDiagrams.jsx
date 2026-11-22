@@ -1,10 +1,26 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Image as ImageIcon, Layers } from 'lucide-react';
+import ResourceConnector from '../../components/ResourceConnector';
+import { BUILT_IN_VISUALS } from '../visual-library/builtInVisuals';
+import ImageViewerModal from '../visual-library/ImageViewerModal';
+
+const APPARATUS_PLATE = BUILT_IN_VISUALS.find((v) => v.id === 'builtin_chemistry_apparatus') || null;
+
+const INORG_SEARCH_MAP = {
+  gutzeit: 'limit test arsenic gutzeit',
+  nessler: 'nessler cylinder limit test',
+  titration_setup: 'volumetric titration burette',
+  accuracy: 'accuracy precision determinate error',
+  curves: 'neutralization curve indicator',
+  radiation: 'radiopharmaceutical shielding'
+};
 
 export default function InorganicDiagrams() {
   const [selectedDiagram, setSelectedDiagram] = useState('gutzeit');
   const [selectedPin, setSelectedPin] = useState(0);
   const [zoomed, setZoomed] = useState(false);
+  const [visualMode, setVisualMode] = useState('schematic');
+  const [viewerItem, setViewerItem] = useState(null);
 
   const diagrams = {
     gutzeit: {
@@ -75,22 +91,28 @@ export default function InorganicDiagrams() {
 
   const current = diagrams[selectedDiagram];
   const activePin = current.pins[selectedPin] || current.pins[0];
+  const hasPlate =
+    Boolean(APPARATUS_PLATE) &&
+    (selectedDiagram === 'titration_setup' || selectedDiagram === 'nessler');
 
   const handleSelectDiagram = (key) => {
     setSelectedDiagram(key);
     setSelectedPin(0);
+    if (key !== 'titration_setup' && key !== 'nessler') {
+      setVisualMode('schematic');
+    }
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
         {[
-          { id: 'gutzeit', label: '🧪 Gutzeit Arsenic Apparatus (Exp 1e)' },
-          { id: 'nessler', label: '🔍 Nessler Cylinder Comparator (Exp 1a–1d)' },
-          { id: 'titration_setup', label: '⚗️ Burette & Meniscus Setup (Exp 4)' },
-          { id: 'accuracy', label: '🎯 Accuracy vs Precision (Unit I)' },
-          { id: 'curves', label: '📈 Neutralization Curves (Unit III)' },
-          { id: 'radiation', label: '☢️ α / β / γ Radiation Shielding (Unit IV)' }
+          { id: 'gutzeit', label: 'Gutzeit Arsenic Apparatus (Exp 1e)' },
+          { id: 'nessler', label: 'Nessler Cylinder Comparator (Exp 1a–1d)' },
+          { id: 'titration_setup', label: 'Burette & Meniscus Setup (Exp 4)' },
+          { id: 'accuracy', label: 'Accuracy vs Precision (Unit I)' },
+          { id: 'curves', label: 'Neutralization Curves (Unit III)' },
+          { id: 'radiation', label: 'α / β / γ Radiation Shielding (Unit IV)' }
         ].map((d) => (
           <button
             key={d.id}
@@ -112,17 +134,86 @@ export default function InorganicDiagrams() {
             <h3 className="text-xl font-bold text-slate-900 dark:text-white">{current.title}</h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{current.subtitle}</p>
           </div>
-          <button
-            onClick={() => setZoomed((z) => !z)}
-            className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
-          >
-            {zoomed ? <ZoomOut className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> : <ZoomIn className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
-            <span className="tabular-nums">{zoomed ? 'Reset 1.0×' : 'Inspect 1.25×'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {hasPlate && (
+              <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setVisualMode('schematic')}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    visualMode === 'schematic'
+                      ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Schematic</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisualMode('plate')}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    visualMode === 'plate'
+                      ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>Apparatus Plate</span>
+                </button>
+              </div>
+            )}
+            <button
+              onClick={() =>
+                hasPlate && visualMode === 'plate'
+                  ? setViewerItem(APPARATUS_PLATE)
+                  : setZoomed((z) => !z)
+              }
+              className="px-3.5 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+            >
+              {zoomed && visualMode === 'schematic' ? (
+                <ZoomOut className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <ZoomIn className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              )}
+              <span className="tabular-nums">
+                {hasPlate && visualMode === 'plate'
+                  ? 'Full Viewer'
+                  : zoomed
+                    ? 'Reset 1.0×'
+                    : 'Inspect 1.25×'}
+              </span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-7 bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex items-center justify-center overflow-auto">
+            {hasPlate && visualMode === 'plate' && APPARATUS_PLATE ? (
+              <div className="w-full space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setViewerItem(APPARATUS_PLATE)}
+                  className="w-full aspect-[4/3] rounded-xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-800 block group focus:outline-none"
+                >
+                  <img
+                    src={APPARATUS_PLATE.assetUrl}
+                    alt={APPARATUS_PLATE.title}
+                    className="w-full h-full object-contain p-1 group-hover:scale-[1.02] transition-transform duration-200"
+                  />
+                </button>
+                <div className="flex items-center justify-between gap-3 text-xs text-slate-400 px-1">
+                  <span className="truncate">{APPARATUS_PLATE.caption}</span>
+                  <button
+                    type="button"
+                    onClick={() => setViewerItem(APPARATUS_PLATE)}
+                    className="text-emerald-400 font-semibold whitespace-nowrap hover:underline shrink-0"
+                  >
+                    Zoom Plate
+                  </button>
+                </div>
+              </div>
+            ) : (
             <svg
               viewBox="0 0 360 260"
               className={`w-full max-w-[540px] h-auto select-none transition-transform duration-200 ${zoomed ? 'scale-125 origin-center my-6' : 'scale-100'}`}
@@ -280,6 +371,7 @@ export default function InorganicDiagrams() {
                 );
               })}
             </svg>
+            )}
           </div>
 
           <div className="lg:col-span-5 space-y-4">
@@ -334,6 +426,20 @@ export default function InorganicDiagrams() {
           </div>
         </div>
       </div>
+
+      <ResourceConnector
+        department="inorganic"
+        topic={selectedDiagram === 'titration_setup' ? 'titration' : 'nessler'}
+        defaultSearchQuery={INORG_SEARCH_MAP[selectedDiagram] || 'limit test'}
+        title={`Linked Apparatus Visuals & Textbook References — ${current.title.split('(')[0].trim()}`}
+      />
+
+      <ImageViewerModal
+        item={viewerItem}
+        allVisuals={BUILT_IN_VISUALS}
+        onClose={() => setViewerItem(null)}
+        onSelectVisual={(item) => setViewerItem(item)}
+      />
     </div>
   );
 }

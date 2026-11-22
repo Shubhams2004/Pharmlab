@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FlaskConical, Droplet, RefreshCcw, Sliders, Info, BookmarkCheck, ShieldCheck, Beaker, Scale } from 'lucide-react';
 import InorganicDiagrams from './InorganicDiagrams';
 import InorganicTheory from './InorganicTheory';
+import ResourceConnector from '../../components/ResourceConnector';
 
 export default function InorganicModule({ initialTab, navNonce }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'diagrams');
@@ -771,6 +772,21 @@ export default function InorganicModule({ initialTab, navNonce }) {
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab !== 'diagrams' && (
+        <ResourceConnector
+          department="inorganic"
+          topic={activeTab === 'titration' ? 'burette' : 'nessler'}
+          defaultSearchQuery={
+            activeTab === 'titration'
+              ? 'volumetric titration indicator'
+              : activeTab === 'limit_tests'
+                ? 'limit test chloride sulphate arsenic'
+                : 'inorganic pharmaceutical chemistry'
+          }
+          title="BP106T / BP111P Linked Apparatus Visuals & Textbook Passages"
+        />
       )}
     </div>
   );

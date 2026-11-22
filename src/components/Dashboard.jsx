@@ -10,7 +10,9 @@ import {
   MessageSquareHeart,
   Compass,
   BookOpen,
-  Play
+  Play,
+  Library,
+  Images
 } from 'lucide-react';
 import { QUICK_INDEX } from './CommandPalette';
 
@@ -300,7 +302,7 @@ export default function Dashboard({
         {[
           { label: 'Core Curriculum', value: '6 Subjects', sub: 'BP101T to BP106T' },
           { label: 'Virtual Practicals', value: '64+ Labs', sub: 'BP107P to BP111P aligned' },
-          { label: 'Visual Reference', value: '13 Diagrams', sub: 'Clickable anatomical & apparatus pins' },
+          { label: 'Visual Reference', value: '13 Diagrams + Plates', sub: 'Annotated pins & scientific plates' },
           { label: 'Your Session Progress', value: `${visitedModules.length} / 7`, sub: 'Workspaces explored' }
         ].map((stat) => (
           <div key={stat.label} className="py-5 px-4 first:pl-1">
@@ -309,6 +311,49 @@ export default function Dashboard({
             <p className="text-xs text-slate-500 mt-1">{stat.sub}</p>
           </div>
         ))}
+      </section>
+
+      {/* Interconnected Browser-Local Libraries */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <button
+          type="button"
+          onClick={() => onSelectModule('knowledge_library')}
+          className="group text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 rounded-2xl p-5 transition-colors flex items-start justify-between gap-4 shadow-sm dark:shadow-none"
+        >
+          <div className="space-y-1.5 min-w-0">
+            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+              <Library className="w-4 h-4 shrink-0" />
+              <span>Workspace Reference · Browser IndexedDB</span>
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+              PDF Knowledge Library
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Import pharmaceutical textbooks &amp; lab manuals locally, search every page, bookmark passages, take study notes, and crop diagrams directly into the Visual Library.
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onSelectModule('visual_library')}
+          className="group text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 rounded-2xl p-5 transition-colors flex items-start justify-between gap-4 shadow-sm dark:shadow-none"
+        >
+          <div className="space-y-1.5 min-w-0">
+            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-700 dark:text-cyan-400">
+              <Images className="w-4 h-4 shrink-0" />
+              <span>Scientific Media · Local + Open-Access Atlas</span>
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+              Scientific Visual Library
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Browse anatomical, botanical microscopy, and apparatus plates, upload lab photos, or discover and import open-access media from Wikimedia, OpenStax, PubChem &amp; GBIF.
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
+        </button>
       </section>
 
       {/* Subject Directory with Category Filter */}

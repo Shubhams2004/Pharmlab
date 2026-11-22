@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FlaskConical, Calculator, Scale, Droplet, CheckCircle2, BookOpen, Tag, Package } from 'lucide-react';
+import ResourceConnector from '../../components/ResourceConnector';
 
 export default function GeneralPharmacyModule({ initialTab, navNonce }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'experiments');
@@ -923,6 +924,21 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
           )}
         </div>
       )}
+
+      <ResourceConnector
+        department="general_pharmacy"
+        topic="titration"
+        defaultSearchQuery={
+          activeTab === 'posology_proof'
+            ? 'posology pediatric proof spirit'
+            : activeTab === 'suppository'
+              ? 'suppository displacement cocoa butter'
+              : activeTab === 'alligation'
+                ? 'alligation isotonicity'
+                : 'pharmaceutics emulsion suspension'
+        }
+        title="BP102T / BP107P Formulation & Apparatus References"
+      />
     </div>
   );
 }

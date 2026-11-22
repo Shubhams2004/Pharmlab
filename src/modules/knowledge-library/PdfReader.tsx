@@ -1,45 +1,106 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowLeft,
   Bookmark,
   BookmarkCheck,
+  Check,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Crop,
   Eye,
   FileText,
+  Highlighter,
+  Images,
   Info,
   Loader2,
+  Maximize,
   Maximize2,
   Minimize2,
   Moon,
   Search,
+  StickyNote,
   Sun,
   Trash2,
   X,
   ZoomIn,
-  ZoomOut,
-  Maximize,
-  AlertTriangle
+  ZoomOut
 } from 'lucide-react';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
 import {
+  CATEGORY_LABELS,
+  DEPARTMENT_LABELS,
+  DepartmentId,
+  VisualCategory
+} from '../visual-library/types';
+import { saveCroppedTextbookDiagram } from '../visual-library/visualDb';
+import {
+  addBookNote,
   addBookmark,
   getBookFile,
+  getBookNotes,
   getBookPages,
   getBookmarks,
+  removeBookNote,
   removeBookmark,
+  updateBookMeta,
   updateBookReadingProgress
 } from './libraryDb';
 import { classifyPdfError, pdfjsLib } from './pdfWorker';
 import { PHARMACEUTICAL_SUGGESTIONS, searchBookPages } from './searchEngine';
-import { BookBookmark, BookPageText, LibraryBookMeta, SearchMatch } from './types';
+import {
+  BOOK_DEPARTMENT_LABELS,
+  BookBookmark,
+  BookDepartmentTag,
+  BookHighlightNote,
+  BookPageText,
+  HighlightColor,
+  LibraryBookMeta,
+  SearchMatch
+} from './types';
 
 interface PdfReaderProps {
   book: LibraryBookMeta;
   onBack: () => void;
   onBookProgressChange: (bookId: string, pageNumber: number) => void;
+  onBookMetaChange?: (updated: LibraryBookMeta) => void;
+  initialPage?: number | null;
+  initialSearchQuery?: string | null;
+  jumpNonce?: number;
 }
 
-type SidePanelTab = 'search' | 'bookmarks' | 'info';
+type SidePanelTab = 'search' | 'bookmarks' | 'notes' | 'info';
+
+interface CropRectNormalized {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const HIGHLIGHT_STYLES: Record<HighlightColor, { bg: string; chip: string; label: string }> = {
+  amber: {
+    bg: 'rgba(251, 191, 36, 0.42)',
+    chip: 'bg-amber-400',
+    label: 'Amber'
+  },
+  emerald: {
+    bg: 'rgba(52, 211, 153, 0.36)',
+    chip: 'bg-emerald-400',
+    label: 'Emerald'
+  },
+  blue: {
+    bg: 'rgba(56, 189, 248, 0.38)',
+    chip: 'bg-sky-400',
+    label: 'Cyan'
+  },
+  rose: {
+    bg: 'rgba(251, 113, 133, 0.36)',
+    chip: 'bg-rose-400',
+    label: 'Rose'
+  }
+};
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -59,7 +120,64 @@ function formatDate(ts: number): string {
   }
 }
 
-function applyTextLayerHighlights(container: HTMLElement, query: string): void {
+function applyTextLayerHighlights(
+  container: HTMLElement,
+  query: string,
+  pageNotes: BookHighlightNote[]
+): void {
+  const spans = Array.from(container.querySelectorAll('span'));
+  let firstMark: HTMLElement | null = null;
+
+  // Apply saved user quote highlights for this page
+  for (const note of pageNotes) {
+    const quote = note.quote.trim();
+    if (quote.length < 3) continue;
+    const snippet = quote.slice(0, 64).replace(/\s+/g, ' ');
+    const tokens = snippet
+      .split(/\s+/)
+      .filter((t) => t.length >= 3)
+      .slice(0, 4);
+    if (tokens.length === 0) continue;
+
+    const pattern = new RegExp(
+      `(${tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+      'gi'
+    );
+
+    for (const span of spans) {
+      const raw = span.textContent || '';
+      if (!raw) continue;
+      pattern.lastIndex = 0;
+      if (!pattern.test(raw)) continue;
+
+      pattern.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      let m: RegExpExecArray | null;
+
+      while ((m = pattern.exec(raw)) !== null) {
+        if (m.index > lastIdx) {
+          frag.appendChild(document.createTextNode(raw.slice(lastIdx, m.index)));
+        }
+        const mark = document.createElement('mark');
+        mark.style.backgroundColor = HIGHLIGHT_STYLES[note.color].bg;
+        mark.style.color = 'transparent';
+        mark.style.borderRadius = '2px';
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        lastIdx = m.index + m[0].length;
+      }
+
+      if (lastIdx < raw.length) {
+        frag.appendChild(document.createTextNode(raw.slice(lastIdx)));
+      }
+
+      span.textContent = '';
+      span.appendChild(frag);
+    }
+  }
+
+  // Apply active search query highlight on top
   const trimmed = query.trim();
   if (!trimmed || trimmed.length < 2) return;
 
@@ -74,10 +192,8 @@ function applyTextLayerHighlights(container: HTMLElement, query: string): void {
     .join('|');
   const matcher = new RegExp(`(${escaped})`, 'gi');
 
-  const spans = Array.from(container.querySelectorAll('span'));
-  let firstMark: HTMLElement | null = null;
-
-  for (const span of spans) {
+  const refreshedSpans = Array.from(container.querySelectorAll('span'));
+  for (const span of refreshedSpans) {
     const raw = span.textContent || '';
     if (!raw) continue;
     matcher.lastIndex = 0;
@@ -116,21 +232,28 @@ function applyTextLayerHighlights(container: HTMLElement, query: string): void {
 export default function PdfReader({
   book,
   onBack,
-  onBookProgressChange
+  onBookProgressChange,
+  onBookMetaChange,
+  initialPage,
+  initialSearchQuery,
+  jumpNonce
 }: PdfReaderProps) {
+  const { openVisualLibrary } = useLibraryNavigation();
+
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pagesText, setPagesText] = useState<BookPageText[]>([]);
   const [bookmarks, setBookmarks] = useState<BookBookmark[]>([]);
+  const [notes, setNotes] = useState<BookHighlightNote[]>([]);
   const [loadingDoc, setLoadingDoc] = useState(true);
   const [docError, setDocError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [renderingPage, setRenderingPage] = useState(false);
 
   const [currentPage, setCurrentPage] = useState<number>(() =>
-    Math.max(1, Math.min(book.lastReadPage || 1, book.pageCount || 1))
+    Math.max(1, Math.min(initialPage || book.lastReadPage || 1, book.pageCount || 1))
   );
   const [pageInput, setPageInput] = useState<string>(
-    String(Math.max(1, Math.min(book.lastReadPage || 1, book.pageCount || 1)))
+    String(Math.max(1, Math.min(initialPage || book.lastReadPage || 1, book.pageCount || 1)))
   );
 
   const [fitWidth, setFitWidth] = useState(true);
@@ -140,21 +263,64 @@ export default function PdfReader({
 
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelTab, setPanelTab] = useState<SidePanelTab>('search');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeHighlight, setActiveHighlight] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
+  const [activeHighlight, setActiveHighlight] = useState(initialSearchQuery || '');
   const [bookmarkLabel, setBookmarkLabel] = useState('');
+
+  // Highlight & Note composer state
+  const [noteQuote, setNoteQuote] = useState('');
+  const [noteBody, setNoteBody] = useState('');
+  const [noteColor, setNoteColor] = useState<HighlightColor>('amber');
+
+  // Crop-to-Visual-Library state
+  const [cropMode, setCropMode] = useState(false);
+  const [cropRect, setCropRect] = useState<CropRectNormalized | null>(null);
+  const [cropDragStart, setCropDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
+  const [capturedPreviewUrl, setCapturedPreviewUrl] = useState<string | null>(null);
+  const [cropTitle, setCropTitle] = useState('');
+  const [cropCaption, setCropCaption] = useState('');
+  const [cropCategory, setCropCategory] = useState<VisualCategory>('anatomy');
+  const [cropDepartments, setCropDepartments] = useState<DepartmentId[]>(() =>
+    book.department && book.department !== 'all'
+      ? [book.department as DepartmentId]
+      : ['anatomy']
+  );
+  const [cropExperiments, setCropExperiments] = useState('');
+  const [cropEquipment, setCropEquipment] = useState('');
+  const [cropTags, setCropTags] = useState('');
+  const [savingCrop, setSavingCrop] = useState(false);
+  const [cropNotice, setCropNotice] = useState<string | null>(null);
 
   const [darkPaper, setDarkPaper] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const readerRootRef = useRef<HTMLDivElement | null>(null);
   const stageContainerRef = useRef<HTMLDivElement | null>(null);
+  const pageFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
 
   const totalPages = pdfDoc?.numPages || book.pageCount || 1;
 
-  // Load PDF binary, indexed page text, and bookmarks from IndexedDB
+  // Apply deep link updates when user navigates from a module ResourceConnector or ImageViewer
+  useEffect(() => {
+    if (jumpNonce === undefined) return;
+    if (initialPage && initialPage >= 1) {
+      const clamped = Math.max(1, Math.min(initialPage, totalPages));
+      setCurrentPage(clamped);
+      setPageInput(String(clamped));
+    }
+    if (typeof initialSearchQuery === 'string' && initialSearchQuery.trim()) {
+      setSearchQuery(initialSearchQuery);
+      setActiveHighlight(initialSearchQuery);
+      setPanelTab('search');
+      setPanelOpen(true);
+    }
+  }, [jumpNonce, initialPage, initialSearchQuery, totalPages]);
+
+  // Load PDF binary, indexed page text, bookmarks, and notes from IndexedDB
   useEffect(() => {
     let cancelled = false;
     let loadedDoc: pdfjsLib.PDFDocumentProxy | null = null;
@@ -165,10 +331,11 @@ export default function PdfReader({
       setRenderError(null);
 
       try {
-        const [buffer, storedPages, storedBookmarks] = await Promise.all([
+        const [buffer, storedPages, storedBookmarks, storedNotes] = await Promise.all([
           getBookFile(book.id),
           getBookPages(book.id),
-          getBookmarks(book.id)
+          getBookmarks(book.id),
+          getBookNotes(book.id)
         ]);
 
         if (cancelled) return;
@@ -193,13 +360,14 @@ export default function PdfReader({
         setPdfDoc(loadedDoc);
         setPagesText(storedPages);
         setBookmarks(storedBookmarks);
+        setNotes(storedNotes);
 
-        const initialPage = Math.max(
+        const startPage = Math.max(
           1,
-          Math.min(book.lastReadPage || 1, loadedDoc.numPages)
+          Math.min(initialPage || book.lastReadPage || 1, loadedDoc.numPages)
         );
-        setCurrentPage(initialPage);
-        setPageInput(String(initialPage));
+        setCurrentPage(startPage);
+        setPageInput(String(startPage));
       } catch (err) {
         if (!cancelled) {
           setDocError(classifyPdfError(err));
@@ -221,12 +389,21 @@ export default function PdfReader({
     };
   }, [book.id]);
 
+  // Revoke crop preview object URL on unmount/change
+  useEffect(() => {
+    return () => {
+      if (capturedPreviewUrl) {
+        URL.revokeObjectURL(capturedPreviewUrl);
+      }
+    };
+  }, [capturedPreviewUrl]);
+
   // Close drawer automatically on small viewports initially so page fills screen
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024 && !initialSearchQuery) {
       setPanelOpen(false);
     }
-  }, []);
+  }, [initialSearchQuery]);
 
   // Measure viewport stage width for responsive Fit-to-Width zoom
   useEffect(() => {
@@ -257,6 +434,11 @@ export default function PdfReader({
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
+
+  const currentPageNotes = useMemo(
+    () => notes.filter((n) => n.pageNumber === currentPage),
+    [notes, currentPage]
+  );
 
   // Render active PDF page onto HiDPI canvas + selectable TextLayer
   useEffect(() => {
@@ -335,9 +517,7 @@ export default function PdfReader({
         await textLayerInstance.render();
         if (cancelled) return;
 
-        if (activeHighlight.trim().length >= 2) {
-          applyTextLayerHighlights(textLayerDiv, activeHighlight);
-        }
+        applyTextLayerHighlights(textLayerDiv, activeHighlight, currentPageNotes);
       } catch (err) {
         if (cancelled) return;
         const record = err as { name?: string };
@@ -376,7 +556,7 @@ export default function PdfReader({
         }
       }
     };
-  }, [pdfDoc, currentPage, fitWidth, manualScale, containerWidth, activeHighlight]);
+  }, [pdfDoc, currentPage, fitWidth, manualScale, containerWidth, activeHighlight, currentPageNotes]);
 
   // Persist reading position in IndexedDB
   useEffect(() => {
@@ -394,6 +574,8 @@ export default function PdfReader({
       if (typeof highlightTerm === 'string') {
         setActiveHighlight(highlightTerm);
       }
+      setCropMode(false);
+      setCropRect(null);
       stageContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     },
     [totalPages]
@@ -516,6 +698,129 @@ export default function PdfReader({
     setBookmarks((prev) => prev.filter((b) => b.id !== bookmarkId));
   };
 
+  const handleCaptureSelectionForNote = () => {
+    const selected = window.getSelection()?.toString()?.replace(/\s+/g, ' ').trim() || '';
+    if (selected) {
+      setNoteQuote(selected.slice(0, 400));
+    }
+    setPanelTab('notes');
+    setPanelOpen(true);
+  };
+
+  const handleSaveNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const quote = noteQuote.trim();
+    const note = noteBody.trim();
+    if (!quote && !note) return;
+
+    const entry: BookHighlightNote = {
+      id: `${book.id}_note_${currentPage}_${Date.now()}`,
+      bookId: book.id,
+      pageNumber: currentPage,
+      quote,
+      note,
+      color: noteColor,
+      createdAt: Date.now()
+    };
+
+    await addBookNote(entry);
+    setNotes((prev) =>
+      [...prev, entry].sort((a, b) => a.pageNumber - b.pageNumber || a.createdAt - b.createdAt)
+    );
+    setNoteQuote('');
+    setNoteBody('');
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    await removeBookNote(noteId);
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  };
+
+  // Interactive crop extraction from the PDF <canvas>
+  const getNormalizedPointerPos = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = pageFrameRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+    };
+  };
+
+  const handleExportCropRegion = (rectOverride?: CropRectNormalized) => {
+    const canvas = canvasRef.current;
+    const region = rectOverride || cropRect;
+    if (!canvas || !region || region.w < 0.02 || region.h < 0.02) return;
+
+    const sx = Math.floor(region.x * canvas.width);
+    const sy = Math.floor(region.y * canvas.height);
+    const sw = Math.max(12, Math.floor(region.w * canvas.width));
+    const sh = Math.max(12, Math.floor(region.h * canvas.height));
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = sw;
+    offscreen.height = sh;
+    const ctx = offscreen.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, sw, sh);
+    ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+    offscreen.toBlob((blob) => {
+      if (!blob) return;
+      if (capturedPreviewUrl) URL.revokeObjectURL(capturedPreviewUrl);
+      const url = URL.createObjectURL(blob);
+      setCapturedBlob(blob);
+      setCapturedPreviewUrl(url);
+      setCropTitle(`${book.title} — Fig. (p. ${currentPage})`);
+      setCropCaption(`Extracted diagram from ${book.title}, Page ${currentPage}`);
+      setCropModalOpen(true);
+    }, 'image/png');
+  };
+
+  const handleConfirmSaveCrop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!capturedBlob) return;
+    setSavingCrop(true);
+    try {
+      const splitList = (val: string) =>
+        val
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+      const saved = await saveCroppedTextbookDiagram(capturedBlob, {
+        title: cropTitle,
+        caption: cropCaption,
+        description: cropCaption,
+        category: cropCategory,
+        departments: cropDepartments,
+        topics: splitList(cropTags),
+        experiments: splitList(cropExperiments),
+        equipment: splitList(cropEquipment),
+        tags: splitList(cropTags),
+        bookTitle: book.title,
+        bookId: book.id,
+        pageNumber: currentPage
+      });
+
+      setCropNotice(`Saved "${saved.title}" to your Scientific Visual Library.`);
+      setCropModalOpen(false);
+      setCropMode(false);
+      setCropRect(null);
+      setCapturedBlob(null);
+    } finally {
+      setSavingCrop(false);
+    }
+  };
+
+  const handleUpdateDepartment = async (nextDept: BookDepartmentTag) => {
+    const updated = await updateBookMeta(book.id, { department: nextDept });
+    if (updated && onBookMetaChange) {
+      onBookMetaChange(updated);
+    }
+  };
+
   const progressPercent = Math.round((currentPage / totalPages) * 100);
 
   return (
@@ -541,7 +846,7 @@ export default function PdfReader({
           </button>
 
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[200px] sm:max-w-[280px] lg:max-w-[360px]">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-[260px] lg:max-w-[320px]">
               {book.title}
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums truncate">
@@ -590,7 +895,7 @@ export default function PdfReader({
           </button>
         </div>
 
-        {/* Right: Zoom, Bookmark, Dark Paper, Panel, Fullscreen */}
+        {/* Right: Zoom, Crop Diagram, Note, Bookmark, Dark Paper, Panel, Fullscreen */}
         <div className="flex items-center gap-1.5 shrink-0">
           <div className="hidden sm:flex items-center gap-1 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 bg-slate-50 dark:bg-slate-950">
             <button
@@ -632,6 +937,35 @@ export default function PdfReader({
 
           <button
             type="button"
+            onClick={() => {
+              setCropMode((prev) => !prev);
+              setCropRect(null);
+            }}
+            disabled={loadingDoc}
+            className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              cropMode
+                ? 'bg-emerald-600 border-emerald-600 text-white'
+                : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+            }`}
+            title="Crop diagram from this page into Scientific Visual Library"
+          >
+            <Crop className="w-4 h-4" />
+            <span className="hidden xl:inline">{cropMode ? 'Cancel Crop' : 'Capture Diagram'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCaptureSelectionForNote}
+            disabled={loadingDoc}
+            className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 text-xs font-medium transition-colors whitespace-nowrap shrink-0"
+            title="Highlight text or add note on this page"
+          >
+            <Highlighter className="w-4 h-4" />
+            <span className="hidden 2xl:inline">Highlight</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleToggleBookmarkCurrentPage}
             disabled={loadingDoc}
             className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
@@ -647,15 +981,12 @@ export default function PdfReader({
             ) : (
               <Bookmark className="w-4 h-4" />
             )}
-            <span className="hidden xl:inline">
-              {currentPageBookmark ? 'Bookmarked' : 'Bookmark'}
-            </span>
           </button>
 
           <button
             type="button"
             onClick={() => setDarkPaper((prev) => !prev)}
-            className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center justify-center w-9 h-9 rounded-lg border text-xs font-medium transition-colors shrink-0 ${
               darkPaper
                 ? 'bg-slate-800 border-slate-700 text-emerald-300'
                 : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
@@ -664,7 +995,6 @@ export default function PdfReader({
             aria-label="Toggle reader night contrast mode"
           >
             {darkPaper ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            <span className="hidden xl:inline">{darkPaper ? 'Day Paper' : 'Night Paper'}</span>
           </button>
 
           <button
@@ -675,10 +1005,10 @@ export default function PdfReader({
                 ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
                 : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
             }`}
-            aria-label="Toggle search and bookmarks panel"
+            aria-label="Toggle search, notes, and bookmarks panel"
           >
             <Search className="w-4 h-4" />
-            <span className="hidden md:inline">Search &amp; Notes</span>
+            <span className="hidden md:inline">Panel</span>
           </button>
 
           <button
@@ -701,15 +1031,78 @@ export default function PdfReader({
         />
       </div>
 
+      {/* Capture Success Banner */}
+      {cropNotice && (
+        <div className="bg-emerald-500/10 border-b border-emerald-500/30 px-4 py-2 flex items-center justify-between gap-3 text-xs shrink-0">
+          <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-200 font-medium">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>{cropNotice}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => openVisualLibrary({ query: book.title })}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 text-white font-semibold"
+            >
+              <Images className="w-3.5 h-3.5" />
+              <span>View in Visual Library</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCropNotice(null)}
+              className="p-1 text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              aria-label="Dismiss notice"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Crop Mode Instruction Bar */}
+      {cropMode && (
+        <div className="bg-emerald-600 text-white px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
+          <span>
+            Drag a box over any figure on Page {currentPage} to extract it into the Scientific Visual Library.
+          </span>
+          <div className="flex items-center gap-2">
+            {cropRect && cropRect.w >= 0.02 && cropRect.h >= 0.02 && (
+              <button
+                type="button"
+                onClick={() => handleExportCropRegion()}
+                className="px-3 py-1 rounded-md bg-white text-emerald-700 font-semibold"
+              >
+                Extract Selection
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleExportCropRegion({ x: 0, y: 0, w: 1, h: 1 })}
+              className="px-3 py-1 rounded-md bg-emerald-700 hover:bg-emerald-800 text-white font-medium"
+            >
+              Capture Full Page
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCropMode(false);
+                setCropRect(null);
+              }}
+              className="px-2.5 py-1 rounded-md bg-emerald-700/70 hover:bg-emerald-800 text-white"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Split Reader Area */}
       <div className="flex-1 flex min-h-0 relative overflow-hidden">
         {/* PDF Page Canvas Viewport */}
         <div
           ref={stageContainerRef}
           className={`flex-1 overflow-auto p-3 sm:p-6 flex flex-col items-center transition-colors ${
-            darkPaper
-              ? 'bg-slate-950'
-              : 'bg-slate-200/75 dark:bg-slate-950'
+            darkPaper ? 'bg-slate-950' : 'bg-slate-200/75 dark:bg-slate-950'
           }`}
         >
           {/* Mobile Zoom Row */}
@@ -800,15 +1193,57 @@ export default function PdfReader({
               )}
 
               <div
-                className="relative shadow-lg border border-slate-300/80 dark:border-slate-700/80 bg-white select-text"
+                ref={pageFrameRef}
+                className={`relative shadow-lg border border-slate-300/80 dark:border-slate-700/80 bg-white ${
+                  cropMode ? 'cursor-crosshair select-none' : 'select-text'
+                }`}
                 style={
-                  darkPaper
+                  darkPaper && !cropMode
                     ? { filter: 'invert(0.89) hue-rotate(180deg) contrast(0.95)' }
                     : undefined
                 }
+                onMouseDown={(e) => {
+                  if (!cropMode) return;
+                  const pos = getNormalizedPointerPos(e);
+                  setCropDragStart(pos);
+                  setCropRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
+                }}
+                onMouseMove={(e) => {
+                  if (!cropMode || !cropDragStart) return;
+                  const pos = getNormalizedPointerPos(e);
+                  setCropRect({
+                    x: Math.min(cropDragStart.x, pos.x),
+                    y: Math.min(cropDragStart.y, pos.y),
+                    w: Math.abs(pos.x - cropDragStart.x),
+                    h: Math.abs(pos.y - cropDragStart.y)
+                  });
+                }}
+                onMouseUp={() => {
+                  if (!cropMode) return;
+                  setCropDragStart(null);
+                }}
               >
                 <canvas ref={canvasRef} className="block" />
-                <div ref={textLayerRef} className="pdf-text-layer" />
+                <div
+                  ref={textLayerRef}
+                  className={`pdf-text-layer ${cropMode ? 'pointer-events-none' : ''}`}
+                />
+
+                {cropMode && (
+                  <div className="absolute inset-0 bg-slate-950/20 pointer-events-none z-20">
+                    {cropRect && cropRect.w > 0.01 && cropRect.h > 0.01 && (
+                      <div
+                        className="absolute border-2 border-emerald-500 bg-emerald-400/15 shadow-sm"
+                        style={{
+                          left: `${cropRect.x * 100}%`,
+                          top: `${cropRect.y * 100}%`,
+                          width: `${cropRect.w * 100}%`,
+                          height: `${cropRect.h * 100}%`
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
 
                 {renderingPage && (
                   <div className="absolute inset-0 bg-white/50 dark:bg-slate-950/30 flex items-center justify-center pointer-events-none z-10">
@@ -820,18 +1255,19 @@ export default function PdfReader({
           )}
         </div>
 
-        {/* Search, Passage Extraction & Bookmarks Side Panel */}
+        {/* Search, Bookmarks, Notes & Info Side Panel */}
         {panelOpen && (
           <aside
-            aria-label="Book search and bookmarks panel"
+            aria-label="Book search, bookmarks, and notes panel"
             className="w-full sm:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 absolute inset-y-0 right-0 lg:static z-20 shadow-xl lg:shadow-none"
           >
             {/* Panel Tabs */}
             <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex-1">
+              <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex-1">
                 {[
                   { id: 'search', label: 'Search', icon: Search },
-                  { id: 'bookmarks', label: `Bookmarks (${bookmarks.length})`, icon: Bookmark },
+                  { id: 'bookmarks', label: `Marks (${bookmarks.length})`, icon: Bookmark },
+                  { id: 'notes', label: `Notes (${notes.length})`, icon: StickyNote },
                   { id: 'info', label: 'Info', icon: Info }
                 ].map((tab) => {
                   const Icon = tab.icon;
@@ -841,7 +1277,7 @@ export default function PdfReader({
                       key={tab.id}
                       type="button"
                       onClick={() => setPanelTab(tab.id as SidePanelTab)}
-                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                      className={`inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors whitespace-nowrap ${
                         active
                           ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -875,7 +1311,7 @@ export default function PdfReader({
                         <span>Searchable Text Unavailable</span>
                       </div>
                       <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                        This PDF appears to be a scanned document or image-only file without embedded text. Full-book search is unavailable for scanned pages, though you can read, zoom, and bookmark pages normally.
+                        This PDF appears to be a scanned document or image-only file without embedded text. Full-book search is unavailable for scanned pages, though you can read, zoom, crop diagrams, and bookmark pages normally.
                       </p>
                     </div>
                   ) : (
@@ -1041,47 +1477,33 @@ export default function PdfReader({
                   </div>
 
                   {bookmarks.length === 0 ? (
-                    <div className="py-8 text-center space-y-1.5">
-                      <Bookmark className="w-6 h-6 text-slate-400 mx-auto" />
-                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        No bookmarks yet
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Save important chapters, tables, or formulas to jump back anytime.
-                      </p>
+                    <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                      No bookmarks saved for this book yet.
                     </div>
                   ) : (
                     <div className="space-y-2.5">
                       {bookmarks.map((bm) => (
                         <div
                           key={bm.id}
-                          className={`p-3 rounded-xl border space-y-2 ${
+                          className={`p-3 rounded-xl border transition-colors space-y-1.5 ${
                             bm.pageNumber === currentPage
                               ? 'bg-amber-500/10 border-amber-500/40'
                               : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center justify-between gap-2">
                             <button
                               type="button"
-                              onClick={() => {
-                                goToPage(bm.pageNumber);
-                                if (window.innerWidth < 1024) setPanelOpen(false);
-                              }}
-                              className="text-left min-w-0 flex-1 group"
+                              onClick={() => goToPage(bm.pageNumber)}
+                              className="text-left text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
                             >
-                              <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
-                                Page {bm.pageNumber}
-                              </div>
-                              <div className="text-sm font-semibold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
-                                {bm.label}
-                              </div>
+                              Page {bm.pageNumber} · {bm.label}
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteBookmark(bm.id)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-500/10 transition-colors shrink-0"
-                              aria-label={`Delete bookmark on page ${bm.pageNumber}`}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
+                              aria-label={`Remove bookmark on page ${bm.pageNumber}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1089,6 +1511,120 @@ export default function PdfReader({
                           {bm.excerpt && (
                             <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
                               {bm.excerpt}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {panelTab === 'notes' && (
+                <div className="space-y-4">
+                  <form
+                    onSubmit={handleSaveNote}
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Highlight &amp; Study Note (Page {currentPage})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCaptureSelectionForNote}
+                        className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                      >
+                        Pull PDF Selection
+                      </button>
+                    </div>
+
+                    <textarea
+                      rows={2}
+                      value={noteQuote}
+                      onChange={(e) => setNoteQuote(e.target.value)}
+                      placeholder="Select text on PDF page or paste a passage to highlight..."
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+
+                    <textarea
+                      rows={2}
+                      value={noteBody}
+                      onChange={(e) => setNoteBody(e.target.value)}
+                      placeholder="Study note or clinical correlation..."
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <div className="flex items-center gap-1.5">
+                        {(Object.keys(HIGHLIGHT_STYLES) as HighlightColor[]).map((col) => (
+                          <button
+                            key={col}
+                            type="button"
+                            onClick={() => setNoteColor(col)}
+                            aria-label={`Highlight color ${HIGHLIGHT_STYLES[col].label}`}
+                            className={`w-5 h-5 rounded-full ${HIGHLIGHT_STYLES[col].chip} border-2 transition-transform ${
+                              noteColor === col
+                                ? 'border-slate-900 dark:border-white scale-110'
+                                : 'border-transparent opacity-75'
+                            }`}
+                          />
+                        ))}
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={!noteQuote.trim() && !noteBody.trim()}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold"
+                      >
+                        Save Note
+                      </button>
+                    </div>
+                  </form>
+
+                  {notes.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                      Select any text on a PDF page and click Highlight to save passages and notes locally.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {notes.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className={`p-3 rounded-xl border space-y-1.5 ${
+                            entry.pageNumber === currentPage
+                              ? 'bg-emerald-500/5 border-emerald-500/40'
+                              : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => goToPage(entry.pageNumber, entry.quote.slice(0, 40))}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                            >
+                              <span
+                                className={`w-2.5 h-2.5 rounded-full ${HIGHLIGHT_STYLES[entry.color].chip}`}
+                              />
+                              <span>Page {entry.pageNumber}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteNote(entry.id)}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
+                              aria-label="Delete study note"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          {entry.quote && (
+                            <p className="text-xs italic text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
+                              "{entry.quote}"
+                            </p>
+                          )}
+                          {entry.note && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                              {entry.note}
                             </p>
                           )}
                         </div>
@@ -1106,7 +1642,24 @@ export default function PdfReader({
                       <span className="truncate">{book.title}</span>
                     </div>
 
-                    <dl className="space-y-2.5 pt-1 border-t border-slate-200 dark:border-slate-800">
+                    <div className="space-y-1.5 pt-1 border-t border-slate-200 dark:border-slate-800">
+                      <label className="block text-slate-500 dark:text-slate-400 font-medium">
+                        Linked B.Pharm Subject
+                      </label>
+                      <select
+                        value={book.department || 'all'}
+                        onChange={(e) => handleUpdateDepartment(e.target.value as BookDepartmentTag)}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs"
+                      >
+                        {(Object.keys(BOOK_DEPARTMENT_LABELS) as BookDepartmentTag[]).map((k) => (
+                          <option key={k} value={k}>
+                            {BOOK_DEPARTMENT_LABELS[k]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <dl className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
                       <div className="flex justify-between gap-3">
                         <dt className="text-slate-500 dark:text-slate-400">Original File</dt>
                         <dd className="text-slate-900 dark:text-slate-200 font-medium truncate max-w-[190px]">
@@ -1153,6 +1706,179 @@ export default function PdfReader({
           </aside>
         )}
       </div>
+
+      {/* Save Cropped Textbook Diagram Modal */}
+      {cropModalOpen && capturedPreviewUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => !savingCrop && setCropModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Save extracted textbook diagram"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Import Textbook Diagram to Visual Library
+              </h3>
+              <button
+                type="button"
+                onClick={() => !savingCrop && setCropModalOpen(false)}
+                className="p-1 text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                aria-label="Close modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="aspect-[16/9] bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden flex items-center justify-center p-2">
+              <img
+                src={capturedPreviewUrl}
+                alt="Cropped textbook figure preview"
+                className="max-w-full max-h-full object-contain"
+              />
+            </div>
+
+            <form onSubmit={handleConfirmSaveCrop} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Figure Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cropTitle}
+                  onChange={(e) => setCropTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={cropCategory}
+                    onChange={(e) => setCropCategory(e.target.value as VisualCategory)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  >
+                    {Object.entries(CATEGORY_LABELS).map(([k, label]) => (
+                      <option key={k} value={k}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Associated Experiments
+                  </label>
+                  <input
+                    type="text"
+                    value={cropExperiments}
+                    onChange={(e) => setCropExperiments(e.target.value)}
+                    placeholder="e.g. Exp 14, Exp 8"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Caption
+                </label>
+                <input
+                  type="text"
+                  value={cropCaption}
+                  onChange={(e) => setCropCaption(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Departments
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(Object.keys(DEPARTMENT_LABELS) as DepartmentId[]).map((dept) => {
+                    const active = cropDepartments.includes(dept);
+                    return (
+                      <button
+                        key={dept}
+                        type="button"
+                        onClick={() =>
+                          setCropDepartments((prev) =>
+                            prev.includes(dept)
+                              ? prev.filter((d) => d !== dept)
+                              : [...prev, dept]
+                          )
+                        }
+                        className={`px-2 py-1 rounded-md border text-[11px] font-medium ${
+                          active
+                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                            : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {DEPARTMENT_LABELS[dept].split(' (')[0]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Equipment
+                  </label>
+                  <input
+                    type="text"
+                    value={cropEquipment}
+                    onChange={(e) => setCropEquipment(e.target.value)}
+                    placeholder="e.g. Burette, ECG"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Tags
+                  </label>
+                  <input
+                    type="text"
+                    value={cropTags}
+                    onChange={(e) => setCropTags(e.target.value)}
+                    placeholder="e.g. heart, valves"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setCropModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCrop}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{savingCrop ? 'Saving...' : 'Save to Visual Library'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

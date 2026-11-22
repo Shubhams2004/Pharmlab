@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Code, Play, Terminal, RefreshCw, BarChart3, Calculator, Activity } from 'lucide-react';
+import ResourceConnector from '../../components/ResourceConnector';
 
 export default function PythonModule() {
   const [activeUnit, setActiveUnit] = useState('unit1-2');
@@ -593,6 +594,13 @@ print("Generated Array:", arr)`);
           </div>
         </div>
       </div>
+
+      <ResourceConnector
+        department="python"
+        topic="pharmacokinetics"
+        defaultSearchQuery="pharmacokinetics dissolution bioavailability"
+        title="BP101T Linked Pharmacokinetics & Formulation References"
+      />
     </div>
   );
 }

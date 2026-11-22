@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, ArrowRight, Compass, BookOpen, FlaskConical, Activity, Microscope, Code, MessageSquareHeart, Library } from 'lucide-react';
+import { Search, X, ArrowRight, Compass, BookOpen, FlaskConical, Activity, Microscope, Code, MessageSquareHeart, Library, Images } from 'lucide-react';
 
 export const QUICK_INDEX = [
-  // Knowledge Library
-  { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search & Bookmarks', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
+  // Knowledge & Visual Libraries
+  { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search, Notes & Diagram Crop', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
+  { title: 'Scientific Visual Library & Open-Access Atlas', sub: 'Anatomical Plates, Microscopy, Apparatus & Open-Access Discovery', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
 
   // Anatomy & Diagrams
   { title: 'Heart, Valves & Conduction Diagram', sub: 'BP104T · Interactive Annotated 2D/3D Diagram', module: 'anatomy', tab: 'diagrams', cat: 'Diagram', icon: Activity },
