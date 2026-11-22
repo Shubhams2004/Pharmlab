@@ -58,7 +58,7 @@ export default function Dashboard({
     {
       id: 'general_pharmacy',
       category: 'chem',
-      title: 'General Pharmacy',
+      title: 'Pharmaceutics (General Pharmacy)',
       code: 'BP102T / BP107P',
       meta: '15 Formulations · 6 Calculators · Units I–V Theory',
       desc: 'Batch-scaled IP/BPC/WHO formulations (Solutions, Syrups, ORS, Suppositories, Semisolids, Gargles), Posology, Proof Spirit, Alligation & Isotonicity.',
