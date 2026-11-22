@@ -15,6 +15,7 @@ import {
   MessageSquareHeart,
   Microscope,
   Play,
+  Scale,
   Search,
   TestTube,
   Wrench,
@@ -46,7 +47,8 @@ export default function Dashboard({
   visitedModules = [],
   lastModule = 'anatomy'
 }) {
-  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub } = useLibraryNavigation();
+  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub, openReferenceCenter } =
+    useLibraryNavigation();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
@@ -297,7 +299,9 @@ export default function Dashboard({
                   key={`${hit.module}-${hit.title}`}
                   type="button"
                   onClick={() =>
-                    hit.visualId
+                    hit.referenceSection
+                      ? openReferenceCenter({ section: hit.referenceSection })
+                      : hit.visualId
                       ? openVisualLibrary({ visualId: hit.visualId })
                       : hit.category
                       ? openVisualLibrary({ category: hit.category })
@@ -388,6 +392,11 @@ export default function Dashboard({
               label: 'Equipment',
               icon: Wrench,
               action: () => openVisualLibrary({ category: 'equipment' })
+            },
+            {
+              label: 'Reference Center',
+              icon: Scale,
+              action: () => openReferenceCenter({ section: 'overview' })
             },
             {
               label: 'PDF Library',

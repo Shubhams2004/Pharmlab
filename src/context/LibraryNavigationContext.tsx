@@ -1,4 +1,5 @@
 import React, { createContext, useContext } from 'react';
+import { ReferenceNavSection } from '../modules/reference-center/types';
 import { AcademicContextRef, ResourceHubTab, ResourceType } from '../modules/resource-hub/types';
 import {
   DEFAULT_STUDY_PREFERENCES,
@@ -32,10 +33,18 @@ export interface ResourceJumpTarget {
   nonce: number;
 }
 
+export interface ReferenceJumpTarget {
+  section?: ReferenceNavSection | null;
+  referenceId?: string | null;
+  query?: string | null;
+  nonce: number;
+}
+
 interface LibraryNavigationContextValue {
   openKnowledgeLibrary: (opts?: Omit<KnowledgeJumpTarget, 'nonce'>) => void;
   openVisualLibrary: (opts?: Omit<VisualJumpTarget, 'nonce'>) => void;
   openResourceHub: (opts?: Omit<ResourceJumpTarget, 'nonce'>) => void;
+  openReferenceCenter: (opts?: Omit<ReferenceJumpTarget, 'nonce'>) => void;
   navigateToModule: (
     moduleId: string,
     tab?: string | null,
@@ -53,6 +62,7 @@ export const LibraryNavigationContext = createContext<LibraryNavigationContextVa
   openKnowledgeLibrary: noop,
   openVisualLibrary: noop,
   openResourceHub: noop,
+  openReferenceCenter: noop,
   navigateToModule: noop,
   setWorkspaceSection: noop,
   recordActivity: noop,

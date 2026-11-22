@@ -14,10 +14,12 @@ import {
   Images,
   FileText,
   MapPin,
-  Globe
+  Globe,
+  Scale
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 import { getAllBooks } from '../modules/knowledge-library/libraryDb';
+import { getAllReferences } from '../modules/reference-center/referenceDb';
 import { getAllVisuals } from '../modules/visual-library/visualDb';
 import { searchAcademicEngine } from '../utils/academicEngineUtils';
 import { ENGINE_DEPARTMENTS } from '../data/academicEngineRegistry';
@@ -26,6 +28,7 @@ export const QUICK_INDEX = [
   // Anatomy Explorer & Libraries
   { title: 'Anatomy Explorer (60 Cataloged Organs, Parts & Tissues)', sub: 'BP104T · Search, Filter 10 Body Systems, View Plates & Textbook Links', module: 'anatomy', tab: 'explorer', cat: 'Explorer', icon: Activity },
   { title: 'Anatomy Identification Practice', sub: 'BP104T · Structure & Function MCQs and Calibrated Visual Pin Quiz', module: 'anatomy', tab: 'practice', cat: 'Practice', icon: Compass },
+  { title: 'Pharmaceutical Reference Center (Pharmacopoeias, Textbooks & Standards)', sub: 'IP, BP, USP–NF, Ph. Eur., WHO Ph. Int., Textbooks, Handbooks & Guidelines', referenceSection: 'overview', cat: 'Reference Center', icon: Scale },
   { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search, Notes & Diagram Crop', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
   { title: 'Scientific Resource Hub (PubMed, Europe PMC, OpenStax, Wikimedia)', sub: 'Discover Open-Access Papers, Textbooks, Reference Chapters & Scientific Visuals', module: 'resource_hub', tab: null, cat: 'Resource Hub', icon: Globe },
   { title: 'Academic Visual Learning Library & Atlas', sub: 'Interactive Diagrams, Structure Labels, Mechanisms, MCQs & Open-Access Search', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
@@ -75,11 +78,13 @@ export const QUICK_INDEX = [
 ];
 
 export default function CommandPalette({ isOpen, onClose, onNavigate }) {
-  const { openVisualLibrary, openKnowledgeLibrary, openResourceHub } = useLibraryNavigation();
+  const { openVisualLibrary, openKnowledgeLibrary, openResourceHub, openReferenceCenter } =
+    useLibraryNavigation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [books, setBooks] = useState([]);
   const [visuals, setVisuals] = useState([]);
+  const [references, setReferences] = useState([]);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -89,11 +94,12 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     setTimeout(() => inputRef.current?.focus(), 20);
 
     let cancelled = false;
-    Promise.all([getAllBooks(), getAllVisuals()])
-      .then(([loadedBooks, loadedVisuals]) => {
+    Promise.all([getAllBooks(), getAllVisuals(), getAllReferences()])
+      .then(([loadedBooks, loadedVisuals, loadedRefs]) => {
         if (cancelled) return;
         setBooks(loadedBooks);
         setVisuals(loadedVisuals);
+        setReferences(loadedRefs);
       })
       .catch(() => {
         // ignore IndexedDB error inside palette
@@ -173,6 +179,20 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
       icon: FileText
     }));
 
+    const refHits = references
+      .filter((ref) => {
+        const hay = `${ref.title} ${ref.shortTitle || ''} ${ref.authors || ''} ${ref.subject} ${ref.tags.join(' ')}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 4)
+      .map((ref) => ({
+        title: ref.title,
+        sub: `${ref.subject}${ref.authors ? ` · ${ref.authors}` : ''}`,
+        referenceId: ref.id,
+        cat: 'Reference Center',
+        icon: Scale
+      }));
+
     const externalAction = {
       title: `Search Scientific Resource Hub for "${query.trim()}"`,
       sub: 'Live Open-Access Search · PubMed, Europe PMC, PMC, NCBI Bookshelf, OpenStax & Wikimedia',
@@ -182,6 +202,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     };
 
     return [
+      ...refHits,
       ...structureResults,
       ...subtopicResults,
       ...topicResults,
@@ -191,10 +212,14 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
       ...bookResults,
       externalAction
     ];
-  }, [query, books, visuals]);
+  }, [query, books, visuals, references]);
 
   const launchPick = (pick) => {
-    if (pick.resourceHubQuery) {
+    if (pick.referenceId) {
+      openReferenceCenter({ referenceId: pick.referenceId });
+    } else if (pick.referenceSection) {
+      openReferenceCenter({ section: pick.referenceSection });
+    } else if (pick.resourceHubQuery) {
       openResourceHub({ query: pick.resourceHubQuery });
     } else if (pick.bookId) {
       openKnowledgeLibrary({ bookId: pick.bookId, pageNumber: pick.pageNumber || 1 });

@@ -6,22 +6,29 @@ import {
   BookmarkCheck,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
   Crop,
   Eye,
   FileText,
+  Hand,
   Highlighter,
   Images,
   Info,
+  LayoutGrid,
+  List,
   Loader2,
   Maximize2,
   Minimize2,
   Moon,
   MoreHorizontal,
+  MousePointer,
   RotateCw,
+  ScrollText,
   Search,
+  Square,
   StickyNote,
   Sun,
   Trash2,
@@ -49,6 +56,13 @@ import {
   updateBookMeta,
   updateBookReadingProgress
 } from './libraryDb';
+import {
+  CropRectNormalized,
+  HIGHLIGHT_STYLES,
+  PageSize,
+  PdfPageView,
+  PdfThumbnailTile
+} from './PdfPageView';
 import { classifyPdfError, pdfjsLib } from './pdfWorker';
 import { PHARMACEUTICAL_SUGGESTIONS, searchBookPages } from './searchEngine';
 import {
@@ -72,38 +86,18 @@ interface PdfReaderProps {
   jumpNonce?: number;
 }
 
-type SidePanelTab = 'search' | 'bookmarks' | 'notes' | 'info';
+type SidePanelTab = 'search' | 'thumbs' | 'toc' | 'bookmarks' | 'notes' | 'info';
 type FitMode = 'width' | 'page' | 'manual';
+type ViewMode = 'continuous' | 'single';
+type InteractionMode = 'select' | 'pan';
 
-interface CropRectNormalized {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+interface PdfOutlineNode {
+  title: string;
+  dest?: string | unknown[] | null;
+  items?: PdfOutlineNode[];
 }
 
-const HIGHLIGHT_STYLES: Record<HighlightColor, { bg: string; chip: string; label: string }> = {
-  amber: {
-    bg: 'rgba(251, 191, 36, 0.42)',
-    chip: 'bg-amber-400',
-    label: 'Amber'
-  },
-  emerald: {
-    bg: 'rgba(52, 211, 153, 0.36)',
-    chip: 'bg-emerald-400',
-    label: 'Emerald'
-  },
-  blue: {
-    bg: 'rgba(56, 189, 248, 0.38)',
-    chip: 'bg-sky-400',
-    label: 'Cyan'
-  },
-  rose: {
-    bg: 'rgba(251, 113, 133, 0.36)',
-    chip: 'bg-rose-400',
-    label: 'Rose'
-  }
-};
+const ZOOM_PRESETS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5];
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -120,113 +114,6 @@ function formatDate(ts: number): string {
     }).format(new Date(ts));
   } catch {
     return new Date(ts).toLocaleDateString();
-  }
-}
-
-function applyTextLayerHighlights(
-  container: HTMLElement,
-  query: string,
-  pageNotes: BookHighlightNote[]
-): void {
-  const spans = Array.from(container.querySelectorAll('span'));
-  let firstMark: HTMLElement | null = null;
-
-  for (const note of pageNotes) {
-    const quote = note.quote.trim();
-    if (quote.length < 3) continue;
-    const snippet = quote.slice(0, 64).replace(/\s+/g, ' ');
-    const tokens = snippet
-      .split(/\s+/g)
-      .filter((t) => t.length >= 3)
-      .slice(0, 4);
-    if (tokens.length === 0) continue;
-
-    const pattern = new RegExp(
-      `(${tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
-      'gi'
-    );
-
-    for (const span of spans) {
-      const raw = span.textContent || '';
-      if (!raw) continue;
-      pattern.lastIndex = 0;
-      if (!pattern.test(raw)) continue;
-
-      pattern.lastIndex = 0;
-      const frag = document.createDocumentFragment();
-      let lastIdx = 0;
-      let m: RegExpExecArray | null;
-
-      while ((m = pattern.exec(raw)) !== null) {
-        if (m.index > lastIdx) {
-          frag.appendChild(document.createTextNode(raw.slice(lastIdx, m.index)));
-        }
-        const mark = document.createElement('mark');
-        mark.style.backgroundColor = HIGHLIGHT_STYLES[note.color].bg;
-        mark.style.color = 'transparent';
-        mark.style.borderRadius = '2px';
-        mark.textContent = m[0];
-        frag.appendChild(mark);
-        lastIdx = m.index + m[0].length;
-      }
-
-      if (lastIdx < raw.length) {
-        frag.appendChild(document.createTextNode(raw.slice(lastIdx)));
-      }
-
-      span.textContent = '';
-      span.appendChild(frag);
-    }
-  }
-
-  const trimmed = query.trim();
-  if (!trimmed || trimmed.length < 2) return;
-
-  const terms = trimmed
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((t) => t.length >= 2);
-  if (terms.length === 0) return;
-
-  const escaped = terms
-    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|');
-  const matcher = new RegExp(`(${escaped})`, 'gi');
-
-  const refreshedSpans = Array.from(container.querySelectorAll('span'));
-  for (const span of refreshedSpans) {
-    const raw = span.textContent || '';
-    if (!raw) continue;
-    matcher.lastIndex = 0;
-    if (!matcher.test(raw)) continue;
-
-    matcher.lastIndex = 0;
-    const frag = document.createDocumentFragment();
-    let lastIdx = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = matcher.exec(raw)) !== null) {
-      if (match.index > lastIdx) {
-        frag.appendChild(document.createTextNode(raw.slice(lastIdx, match.index)));
-      }
-      const mark = document.createElement('mark');
-      mark.className = 'pdf-search-hit';
-      mark.textContent = match[0];
-      frag.appendChild(mark);
-      if (!firstMark) firstMark = mark;
-      lastIdx = match.index + match[0].length;
-    }
-
-    if (lastIdx < raw.length) {
-      frag.appendChild(document.createTextNode(raw.slice(lastIdx)));
-    }
-
-    span.textContent = '';
-    span.appendChild(frag);
-  }
-
-  if (firstMark) {
-    firstMark.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
   }
 }
 
@@ -248,13 +135,13 @@ export default function PdfReader({
   const { openVisualLibrary, setWorkspaceSection, preferences } = useLibraryNavigation();
 
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [outlineItems, setOutlineItems] = useState<PdfOutlineNode[]>([]);
+  const [resolvingTocKey, setResolvingTocKey] = useState<string | null>(null);
   const [pagesText, setPagesText] = useState<BookPageText[]>([]);
   const [bookmarks, setBookmarks] = useState<BookBookmark[]>([]);
   const [notes, setNotes] = useState<BookHighlightNote[]>([]);
   const [loadingDoc, setLoadingDoc] = useState(true);
   const [docError, setDocError] = useState<string | null>(null);
-  const [renderError, setRenderError] = useState<string | null>(null);
-  const [renderingPage, setRenderingPage] = useState(false);
 
   const [currentPage, setCurrentPage] = useState<number>(() =>
     Math.max(1, Math.min(initialPage || book.lastReadPage || 1, book.pageCount || 1))
@@ -263,17 +150,30 @@ export default function PdfReader({
     String(Math.max(1, Math.min(initialPage || book.lastReadPage || 1, book.pageCount || 1)))
   );
 
+  // Full viewer modes: continuous scroll vs single page, select vs free hand-pan
+  const [viewMode, setViewMode] = useState<ViewMode>('continuous');
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>('select');
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isDraggingPan, setIsDraggingPan] = useState(false);
+
+  // Zoom, Fit & Rotation
   const [fitMode, setFitMode] = useState<FitMode>(() => preferences.defaultPdfFit || 'width');
   const [manualScale, setManualScale] = useState(1.15);
-  const [effectiveScale, setEffectiveScale] = useState(1.15);
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [stageSize, setStageSize] = useState({ width: 820, height: 640 });
   const [pinchPreviewRatio, setPinchPreviewRatio] = useState(1);
+  const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
+
+  // Per-page dimensions + virtualization state
+  const [defaultPageSize, setDefaultPageSize] = useState<PageSize>({ width: 612, height: 792 });
+  const [pageSizes, setPageSizes] = useState<Record<number, PageSize>>({});
+  const [visiblePages, setVisiblePages] = useState<Set<number>>(() => new Set([1]));
 
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelTab, setPanelTab] = useState<SidePanelTab>('search');
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const [activeHighlight, setActiveHighlight] = useState(initialSearchQuery || '');
+  const [searchScrollTargetPage, setSearchScrollTargetPage] = useState<number | null>(null);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
 
   // Mobile overflow menu & floating text selection bar
@@ -288,11 +188,13 @@ export default function PdfReader({
 
   // Crop-to-Visual-Library state
   const [cropMode, setCropMode] = useState(false);
+  const [activeCropPage, setActiveCropPage] = useState<number | null>(null);
   const [cropRect, setCropRect] = useState<CropRectNormalized | null>(null);
   const [cropDragStart, setCropDragStart] = useState<{ x: number; y: number } | null>(null);
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [capturedPreviewUrl, setCapturedPreviewUrl] = useState<string | null>(null);
+  const [capturedPageNumber, setCapturedPageNumber] = useState<number>(1);
   const [cropTitle, setCropTitle] = useState('');
   const [cropCaption, setCropCaption] = useState('');
   const [cropCategory, setCropCategory] = useState<VisualCategory>('anatomy');
@@ -312,9 +214,38 @@ export default function PdfReader({
 
   const readerRootRef = useRef<HTMLDivElement | null>(null);
   const stageContainerRef = useRef<HTMLDivElement | null>(null);
-  const pageFrameRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const textLayerRef = useRef<HTMLDivElement | null>(null);
+  const zoomMenuRef = useRef<HTMLDivElement | null>(null);
+  const pageWrapperRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const pageCanvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const onBookProgressChangeRef = useRef(onBookProgressChange);
+  onBookProgressChangeRef.current = onBookProgressChange;
+
+  // Scroll synchronization & jump guards
+  const suppressScrollSyncUntilRef = useRef<number>(0);
+  const pendingInitialScrollPageRef = useRef<number | null>(null);
+  const wheelFocalAnchorRef = useRef<{
+    ratioX: number;
+    ratioY: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+
+  // Panning gesture state
+  const panGestureRef = useRef<{
+    active: boolean;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startScrollLeft: number;
+    startScrollTop: number;
+  }>({
+    active: false,
+    pointerId: -1,
+    startX: 0,
+    startY: 0,
+    startScrollLeft: 0,
+    startScrollTop: 0
+  });
 
   // Touch gesture refs
   const pinchStateRef = useRef<{
@@ -338,10 +269,116 @@ export default function PdfReader({
   });
 
   const totalPages = pdfDoc?.numPages || book.pageCount || 1;
+  const effectivePanMode = !cropMode && (interactionMode === 'pan' || isSpacePressed);
+
+  // Compute effective scale from fit mode, container stage dimensions, and current page aspect
+  const activeBaseSize = pageSizes[currentPage] || defaultPageSize;
+  const isSwappedRotation = rotation === 90 || rotation === 270;
+  const rotatedBaseWidth = isSwappedRotation ? activeBaseSize.height : activeBaseSize.width;
+  const rotatedBaseHeight = isSwappedRotation ? activeBaseSize.width : activeBaseSize.height;
+
+  const effectiveScale = useMemo(() => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    const horizontalPadding = isMobile ? 16 : 48;
+    const verticalPadding = isMobile ? 24 : 48;
+    const availableWidth = Math.max(240, stageSize.width - horizontalPadding);
+    const availableHeight = Math.max(240, stageSize.height - verticalPadding);
+
+    if (fitMode === 'width') {
+      return Math.max(0.35, Math.min(3.0, availableWidth / rotatedBaseWidth));
+    }
+    if (fitMode === 'page') {
+      const widthRatio = availableWidth / rotatedBaseWidth;
+      const heightRatio = availableHeight / rotatedBaseHeight;
+      return Math.max(0.35, Math.min(3.0, Math.min(widthRatio, heightRatio)));
+    }
+    return manualScale;
+  }, [fitMode, manualScale, rotatedBaseWidth, rotatedBaseHeight, stageSize.width, stageSize.height]);
 
   useEffect(() => {
     setWorkspaceSection(book.title, `Page ${currentPage} of ${totalPages}`);
   }, [book.title, currentPage, totalPages, setWorkspaceSection]);
+
+  // Register refs per page for virtualization + cropping + programmatic scroll
+  const registerWrapperRef = useCallback((pageNumber: number, el: HTMLDivElement | null) => {
+    if (el) {
+      pageWrapperRefs.current.set(pageNumber, el);
+    } else {
+      pageWrapperRefs.current.delete(pageNumber);
+    }
+  }, []);
+
+  const registerCanvasRef = useCallback((pageNumber: number, el: HTMLCanvasElement | null) => {
+    if (el) {
+      pageCanvasRefs.current.set(pageNumber, el);
+    } else {
+      pageCanvasRefs.current.delete(pageNumber);
+    }
+  }, []);
+
+  const handleMeasureBaseSize = useCallback((pageNumber: number, unrotatedSize: PageSize) => {
+    setPageSizes((prev) => {
+      const existing = prev[pageNumber];
+      if (
+        existing &&
+        Math.abs(existing.width - unrotatedSize.width) < 2 &&
+        Math.abs(existing.height - unrotatedSize.height) < 2
+      ) {
+        return prev;
+      }
+      return { ...prev, [pageNumber]: unrotatedSize };
+    });
+  }, []);
+
+  // Scroll cleanly to a specific page frame inside stageContainerRef
+  const scrollToPageFrame = useCallback(
+    (targetPage: number, behavior: ScrollBehavior = 'auto') => {
+      const stage = stageContainerRef.current;
+      const wrapper = pageWrapperRefs.current.get(targetPage);
+      if (!stage || !wrapper) return;
+
+      suppressScrollSyncUntilRef.current =
+        Date.now() + (behavior === 'smooth' ? 750 : 280);
+
+      const stageRect = stage.getBoundingClientRect();
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const topOffset = wrapperRect.top - stageRect.top + stage.scrollTop - 16;
+
+      stage.scrollTo({
+        top: Math.max(0, topOffset),
+        behavior
+      });
+    },
+    []
+  );
+
+  // Explicit user-initiated page jump (prev/next, input, TOC, search, bookmark, thumbnail, scrubber)
+  const goToPage = useCallback(
+    (target: number, highlightTerm?: string, fromSearchHit = false) => {
+      const clamped = Math.max(1, Math.min(totalPages, Math.round(target)));
+      const distance = Math.abs(clamped - currentPage);
+
+      setCurrentPage(clamped);
+      setPageInput(String(clamped));
+      if (typeof highlightTerm === 'string') {
+        setActiveHighlight(highlightTerm);
+      }
+      setSearchScrollTargetPage(fromSearchHit ? clamped : null);
+      setCropMode(false);
+      setActiveCropPage(null);
+      setCropRect(null);
+      setSelectedPageText('');
+
+      if (viewMode === 'continuous') {
+        requestAnimationFrame(() => {
+          scrollToPageFrame(clamped, distance <= 2 ? 'smooth' : 'auto');
+        });
+      } else {
+        stageContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    },
+    [totalPages, currentPage, viewMode, scrollToPageFrame]
+  );
 
   // Apply deep link updates when user navigates from a module ResourceConnector or ImageViewer
   useEffect(() => {
@@ -350,10 +387,12 @@ export default function PdfReader({
       const clamped = Math.max(1, Math.min(initialPage, totalPages));
       setCurrentPage(clamped);
       setPageInput(String(clamped));
+      pendingInitialScrollPageRef.current = clamped;
     }
     if (typeof initialSearchQuery === 'string' && initialSearchQuery.trim()) {
       setSearchQuery(initialSearchQuery);
       setActiveHighlight(initialSearchQuery);
+      setSearchScrollTargetPage(initialPage || currentPage);
       setPanelTab('search');
       setPanelOpen(true);
     }
@@ -367,7 +406,7 @@ export default function PdfReader({
     async function loadBookAssets() {
       setLoadingDoc(true);
       setDocError(null);
-      setRenderError(null);
+      setPageSizes({});
 
       try {
         const [buffer, storedPages, storedBookmarks, storedNotes] = await Promise.all([
@@ -396,10 +435,34 @@ export default function PdfReader({
           return;
         }
 
+        // Measure page 1 base size immediately so placeholder page frames don't jump
+        try {
+          const p1 = await loadedDoc.getPage(1);
+          const vp1 = p1.getViewport({ scale: 1, rotation: 0 });
+          if (!cancelled) {
+            setDefaultPageSize({ width: vp1.width, height: vp1.height });
+            setPageSizes({ 1: { width: vp1.width, height: vp1.height } });
+          }
+          p1.cleanup();
+        } catch {
+          // keep US Letter fallback size
+        }
+
+        if (cancelled) return;
+
         setPdfDoc(loadedDoc);
         setPagesText(storedPages);
         setBookmarks(storedBookmarks);
         setNotes(storedNotes);
+
+        try {
+          const rawOutline = await loadedDoc.getOutline();
+          if (!cancelled) {
+            setOutlineItems((rawOutline as PdfOutlineNode[] | null) || []);
+          }
+        } catch {
+          if (!cancelled) setOutlineItems([]);
+        }
 
         const startPage = Math.max(
           1,
@@ -407,6 +470,10 @@ export default function PdfReader({
         );
         setCurrentPage(startPage);
         setPageInput(String(startPage));
+        setVisiblePages(new Set([startPage]));
+        if (startPage > 1) {
+          pendingInitialScrollPageRef.current = startPage;
+        }
       } catch (err) {
         if (!cancelled) {
           setDocError(classifyPdfError(err));
@@ -428,6 +495,38 @@ export default function PdfReader({
     };
   }, [book.id]);
 
+  // Execute pending scroll once pages mount after initial open / deep link / mode toggle
+  useEffect(() => {
+    if (loadingDoc || !pdfDoc || viewMode !== 'continuous') return;
+    const target = pendingInitialScrollPageRef.current;
+    if (!target) return;
+
+    const timer = window.setTimeout(() => {
+      scrollToPageFrame(target, 'auto');
+      pendingInitialScrollPageRef.current = null;
+    }, 60);
+
+    return () => window.clearTimeout(timer);
+  }, [loadingDoc, pdfDoc, viewMode, scrollToPageFrame]);
+
+  // Maintain cursor focal position after smooth Ctrl+Wheel zoom
+  useEffect(() => {
+    const anchor = wheelFocalAnchorRef.current;
+    const stage = stageContainerRef.current;
+    if (!anchor || !stage) return;
+
+    wheelFocalAnchorRef.current = null;
+    requestAnimationFrame(() => {
+      const nextScrollLeft = anchor.ratioX * stage.scrollWidth - anchor.offsetX;
+      const nextScrollTop = anchor.ratioY * stage.scrollHeight - anchor.offsetY;
+      stage.scrollTo({
+        left: Math.max(0, nextScrollLeft),
+        top: Math.max(0, nextScrollTop),
+        behavior: 'auto'
+      });
+    });
+  }, [effectiveScale]);
+
   // Revoke crop preview object URL on unmount/change
   useEffect(() => {
     return () => {
@@ -443,6 +542,18 @@ export default function PdfReader({
       setPanelOpen(false);
     }
   }, [initialSearchQuery]);
+
+  // Close zoom preset popover on outside click
+  useEffect(() => {
+    if (!zoomMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (zoomMenuRef.current && !zoomMenuRef.current.contains(e.target as Node)) {
+        setZoomMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [zoomMenuOpen]);
 
   // Measure viewport stage width & height for Fit Width / Fit Page zoom
   useEffect(() => {
@@ -481,25 +592,28 @@ export default function PdfReader({
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
 
-  // Track text selection inside PDF TextLayer for quick Highlight/Copy floating bar (great on mobile & desktop)
+  // Track text selection anywhere inside PDF stage TextLayers
   useEffect(() => {
     let timer: number | undefined;
     const onSelectionChange = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        if (cropMode) {
+        if (cropMode || effectivePanMode) {
           setSelectedPageText('');
           return;
         }
         const sel = window.getSelection();
         const text = sel?.toString()?.replace(/\s+/g, ' ').trim() || '';
         const anchorNode = sel?.anchorNode;
-        if (
-          text.length >= 2 &&
-          anchorNode &&
-          textLayerRef.current &&
-          textLayerRef.current.contains(anchorNode)
-        ) {
+        const anchorEl =
+          anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement || null;
+        const insideTextLayer = Boolean(
+          anchorEl &&
+            stageContainerRef.current?.contains(anchorEl) &&
+            anchorEl.closest('.pdf-text-layer')
+        );
+
+        if (text.length >= 2 && insideTextLayer) {
           setSelectedPageText(text.slice(0, 400));
           setCopiedSelection(false);
         } else {
@@ -513,170 +627,171 @@ export default function PdfReader({
       window.clearTimeout(timer);
       document.removeEventListener('selectionchange', onSelectionChange);
     };
-  }, [cropMode]);
+  }, [cropMode, effectivePanMode]);
 
-  const currentPageNotes = useMemo(
-    () => notes.filter((n) => n.pageNumber === currentPage),
-    [notes, currentPage]
-  );
-
-  // Render active PDF page onto HiDPI canvas + selectable TextLayer
+  // Virtualization observer: track visible pages in Continuous Scroll mode
   useEffect(() => {
-    if (!pdfDoc) return;
+    if (loadingDoc || !pdfDoc || viewMode !== 'continuous') return;
+    const stage = stageContainerRef.current;
+    if (!stage || typeof IntersectionObserver === 'undefined') return;
 
-    let cancelled = false;
-    let renderTask: pdfjsLib.RenderTask | null = null;
-    let textLayerInstance: pdfjsLib.TextLayer | null = null;
-    let activePageProxy: pdfjsLib.PDFPageProxy | null = null;
-
-    async function renderCurrentPage() {
-      const canvas = canvasRef.current;
-      const textLayerDiv = textLayerRef.current;
-      if (!canvas || !textLayerDiv || !pdfDoc) return;
-
-      setRenderingPage(true);
-      setRenderError(null);
-
-      try {
-        const page = await pdfDoc.getPage(currentPage);
-        activePageProxy = page;
-        if (cancelled) return;
-
-        const baseViewport = page.getViewport({ scale: 1, rotation });
-        const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-        const horizontalPadding = isMobile ? 16 : 48;
-        const verticalPadding = isMobile ? 24 : 48;
-
-        const availableWidth = Math.max(240, stageSize.width - horizontalPadding);
-        const availableHeight = Math.max(240, stageSize.height - verticalPadding);
-
-        let computedScale = manualScale;
-        if (fitMode === 'width') {
-          computedScale = Math.max(0.4, Math.min(2.6, availableWidth / baseViewport.width));
-        } else if (fitMode === 'page') {
-          const widthRatio = availableWidth / baseViewport.width;
-          const heightRatio = availableHeight / baseViewport.height;
-          computedScale = Math.max(0.35, Math.min(2.6, Math.min(widthRatio, heightRatio)));
-        }
-
-        setEffectiveScale(computedScale);
-
-        const viewport = page.getViewport({ scale: computedScale, rotation });
-        const outputScale = Math.min(window.devicePixelRatio || 1, 2.5);
-
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          throw new Error('Unable to acquire 2D canvas context to render PDF page.');
-        }
-
-        const transform =
-          outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
-
-        renderTask = page.render({
-          canvasContext: ctx,
-          viewport,
-          transform,
-          canvas
-        });
-
-        await renderTask.promise;
-        if (cancelled) return;
-
-        textLayerDiv.innerHTML = '';
-        textLayerDiv.style.width = `${Math.floor(viewport.width)}px`;
-        textLayerDiv.style.height = `${Math.floor(viewport.height)}px`;
-        textLayerDiv.style.setProperty('--total-scale-factor', String(viewport.scale));
-        textLayerDiv.style.setProperty('--scale-round-x', '1px');
-        textLayerDiv.style.setProperty('--scale-round-y', '1px');
-
-        const textContent = await page.getTextContent();
-        if (cancelled) return;
-
-        textLayerInstance = new pdfjsLib.TextLayer({
-          textContentSource: textContent,
-          container: textLayerDiv,
-          viewport
-        });
-
-        await textLayerInstance.render();
-        if (cancelled) return;
-
-        applyTextLayerHighlights(textLayerDiv, activeHighlight, currentPageNotes);
-      } catch (err) {
-        if (cancelled) return;
-        const record = err as { name?: string };
-        if (record?.name === 'RenderingCancelledException') return;
-        setRenderError(classifyPdfError(err));
-      } finally {
-        if (activePageProxy) {
-          try {
-            activePageProxy.cleanup();
-          } catch {
-            // ignore
+    const currentlyVisible = new Set<number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        for (const entry of entries) {
+          const rawNum = (entry.target as HTMLElement).dataset.pageNumber;
+          const pageNum = rawNum ? parseInt(rawNum, 10) : NaN;
+          if (Number.isNaN(pageNum)) continue;
+          if (entry.isIntersecting) {
+            if (!currentlyVisible.has(pageNum)) {
+              currentlyVisible.add(pageNum);
+              changed = true;
+            }
+          } else if (currentlyVisible.has(pageNum)) {
+            currentlyVisible.delete(pageNum);
+            changed = true;
           }
         }
-        if (!cancelled) {
-          setRenderingPage(false);
+        if (changed) {
+          setVisiblePages(new Set(currentlyVisible));
         }
+      },
+      {
+        root: stage,
+        rootMargin: '420px 0px',
+        threshold: [0, 0.05]
       }
+    );
+
+    pageWrapperRefs.current.forEach((el) => {
+      observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [loadingDoc, pdfDoc, viewMode, totalPages, effectiveScale, rotation]);
+
+  // Update active currentPage based on free vertical scrolling in Continuous mode
+  const handleStageScroll = useCallback(() => {
+    if (viewMode !== 'continuous' || loadingDoc || !pdfDoc) return;
+    if (Date.now() < suppressScrollSyncUntilRef.current) return;
+
+    const stage = stageContainerRef.current;
+    if (!stage) return;
+
+    const stageRect = stage.getBoundingClientRect();
+    const focalY = stageRect.top + Math.min(stageRect.height * 0.38, 280);
+
+    let bestPage = currentPage;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    pageWrapperRefs.current.forEach((el, pageNum) => {
+      const rect = el.getBoundingClientRect();
+      // If focal line sits directly inside this page, distance = 0
+      let dist = 0;
+      if (focalY < rect.top) {
+        dist = rect.top - focalY;
+      } else if (focalY > rect.bottom) {
+        dist = focalY - rect.bottom;
+      }
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        bestPage = pageNum;
+      }
+    });
+
+    if (bestPage !== currentPage) {
+      setCurrentPage(bestPage);
+      setPageInput(String(bestPage));
     }
+  }, [viewMode, loadingDoc, pdfDoc, currentPage]);
 
-    renderCurrentPage();
-
-    return () => {
-      cancelled = true;
-      if (renderTask) {
-        try {
-          renderTask.cancel();
-        } catch {
-          // ignore
-        }
-      }
-      if (textLayerInstance) {
-        try {
-          textLayerInstance.cancel();
-        } catch {
-          // ignore
-        }
-      }
-    };
-  }, [pdfDoc, currentPage, fitMode, manualScale, rotation, stageSize, activeHighlight, currentPageNotes]);
-
-  // Persist reading position in IndexedDB
+  // Persist reading position in IndexedDB (debounced softly so rapid continuous scroll stays fast)
   useEffect(() => {
     if (!pdfDoc) return;
     setPageInput(String(currentPage));
-    onBookProgressChange(book.id, currentPage);
-    updateBookReadingProgress(book.id, currentPage).catch(() => {});
-  }, [book.id, currentPage, pdfDoc, onBookProgressChange]);
+    const timer = window.setTimeout(() => {
+      onBookProgressChangeRef.current(book.id, currentPage);
+      updateBookReadingProgress(book.id, currentPage).catch(() => {});
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [book.id, currentPage, pdfDoc]);
 
-  const goToPage = useCallback(
-    (target: number, highlightTerm?: string) => {
-      const clamped = Math.max(1, Math.min(totalPages, Math.round(target)));
-      setCurrentPage(clamped);
-      setPageInput(String(clamped));
-      if (typeof highlightTerm === 'string') {
-        setActiveHighlight(highlightTerm);
+  // Ctrl/Cmd + Mouse Wheel smooth zoom around cursor focal point
+  useEffect(() => {
+    const stage = stageContainerRef.current;
+    if (!stage) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+
+      const stageRect = stage.getBoundingClientRect();
+      const offsetX = e.clientX - stageRect.left;
+      const offsetY = e.clientY - stageRect.top;
+      const ratioX =
+        stage.scrollWidth > 0 ? (stage.scrollLeft + offsetX) / stage.scrollWidth : 0.5;
+      const ratioY =
+        stage.scrollHeight > 0 ? (stage.scrollTop + offsetY) / stage.scrollHeight : 0.5;
+
+      const factor = Math.exp(-e.deltaY * 0.0022);
+      const next = Math.max(
+        0.35,
+        Math.min(3.5, Number((effectiveScale * factor).toFixed(2)))
+      );
+
+      if (Math.abs(next - effectiveScale) >= 0.01) {
+        wheelFocalAnchorRef.current = { ratioX, ratioY, offsetX, offsetY };
+        setFitMode('manual');
+        setManualScale(next);
       }
-      setCropMode(false);
-      setCropRect(null);
-      setSelectedPageText('');
-      stageContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    stage.addEventListener('wheel', onWheel, { passive: false });
+    return () => stage.removeEventListener('wheel', onWheel);
+  }, [effectiveScale]);
+
+  const handleOpenOutlineNode = useCallback(
+    async (node: PdfOutlineNode, key: string) => {
+      if (!pdfDoc || !node.dest) return;
+      setResolvingTocKey(key);
+      try {
+        const destArray =
+          typeof node.dest === 'string'
+            ? await pdfDoc.getDestination(node.dest)
+            : node.dest;
+        if (Array.isArray(destArray) && destArray.length > 0 && destArray[0]) {
+          const pageIndex = await pdfDoc.getPageIndex(
+            destArray[0] as Parameters<pdfjsLib.PDFDocumentProxy['getPageIndex']>[0]
+          );
+          if (typeof pageIndex === 'number' && pageIndex >= 0) {
+            goToPage(pageIndex + 1);
+            if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+              setPanelOpen(false);
+            }
+          }
+        }
+      } catch {
+        // Ignore unresolvable outline destinations
+      } finally {
+        setResolvingTocKey(null);
+      }
     },
-    [totalPages]
+    [pdfDoc, goToPage]
   );
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts + Spacebar temporary pan
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (e.code === 'Space' && !e.repeat && !cropMode) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+        return;
+      }
 
       if (e.key === 'ArrowRight' && currentPage < totalPages) {
         e.preventDefault();
@@ -686,25 +801,49 @@ export default function PdfReader({
         goToPage(currentPage - 1);
       } else if ((e.key === '+' || e.key === '=') && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
-        const next = Math.min(3.0, Number((effectiveScale + 0.15).toFixed(2)));
+        const next = Math.min(3.5, Number((effectiveScale + 0.15).toFixed(2)));
         setFitMode('manual');
         setManualScale(next);
       } else if (e.key === '-' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
-        const next = Math.max(0.45, Number((effectiveScale - 0.15).toFixed(2)));
+        const next = Math.max(0.35, Number((effectiveScale - 0.15).toFixed(2)));
         setFitMode('manual');
         setManualScale(next);
       } else if (e.key === '0' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setFitMode('width');
-      } else if (e.key === 'Escape' && isFullscreen && !document.fullscreenElement) {
-        setIsFullscreen(false);
+      } else if ((e.key === 'h' || e.key === 'H') && !e.metaKey && !e.ctrlKey) {
+        setInteractionMode((prev) => (prev === 'pan' ? 'select' : 'pan'));
+      } else if (e.key === 'Escape') {
+        if (zoomMenuOpen) {
+          setZoomMenuOpen(false);
+        } else if (isFullscreen && !document.fullscreenElement) {
+          setIsFullscreen(false);
+        }
       }
     };
 
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+      }
+    };
+
+    const onBlur = () => {
+      setIsSpacePressed(false);
+      setIsDraggingPan(false);
+      panGestureRef.current.active = false;
+    };
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [currentPage, totalPages, goToPage, isFullscreen, effectiveScale]);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [currentPage, totalPages, goToPage, isFullscreen, effectiveScale, cropMode, zoomMenuOpen]);
 
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -717,27 +856,42 @@ export default function PdfReader({
   };
 
   const handleZoomIn = () => {
-    const next = Math.min(3.0, Number((effectiveScale + 0.2).toFixed(2)));
+    const next = Math.min(3.5, Number((effectiveScale + 0.2).toFixed(2)));
     setFitMode('manual');
     setManualScale(next);
   };
 
   const handleZoomOut = () => {
-    const next = Math.max(0.45, Number((effectiveScale - 0.2).toFixed(2)));
+    const next = Math.max(0.35, Number((effectiveScale - 0.2).toFixed(2)));
     setFitMode('manual');
     setManualScale(next);
   };
 
+  const handleSelectZoomPreset = (preset: 'width' | 'page' | number) => {
+    if (preset === 'width' || preset === 'page') {
+      setFitMode(preset);
+    } else {
+      setFitMode('manual');
+      setManualScale(preset);
+    }
+    setZoomMenuOpen(false);
+  };
+
   const handleCycleFitMode = () => {
-    setFitMode((prev) => {
-      if (prev === 'width') return 'page';
-      if (prev === 'page') return 'width';
-      return 'width';
-    });
+    setFitMode((prev) => (prev === 'width' ? 'page' : 'width'));
   };
 
   const handleRotatePage = () => {
     setRotation((prev) => ((prev + 90) % 360) as 0 | 90 | 180 | 270);
+  };
+
+  const handleToggleViewMode = () => {
+    const nextMode: ViewMode = viewMode === 'continuous' ? 'single' : 'continuous';
+    if (nextMode === 'continuous') {
+      pendingInitialScrollPageRef.current = currentPage;
+    }
+    setViewMode(nextMode);
+    setVisiblePages(new Set([currentPage]));
   };
 
   const handleToggleFullscreen = async () => {
@@ -767,6 +921,66 @@ export default function PdfReader({
     }
   };
 
+  // Free 2D Drag Panning via Pointer Events (Mouse left-drag in Pan mode, Space+drag, middle-mouse drag, or 1-finger touch in Pan mode)
+  const handleStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (cropMode || loadingDoc) return;
+    if ((e.target as HTMLElement | null)?.closest('button, a, input, select, textarea')) {
+      return;
+    }
+
+    const isMiddleMouse = e.pointerType === 'mouse' && e.button === 1;
+    const isPrimaryPan = effectivePanMode && (e.button === 0 || e.pointerType !== 'mouse');
+    if (!isMiddleMouse && !isPrimaryPan) return;
+
+    const stage = stageContainerRef.current;
+    if (!stage) return;
+
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+
+    panGestureRef.current = {
+      active: true,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startScrollLeft: stage.scrollLeft,
+      startScrollTop: stage.scrollTop
+    };
+    setIsDraggingPan(true);
+  };
+
+  const handleStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panGestureRef.current;
+    if (!pan.active || pan.pointerId !== e.pointerId) return;
+    const stage = stageContainerRef.current;
+    if (!stage) return;
+
+    e.preventDefault();
+    const dx = e.clientX - pan.startX;
+    const dy = e.clientY - pan.startY;
+    stage.scrollLeft = pan.startScrollLeft - dx;
+    stage.scrollTop = pan.startScrollTop - dy;
+  };
+
+  const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = panGestureRef.current;
+    if (!pan.active || pan.pointerId !== e.pointerId) return;
+    pan.active = false;
+    pan.pointerId = -1;
+    setIsDraggingPan(false);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   // Non-passive touchmove listener on stage container so 2-finger pinch never fights browser zoom
   useEffect(() => {
     const stage = stageContainerRef.current;
@@ -792,6 +1006,8 @@ export default function PdfReader({
 
     if (e.touches.length === 2) {
       swipeStateRef.current.active = false;
+      panGestureRef.current.active = false;
+      setIsDraggingPan(false);
       const dist = getTouchDistance(e.touches[0], e.touches[1]);
       if (dist > 10) {
         pinchStateRef.current = {
@@ -804,7 +1020,7 @@ export default function PdfReader({
       return;
     }
 
-    if (e.touches.length === 1) {
+    if (e.touches.length === 1 && viewMode === 'single' && !effectivePanMode) {
       const t = e.touches[0];
       swipeStateRef.current = {
         active: true,
@@ -823,8 +1039,8 @@ export default function PdfReader({
       if (pinchStateRef.current.startDist > 0) {
         const rawRatio = dist / pinchStateRef.current.startDist;
         const clampedTargetScale = Math.max(
-          0.45,
-          Math.min(3.0, pinchStateRef.current.startScale * rawRatio)
+          0.35,
+          Math.min(3.5, pinchStateRef.current.startScale * rawRatio)
         );
         const clampedRatio = clampedTargetScale / pinchStateRef.current.startScale;
         pinchStateRef.current.ratio = clampedRatio;
@@ -845,8 +1061,8 @@ export default function PdfReader({
   const handleStageTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
     if (pinchStateRef.current.active && e.touches.length < 2) {
       const finalScale = Math.max(
-        0.45,
-        Math.min(3.0, Number((pinchStateRef.current.startScale * pinchStateRef.current.ratio).toFixed(2)))
+        0.35,
+        Math.min(3.5, Number((pinchStateRef.current.startScale * pinchStateRef.current.ratio).toFixed(2)))
       );
       pinchStateRef.current.active = false;
       setPinchPreviewRatio(1);
@@ -857,11 +1073,7 @@ export default function PdfReader({
       return;
     }
 
-    if (
-      !cropMode &&
-      e.changedTouches.length === 1 &&
-      e.touches.length === 0
-    ) {
+    if (!cropMode && e.changedTouches.length === 1 && e.touches.length === 0) {
       if ((e.target as HTMLElement | null)?.closest('button, a, input, select, textarea')) {
         swipeStateRef.current.active = false;
         return;
@@ -872,8 +1084,14 @@ export default function PdfReader({
         stage ? stage.scrollWidth > stage.clientWidth + 6 : false;
       const hasSelection = (window.getSelection()?.toString()?.trim().length || 0) > 0;
 
-      // Horizontal swipe page turn when page fits viewport width & no text selected
-      if (swipeStateRef.current.active && !hasHorizontalScroll && !hasSelection) {
+      // Horizontal swipe page turn in Single Page mode when page fits horizontally
+      if (
+        viewMode === 'single' &&
+        !effectivePanMode &&
+        swipeStateRef.current.active &&
+        !hasHorizontalScroll &&
+        !hasSelection
+      ) {
         const dx = t.clientX - swipeStateRef.current.startX;
         const dy = t.clientY - swipeStateRef.current.startY;
         const dt = Date.now() - swipeStateRef.current.startTime;
@@ -899,7 +1117,7 @@ export default function PdfReader({
         t.clientX - lastTapRef.current.x,
         t.clientY - lastTapRef.current.y
       );
-      if (dtTap > 40 && dtTap < 290 && distTap < 28 && !hasSelection) {
+      if (dtTap > 40 && dtTap < 290 && distTap < 28 && !hasSelection && !effectivePanMode) {
         lastTapRef.current = { time: 0, x: 0, y: 0 };
         if (fitMode === 'manual' && manualScale > 1.35) {
           setFitMode('width');
@@ -942,16 +1160,35 @@ export default function PdfReader({
     if (matchingPagesOrdered.length === 0) return;
     if (dir === 1) {
       const next = matchingPagesOrdered.find((p) => p > currentPage) ?? matchingPagesOrdered[0];
-      goToPage(next, activeHighlight);
+      goToPage(next, activeHighlight, true);
     } else {
       const prevCandidates = matchingPagesOrdered.filter((p) => p < currentPage);
       const prev =
         prevCandidates.length > 0
           ? prevCandidates[prevCandidates.length - 1]
           : matchingPagesOrdered[matchingPagesOrdered.length - 1];
-      goToPage(prev, activeHighlight);
+      goToPage(prev, activeHighlight, true);
     }
   };
+
+  // Group notes & bookmarks by page for fast O(1) lookup across rendered pages
+  const notesByPage = useMemo(() => {
+    const map = new Map<number, BookHighlightNote[]>();
+    for (const n of notes) {
+      const arr = map.get(n.pageNumber);
+      if (arr) {
+        arr.push(n);
+      } else {
+        map.set(n.pageNumber, [n]);
+      }
+    }
+    return map;
+  }, [notes]);
+
+  const bookmarkedPageSet = useMemo(
+    () => new Set(bookmarks.map((bm) => bm.pageNumber)),
+    [bookmarks]
+  );
 
   const currentPageBookmark = useMemo(
     () => bookmarks.find((bm) => bm.pageNumber === currentPage) || null,
@@ -1047,20 +1284,37 @@ export default function PdfReader({
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
   };
 
-  // Unified Pointer-based interactive crop extraction (supports mouse, touch, and stylus)
-  const getNormalizedPointerPos = (e: React.PointerEvent<HTMLDivElement>) => {
-    const rect = pageFrameRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
-    return {
-      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
-    };
-  };
+  // Unified Pointer-based interactive crop extraction across visible pages
+  const handleStartCrop = useCallback((pageNum: number, pos: { x: number; y: number }) => {
+    setActiveCropPage(pageNum);
+    setCropDragStart(pos);
+    setCropRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
+  }, []);
 
-  const handleExportCropRegion = (rectOverride?: CropRectNormalized) => {
-    const canvas = canvasRef.current;
+  const handleMoveCrop = useCallback(
+    (pos: { x: number; y: number }) => {
+      if (!cropDragStart) return;
+      setCropRect({
+        x: Math.min(cropDragStart.x, pos.x),
+        y: Math.min(cropDragStart.y, pos.y),
+        w: Math.abs(pos.x - cropDragStart.x),
+        h: Math.abs(pos.y - cropDragStart.y)
+      });
+    },
+    [cropDragStart]
+  );
+
+  const handleEndCrop = useCallback(() => {
+    setCropDragStart(null);
+  }, []);
+
+  const handleExportCropRegion = (rectOverride?: CropRectNormalized, pageOverride?: number) => {
+    const targetPage = pageOverride || activeCropPage || currentPage;
+    const canvas = pageCanvasRefs.current.get(targetPage);
     const region = rectOverride || cropRect;
-    if (!canvas || !region || region.w < 0.02 || region.h < 0.02) return;
+    if (!canvas || canvas.width === 0 || !region || region.w < 0.02 || region.h < 0.02) {
+      return;
+    }
 
     const sx = Math.floor(region.x * canvas.width);
     const sy = Math.floor(region.y * canvas.height);
@@ -1083,8 +1337,9 @@ export default function PdfReader({
       const url = URL.createObjectURL(blob);
       setCapturedBlob(blob);
       setCapturedPreviewUrl(url);
-      setCropTitle(`${book.title} — Fig. (p. ${currentPage})`);
-      setCropCaption(`Extracted diagram from ${book.title}, Page ${currentPage}`);
+      setCapturedPageNumber(targetPage);
+      setCropTitle(`${book.title} — Fig. (p. ${targetPage})`);
+      setCropCaption(`Extracted diagram from ${book.title}, Page ${targetPage}`);
       setCropModalOpen(true);
     }, 'image/png');
   };
@@ -1112,12 +1367,13 @@ export default function PdfReader({
         tags: splitList(cropTags),
         bookTitle: book.title,
         bookId: book.id,
-        pageNumber: currentPage
+        pageNumber: capturedPageNumber
       });
 
       setCropNotice(`Saved "${saved.title}" to your Scientific Visual Library.`);
       setCropModalOpen(false);
       setCropMode(false);
+      setActiveCropPage(null);
       setCropRect(null);
       setCapturedBlob(null);
     } finally {
@@ -1132,7 +1388,24 @@ export default function PdfReader({
     }
   };
 
+  const renderedPageNumbers = useMemo(() => {
+    if (viewMode === 'single') {
+      return [currentPage];
+    }
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }, [viewMode, currentPage, totalPages]);
+
+  const shouldRenderPage = useCallback(
+    (pageNumber: number) => {
+      if (viewMode === 'single') return pageNumber === currentPage;
+      if (Math.abs(pageNumber - currentPage) <= 2) return true;
+      return visiblePages.has(pageNumber);
+    },
+    [viewMode, currentPage, visiblePages]
+  );
+
   const progressPercent = Math.round((currentPage / totalPages) * 100);
+  const EMPTY_NOTES: BookHighlightNote[] = useMemo(() => [], []);
 
   return (
     <div
@@ -1144,7 +1417,7 @@ export default function PdfReader({
       }
     >
       {/* Top Document Toolbar */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 py-2 flex items-center justify-between gap-2 shrink-0 relative">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-3.5 py-2 flex items-center justify-between gap-2 shrink-0 relative z-30">
         {/* Left: Back + Title */}
         <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial">
           <button
@@ -1158,7 +1431,7 @@ export default function PdfReader({
           </button>
 
           <div className="min-w-0">
-            <h2 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[150px] xs:max-w-[200px] sm:max-w-[240px] lg:max-w-[300px]">
+            <h2 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[140px] xs:max-w-[190px] sm:max-w-[200px] lg:max-w-[250px]">
               {book.title}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums truncate">
@@ -1168,7 +1441,7 @@ export default function PdfReader({
         </div>
 
         {/* Center: Desktop/Tablet Page Controls */}
-        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+        <div className="hidden sm:flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={() => goToPage(currentPage - 1)}
@@ -1180,7 +1453,7 @@ export default function PdfReader({
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1.5">
+          <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1">
             <input
               type="text"
               inputMode="numeric"
@@ -1207,29 +1480,107 @@ export default function PdfReader({
           </button>
         </div>
 
-        {/* Right: Zoom (desktop), Actions & Fullscreen */}
+        {/* Right: Interaction Tool, Scroll Mode, Zoom Presets, Actions & Fullscreen */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          <div className="hidden md:flex items-center gap-0.5 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 bg-slate-50 dark:bg-slate-950">
+          {/* Select vs Free Hand Pan Tool (Desktop/Tablet) */}
+          <div className="hidden sm:flex items-center gap-0.5 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 bg-slate-50 dark:bg-slate-950">
+            <button
+              type="button"
+              onClick={() => {
+                setCropMode(false);
+                setInteractionMode('select');
+              }}
+              disabled={loadingDoc}
+              className={`w-8 h-8 inline-flex items-center justify-center rounded-md transition-colors ${
+                interactionMode === 'select' && !cropMode
+                  ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Select & copy text (Press H to toggle Hand)"
+              aria-label="Text selection tool"
+            >
+              <MousePointer className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCropMode(false);
+                setInteractionMode('pan');
+              }}
+              disabled={loadingDoc}
+              className={`w-8 h-8 inline-flex items-center justify-center rounded-md transition-colors ${
+                effectivePanMode
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+              title="Hand / Pan tool — drag PDF freely (Hold Space anytime)"
+              aria-label="Hand pan tool"
+            >
+              <Hand className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* View Mode Toggle: Continuous Scroll vs Single Page */}
+          <button
+            type="button"
+            onClick={handleToggleViewMode}
+            disabled={loadingDoc}
+            className={`hidden sm:inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              viewMode === 'continuous'
+                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
+                : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+            }`}
+            title={
+              viewMode === 'continuous'
+                ? 'Continuous vertical scroll active — click for Single Page view'
+                : 'Single Page view active — click for Continuous Scroll'
+            }
+            aria-label="Toggle continuous scroll or single page view"
+          >
+            {viewMode === 'continuous' ? (
+              <ScrollText className="w-4 h-4" />
+            ) : (
+              <Square className="w-3.5 h-3.5" />
+            )}
+            <span className="hidden xl:inline">
+              {viewMode === 'continuous' ? 'Continuous' : 'Single'}
+            </span>
+          </button>
+
+          {/* Zoom Controls + Preset Menu (Desktop) */}
+          <div
+            ref={zoomMenuRef}
+            className="hidden md:flex items-center gap-0.5 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 bg-slate-50 dark:bg-slate-950 relative"
+          >
             <button
               type="button"
               onClick={handleZoomOut}
               disabled={loadingDoc}
               className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 transition-colors"
               aria-label="Zoom out"
-              title="Zoom out (-)"
+              title="Zoom out (- or Ctrl+Scroll)"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="px-1.5 text-xs font-medium tabular-nums text-slate-700 dark:text-slate-300 min-w-[44px] text-center">
-              {Math.round(effectiveScale * 100)}%
-            </span>
+            <button
+              type="button"
+              onClick={() => setZoomMenuOpen((prev) => !prev)}
+              disabled={loadingDoc}
+              className="h-8 px-1.5 inline-flex items-center gap-0.5 rounded-md text-xs font-medium tabular-nums text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 transition-colors min-w-[54px] justify-center"
+              title="Zoom presets"
+              aria-label="Open zoom presets"
+              aria-expanded={zoomMenuOpen}
+            >
+              <span>{Math.round(effectiveScale * 100)}%</span>
+              <ChevronDown className="w-3 h-3 opacity-70" />
+            </button>
             <button
               type="button"
               onClick={handleZoomIn}
               disabled={loadingDoc}
               className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 transition-colors"
               aria-label="Zoom in"
-              title="Zoom in (+)"
+              title="Zoom in (+ or Ctrl+Scroll)"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
@@ -1245,6 +1596,54 @@ export default function PdfReader({
             >
               {fitMode === 'page' ? 'Fit Page' : 'Fit Width'}
             </button>
+
+            {zoomMenuOpen && (
+              <div className="absolute top-full right-0 mt-1.5 w-40 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-1.5 z-50 text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleSelectZoomPreset('width')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg font-medium flex items-center justify-between ${
+                    fitMode === 'width'
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span>Fit Width</span>
+                  {fitMode === 'width' && <Check className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectZoomPreset('page')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg font-medium flex items-center justify-between ${
+                    fitMode === 'page'
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span>Fit Page</span>
+                  {fitMode === 'page' && <Check className="w-3.5 h-3.5" />}
+                </button>
+                <div className="my-1 border-t border-slate-200 dark:border-slate-800" />
+                {ZOOM_PRESETS.map((preset) => {
+                  const active = fitMode === 'manual' && Math.abs(manualScale - preset) < 0.03;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => handleSelectZoomPreset(preset)}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg tabular-nums flex items-center justify-between ${
+                        active
+                          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-semibold'
+                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{Math.round(preset * 100)}%</span>
+                      {active && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <button
@@ -1252,8 +1651,8 @@ export default function PdfReader({
             onClick={handleRotatePage}
             disabled={loadingDoc}
             className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 transition-colors shrink-0"
-            aria-label="Rotate page 90 degrees"
-            title="Rotate page 90°"
+            aria-label="Rotate pages 90 degrees"
+            title="Rotate pages 90°"
           >
             <RotateCw className="w-4 h-4" />
           </button>
@@ -1262,6 +1661,7 @@ export default function PdfReader({
             type="button"
             onClick={() => {
               setCropMode((prev) => !prev);
+              setActiveCropPage(null);
               setCropRect(null);
             }}
             disabled={loadingDoc}
@@ -1270,10 +1670,10 @@ export default function PdfReader({
                 ? 'bg-emerald-600 border-emerald-600 text-white'
                 : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
             }`}
-            title="Crop diagram from this page into Scientific Visual Library"
+            title="Crop diagram from any page into Scientific Visual Library"
           >
             <Crop className="w-4 h-4" />
-            <span className="hidden xl:inline">{cropMode ? 'Cancel Crop' : 'Capture Diagram'}</span>
+            <span className="hidden 2xl:inline">{cropMode ? 'Cancel Crop' : 'Capture Diagram'}</span>
           </button>
 
           <button
@@ -1331,11 +1731,11 @@ export default function PdfReader({
                 ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
                 : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
             }`}
-            aria-label="Toggle search, notes, and bookmarks panel"
-            title="Search, Bookmarks & Notes"
+            aria-label="Toggle pages, search, bookmarks, and notes panel"
+            title="Pages, Search, Contents, Marks & Notes"
           >
             <Search className="w-4 h-4" />
-            <span className="hidden md:inline">Panel</span>
+            <span className="hidden lg:inline">Panel</span>
           </button>
 
           <button
@@ -1390,7 +1790,7 @@ export default function PdfReader({
       {cropMode && (
         <div className="bg-emerald-600 text-white px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
           <span>
-            Drag with finger or cursor over any figure on Page {currentPage} to extract it.
+            Drag over any figure on Page {activeCropPage || currentPage} to extract it to your Visual Library.
           </span>
           <div className="flex items-center gap-2">
             {cropRect && cropRect.w >= 0.02 && cropRect.h >= 0.02 && (
@@ -1404,15 +1804,18 @@ export default function PdfReader({
             )}
             <button
               type="button"
-              onClick={() => handleExportCropRegion({ x: 0, y: 0, w: 1, h: 1 })}
+              onClick={() =>
+                handleExportCropRegion({ x: 0, y: 0, w: 1, h: 1 }, currentPage)
+              }
               className="px-3 py-1.5 rounded-md bg-emerald-700 hover:bg-emerald-800 text-white font-medium"
             >
-              Full Page
+              Full Page {currentPage}
             </button>
             <button
               type="button"
               onClick={() => {
                 setCropMode(false);
+                setActiveCropPage(null);
                 setCropRect(null);
               }}
               className="px-2.5 py-1.5 rounded-md bg-emerald-700/70 hover:bg-emerald-800 text-white"
@@ -1425,198 +1828,234 @@ export default function PdfReader({
 
       {/* Main Split Reader Area */}
       <div className="flex-1 flex min-h-0 relative overflow-hidden">
-        {/* PDF Page Canvas Viewport */}
-        <div
-          ref={stageContainerRef}
-          onTouchStart={handleStageTouchStart}
-          onTouchMove={handleStageTouchMove}
-          onTouchEnd={handleStageTouchEnd}
-          className={`flex-1 overflow-auto p-2 sm:p-6 flex flex-col items-center relative transition-colors ${
-            darkPaper ? 'bg-slate-950' : 'bg-slate-200/75 dark:bg-slate-950'
-          }`}
-        >
-          {/* Active Search Highlight Banner with Prev/Next Match Stepper */}
-          {activeHighlight.trim().length >= 2 && !loadingDoc && !docError && (
-            <div className="sticky top-1 z-20 mb-2.5 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-500/40 shadow-sm text-xs text-amber-900 dark:text-amber-200 max-w-full">
-              <span className="truncate max-w-[160px] sm:max-w-xs">
-                Match: <strong>"{activeHighlight}"</strong>
-              </span>
-              {matchingPagesOrdered.length > 1 && (
-                <div className="flex items-center gap-0.5 pl-1 border-l border-amber-500/30">
-                  <button
-                    type="button"
-                    onClick={() => stepSearchMatchPage(-1)}
-                    className="p-1 rounded hover:bg-amber-500/20"
-                    aria-label="Previous matching page"
-                    title="Previous matching page"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="text-xs tabular-nums px-0.5">
-                    {Math.max(1, matchingPagesOrdered.indexOf(currentPage) + 1)}/{matchingPagesOrdered.length}
+        {/* PDF Page Canvas Viewport Wrapper */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 relative overflow-hidden">
+          <div
+            ref={stageContainerRef}
+            onScroll={handleStageScroll}
+            onPointerDown={handleStagePointerDown}
+            onPointerMove={handleStagePointerMove}
+            onPointerUp={handleStagePointerUp}
+            onPointerCancel={handleStagePointerUp}
+            onTouchStart={handleStageTouchStart}
+            onTouchMove={handleStageTouchMove}
+            onTouchEnd={handleStageTouchEnd}
+            className={`flex-1 overflow-auto p-2 sm:p-6 relative transition-colors ${
+              darkPaper ? 'bg-slate-950' : 'bg-slate-200/80 dark:bg-slate-950'
+            } ${
+              effectivePanMode
+                ? `${isDraggingPan ? 'cursor-grabbing' : 'cursor-grab'} select-none touch-none`
+                : ''
+            }`}
+          >
+            {/* Active Search Highlight Banner with Prev/Next Match Stepper */}
+            {activeHighlight.trim().length >= 2 && !loadingDoc && !docError && (
+              <div className="sticky top-1 left-0 right-0 z-20 mb-2.5 flex justify-center pointer-events-none">
+                <div className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-500/40 shadow-sm text-xs text-amber-900 dark:text-amber-200 max-w-full">
+                  <span className="truncate max-w-[160px] sm:max-w-xs">
+                    Match: <strong>"{activeHighlight}"</strong>
                   </span>
+                  {matchingPagesOrdered.length > 1 && (
+                    <div className="flex items-center gap-0.5 pl-1 border-l border-amber-500/30">
+                      <button
+                        type="button"
+                        onClick={() => stepSearchMatchPage(-1)}
+                        className="p-1 rounded hover:bg-amber-500/20"
+                        aria-label="Previous matching page"
+                        title="Previous matching page"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="text-xs tabular-nums px-0.5">
+                        {Math.max(1, matchingPagesOrdered.indexOf(currentPage) + 1)}/
+                        {matchingPagesOrdered.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => stepSearchMatchPage(1)}
+                        className="p-1 rounded hover:bg-amber-500/20"
+                        aria-label="Next matching page"
+                        title="Next matching page"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                   <button
                     type="button"
-                    onClick={() => stepSearchMatchPage(1)}
-                    className="p-1 rounded hover:bg-amber-500/20"
-                    aria-label="Next matching page"
-                    title="Next matching page"
+                    onClick={() => {
+                      setActiveHighlight('');
+                      setSearchScrollTargetPage(null);
+                    }}
+                    className="p-1 rounded hover:bg-amber-500/20 ml-0.5"
+                    aria-label="Clear highlight"
                   >
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
-              )}
-              <button
-                type="button"
-                onClick={() => setActiveHighlight('')}
-                className="p-1 rounded hover:bg-amber-500/20 ml-0.5"
-                aria-label="Clear highlight"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* Floating Selection Action Pill (Mobile & Desktop 1-tap Highlight / Copy) */}
-          {selectedPageText && !cropMode && (
-            <div className="sticky top-11 z-20 mb-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/95 dark:bg-slate-800/95 text-white shadow-lg border border-slate-700 text-xs">
-              <button
-                type="button"
-                onClick={() => handleCaptureSelectionForNote(selectedPageText)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold transition-colors"
-              >
-                <Highlighter className="w-3.5 h-3.5" />
-                <span>Highlight &amp; Note</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleCopySelection}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-700 font-medium transition-colors"
-              >
-                {copiedSelection ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          {loadingDoc ? (
-            <div className="my-auto flex flex-col items-center justify-center gap-3 py-16 text-center">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-600 dark:text-emerald-400" />
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                Loading PDF document from local library...
-              </p>
-            </div>
-          ) : docError ? (
-            <div className="my-auto max-w-md bg-white dark:bg-slate-900 border border-rose-500/40 rounded-2xl p-6 text-center space-y-3">
-              <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Unable to Open Document
-              </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-300">{docError}</p>
-              <button
-                type="button"
-                onClick={onBack}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors"
-              >
-                Return to Library
-              </button>
-            </div>
-          ) : renderError ? (
-            <div className="my-auto max-w-md bg-white dark:bg-slate-900 border border-rose-500/40 rounded-2xl p-6 text-center space-y-3">
-              <AlertTriangle className="w-7 h-7 text-rose-500 mx-auto" />
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                Page {currentPage} failed to render
-              </p>
-              <p className="text-xs text-slate-600 dark:text-slate-400">{renderError}</p>
-            </div>
-          ) : (
-            <div className="relative flex flex-col items-center my-auto">
-              <div
-                ref={pageFrameRef}
-                className={`relative shadow-lg border border-slate-300/80 dark:border-slate-700/80 bg-white origin-top transition-transform duration-75 ${
-                  cropMode ? 'cursor-crosshair select-none touch-none' : 'select-text'
-                }`}
-                style={{
-                  ...(darkPaper && !cropMode
-                    ? { filter: 'invert(0.89) hue-rotate(180deg) contrast(0.95)' }
-                    : undefined),
-                  ...(pinchPreviewRatio !== 1
-                    ? { transform: `scale(${pinchPreviewRatio})` }
-                    : undefined)
-                }}
-                onPointerDown={(e) => {
-                  if (!cropMode) return;
-                  e.preventDefault();
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  const pos = getNormalizedPointerPos(e);
-                  setCropDragStart(pos);
-                  setCropRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
-                }}
-                onPointerMove={(e) => {
-                  if (!cropMode || !cropDragStart) return;
-                  e.preventDefault();
-                  const pos = getNormalizedPointerPos(e);
-                  setCropRect({
-                    x: Math.min(cropDragStart.x, pos.x),
-                    y: Math.min(cropDragStart.y, pos.y),
-                    w: Math.abs(pos.x - cropDragStart.x),
-                    h: Math.abs(pos.y - cropDragStart.y)
-                  });
-                }}
-                onPointerUp={(e) => {
-                  if (!cropMode) return;
-                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                    e.currentTarget.releasePointerCapture(e.pointerId);
-                  }
-                  setCropDragStart(null);
-                }}
-                onPointerCancel={() => {
-                  if (!cropMode) return;
-                  setCropDragStart(null);
-                }}
-              >
-                <canvas ref={canvasRef} className="block" />
-                <div
-                  ref={textLayerRef}
-                  className={`pdf-text-layer ${cropMode ? 'pointer-events-none' : ''}`}
-                />
-
-                {cropMode && (
-                  <div className="absolute inset-0 bg-slate-950/20 pointer-events-none z-20">
-                    {cropRect && cropRect.w > 0.01 && cropRect.h > 0.01 && (
-                      <div
-                        className="absolute border-2 border-emerald-500 bg-emerald-400/15 shadow-sm"
-                        style={{
-                          left: `${cropRect.x * 100}%`,
-                          top: `${cropRect.y * 100}%`,
-                          width: `${cropRect.w * 100}%`,
-                          height: `${cropRect.h * 100}%`
-                        }}
-                      />
+            {/* Floating Selection Action Pill (Mobile & Desktop 1-tap Highlight / Copy) */}
+            {selectedPageText && !cropMode && !effectivePanMode && (
+              <div className="sticky top-11 left-0 right-0 z-20 mb-2 flex justify-center pointer-events-none">
+                <div className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/95 dark:bg-slate-800/95 text-white shadow-lg border border-slate-700 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleCaptureSelectionForNote(selectedPageText)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold transition-colors"
+                  >
+                    <Highlighter className="w-3.5 h-3.5" />
+                    <span>Highlight &amp; Note</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopySelection}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-700 font-medium transition-colors"
+                  >
+                    {copiedSelection ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy</span>
+                      </>
                     )}
-                  </div>
-                )}
+                  </button>
+                </div>
+              </div>
+            )}
 
-                {renderingPage && (
-                  <div className="absolute inset-0 bg-white/50 dark:bg-slate-950/30 flex items-center justify-center pointer-events-none z-10">
-                    <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-                  </div>
-                )}
+            {loadingDoc ? (
+              <div className="min-h-full flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-emerald-600 dark:text-emerald-400" />
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  Loading PDF document from local library...
+                </p>
+              </div>
+            ) : docError ? (
+              <div className="min-h-full flex items-center justify-center p-4">
+                <div className="max-w-md bg-white dark:bg-slate-900 border border-rose-500/40 rounded-2xl p-6 text-center space-y-3">
+                  <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Unable to Open Document
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">{docError}</p>
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors"
+                  >
+                    Return to Library
+                  </button>
+                </div>
+              </div>
+            ) : pdfDoc ? (
+              <div
+                className={`min-w-full w-max mx-auto flex flex-col items-center ${
+                  viewMode === 'continuous'
+                    ? 'gap-4 sm:gap-6 pb-14'
+                    : 'min-h-full justify-center pb-10'
+                }`}
+              >
+                {renderedPageNumbers.map((pageNum) => (
+                  <PdfPageView
+                    key={pageNum}
+                    pdfDoc={pdfDoc}
+                    pageNumber={pageNum}
+                    scale={effectiveScale}
+                    rotation={rotation}
+                    baseSize={pageSizes[pageNum] || defaultPageSize}
+                    shouldRender={shouldRenderPage(pageNum)}
+                    isActivePage={viewMode === 'continuous' && pageNum === currentPage}
+                    darkPaper={darkPaper}
+                    panMode={effectivePanMode}
+                    cropMode={cropMode}
+                    activeCropPage={activeCropPage}
+                    cropRect={cropRect}
+                    activeHighlight={activeHighlight}
+                    shouldScrollToHit={searchScrollTargetPage === pageNum}
+                    pageNotes={notesByPage.get(pageNum) || EMPTY_NOTES}
+                    pinchPreviewRatio={pageNum === currentPage ? pinchPreviewRatio : 1}
+                    registerWrapperRef={registerWrapperRef}
+                    registerCanvasRef={registerCanvasRef}
+                    onMeasureBaseSize={handleMeasureBaseSize}
+                    onStartCrop={handleStartCrop}
+                    onMoveCrop={handleMoveCrop}
+                    onEndCrop={handleEndCrop}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Floating Desktop Bottom Reader HUD (Live page + quick controls) */}
+          {!loadingDoc && !docError && (
+            <div className="hidden sm:flex pointer-events-none absolute inset-x-0 bottom-3 justify-center z-20 px-4">
+              <div className="pointer-events-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 dark:bg-slate-800/95 backdrop-blur-md text-white shadow-lg border border-slate-700/80 text-xs">
+                <button
+                  type="button"
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage <= 1}
+                  className="p-1 rounded-md hover:bg-slate-700 disabled:opacity-35"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="tabular-nums font-medium px-1">
+                  Page {currentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                  className="p-1 rounded-md hover:bg-slate-700 disabled:opacity-35"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                <span className="h-3.5 w-px bg-slate-700" />
+                <span className="tabular-nums text-slate-300">
+                  {Math.round(effectiveScale * 100)}%
+                </span>
+                <span className="h-3.5 w-px bg-slate-700" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCropMode(false);
+                    setInteractionMode((prev) => (prev === 'pan' ? 'select' : 'pan'));
+                  }}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors ${
+                    effectivePanMode
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                  title="Toggle Hand / Pan movement tool (H)"
+                >
+                  <Hand className="w-3 h-3" />
+                  <span>{effectivePanMode ? 'Pan On' : 'Pan'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPanelTab('thumbs');
+                    setPanelOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-slate-300 hover:bg-slate-700 font-medium transition-colors"
+                  title="Browse page thumbnails"
+                >
+                  <LayoutGrid className="w-3 h-3" />
+                  <span>Pages</span>
+                </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Search, Bookmarks, Notes & Info Panel (Bottom sheet on mobile, slide-over on tablet, docked on desktop) */}
+        {/* Side Panel (Bottom sheet on mobile, slide-over on tablet, docked on desktop) */}
         {panelOpen && (
           <>
             {/* Backdrop on mobile/tablet */}
@@ -1626,8 +2065,8 @@ export default function PdfReader({
               aria-hidden="true"
             />
             <aside
-              aria-label="Book search, bookmarks, and notes panel"
-              className="fixed sm:absolute inset-x-0 bottom-0 sm:inset-y-0 sm:left-auto sm:right-0 sm:w-96 max-h-[78dvh] sm:max-h-none rounded-t-2xl sm:rounded-none bg-white dark:bg-slate-900 border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 lg:static z-30 shadow-2xl lg:shadow-none"
+              aria-label="Book pages, search, bookmarks, and notes panel"
+              className="fixed sm:absolute inset-x-0 bottom-0 sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[400px] max-h-[78dvh] sm:max-h-none rounded-t-2xl sm:rounded-none bg-white dark:bg-slate-900 border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 lg:static z-30 shadow-2xl lg:shadow-none"
             >
               {/* Mobile Sheet Handle */}
               <div className="sm:hidden pt-2 pb-0.5 flex justify-center shrink-0">
@@ -1635,12 +2074,14 @@ export default function PdfReader({
               </div>
 
               {/* Panel Tabs */}
-              <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
-                <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex-1">
+              <div className="p-2.5 sm:p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+                <div className="grid grid-cols-6 gap-0.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex-1">
                   {[
                     { id: 'search', label: 'Search', icon: Search },
-                    { id: 'bookmarks', label: `Marks (${bookmarks.length})`, icon: Bookmark },
-                    { id: 'notes', label: `Notes (${notes.length})`, icon: StickyNote },
+                    { id: 'thumbs', label: 'Pages', icon: LayoutGrid },
+                    { id: 'toc', label: 'TOC', icon: List },
+                    { id: 'bookmarks', label: `Marks`, count: bookmarks.length, icon: Bookmark },
+                    { id: 'notes', label: `Notes`, count: notes.length, icon: StickyNote },
                     { id: 'info', label: 'Info', icon: Info }
                   ].map((tab) => {
                     const Icon = tab.icon;
@@ -1650,14 +2091,18 @@ export default function PdfReader({
                         key={tab.id}
                         type="button"
                         onClick={() => setPanelTab(tab.id as SidePanelTab)}
-                        className={`inline-flex items-center justify-center gap-1 px-1.5 py-2 sm:py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                        className={`inline-flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 px-1 py-1.5 rounded-lg text-[10px] sm:text-[11px] font-medium transition-colors whitespace-nowrap ${
                           active
                             ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
                             : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                         }`}
+                        title={tab.label}
                       >
                         <Icon className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{tab.label}</span>
+                        <span className="truncate">
+                          {tab.label}
+                          {typeof tab.count === 'number' && tab.count > 0 ? ` (${tab.count})` : ''}
+                        </span>
                       </button>
                     );
                   })}
@@ -1684,7 +2129,7 @@ export default function PdfReader({
                           <span>Searchable Text Unavailable</span>
                         </div>
                         <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                          This PDF appears to be a scanned document or image-only file without embedded text. Full-book search is unavailable for scanned pages, though you can read, zoom, crop diagrams, and bookmark pages normally.
+                          This PDF appears to be a scanned document or image-only file without embedded text. Full-book search is unavailable for scanned pages, though you can read, zoom, pan, crop diagrams, and bookmark pages normally.
                         </p>
                       </div>
                     ) : (
@@ -1705,6 +2150,7 @@ export default function PdfReader({
                                 onClick={() => {
                                   setSearchQuery('');
                                   setActiveHighlight('');
+                                  setSearchScrollTargetPage(null);
                                 }}
                                 className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white"
                                 aria-label="Clear book search"
@@ -1726,7 +2172,10 @@ export default function PdfReader({
                               {activeHighlight && (
                                 <button
                                   type="button"
-                                  onClick={() => setActiveHighlight('')}
+                                  onClick={() => {
+                                    setActiveHighlight('');
+                                    setSearchScrollTargetPage(null);
+                                  }}
                                   className="text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
                                 >
                                   Clear highlight
@@ -1789,7 +2238,7 @@ export default function PdfReader({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    goToPage(match.pageNumber, searchQuery);
+                                    goToPage(match.pageNumber, searchQuery, true);
                                     if (window.innerWidth < 1024) {
                                       setPanelOpen(false);
                                     }
@@ -1815,6 +2264,97 @@ export default function PdfReader({
                       </>
                     )}
                   </>
+                )}
+
+                {panelTab === 'thumbs' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        Page Thumbnails
+                      </span>
+                      <span className="text-slate-500 dark:text-slate-400 tabular-nums">
+                        {totalPages} pages
+                      </span>
+                    </div>
+
+                    {pdfDoc ? (
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((pageNum) => (
+                          <PdfThumbnailTile
+                            key={pageNum}
+                            pdfDoc={pdfDoc}
+                            pageNumber={pageNum}
+                            isCurrent={pageNum === currentPage}
+                            isBookmarked={bookmarkedPageSet.has(pageNum)}
+                            hasNotes={notesByPage.has(pageNum)}
+                            rotation={rotation}
+                            onSelect={(selectedPage) => {
+                              goToPage(selectedPage);
+                              if (window.innerWidth < 1024) setPanelOpen(false);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 py-8 text-center">
+                        Thumbnails become available as soon as the PDF finishes opening.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {panelTab === 'toc' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                        Embedded Table of Contents
+                      </span>
+                      <span className="text-slate-500 dark:text-slate-400 tabular-nums">
+                        {outlineItems.length} sections
+                      </span>
+                    </div>
+
+                    {outlineItems.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 leading-relaxed space-y-1.5">
+                        <p className="font-semibold text-slate-800 dark:text-slate-200">
+                          No Embedded Outline Found
+                        </p>
+                        <p>
+                          This PDF does not contain an embedded chapter outline. Use Page Thumbnails, Full-Book Search, or Bookmarks to jump directly to specific chapters and pages.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {(() => {
+                          const renderNodes = (nodes: PdfOutlineNode[], prefix: string, depth: number) =>
+                            nodes.map((node, idx) => {
+                              const nodeKey = `${prefix}_${idx}`;
+                              const hasChildren = Array.isArray(node.items) && node.items.length > 0;
+                              return (
+                                <div key={nodeKey} className="space-y-0.5">
+                                  <button
+                                    type="button"
+                                    disabled={!node.dest || resolvingTocKey === nodeKey}
+                                    onClick={() => handleOpenOutlineNode(node, nodeKey)}
+                                    style={{ paddingLeft: `${8 + Math.min(depth, 3) * 12}px` }}
+                                    className="w-full py-2 pr-2.5 rounded-lg text-left text-xs text-slate-700 dark:text-slate-200 hover:bg-emerald-500/10 hover:text-emerald-700 dark:hover:text-emerald-300 disabled:opacity-60 flex items-center justify-between gap-2 transition-colors"
+                                  >
+                                    <span className="truncate font-medium">
+                                      {node.title || 'Untitled Section'}
+                                    </span>
+                                    {resolvingTocKey === nodeKey && (
+                                      <Loader2 className="w-3 h-3 animate-spin shrink-0 text-emerald-600" />
+                                    )}
+                                  </button>
+                                  {hasChildren && renderNodes(node.items!, nodeKey, depth + 1)}
+                                </div>
+                              );
+                            });
+                          return renderNodes(outlineItems, 'toc', 0);
+                        })()}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {panelTab === 'bookmarks' && (
@@ -1977,7 +2517,7 @@ export default function PdfReader({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  goToPage(entry.pageNumber, entry.quote.slice(0, 40));
+                                  goToPage(entry.pageNumber, entry.quote.slice(0, 40), true);
                                   if (window.innerWidth < 1024) setPanelOpen(false);
                                 }}
                                 className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
@@ -2095,7 +2635,57 @@ export default function PdfReader({
             <button
               type="button"
               onClick={() => {
+                setCropMode(false);
+                setInteractionMode((prev) => (prev === 'pan' ? 'select' : 'pan'));
+                setMobileToolsOpen(false);
+              }}
+              disabled={loadingDoc}
+              className={`h-10 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                interactionMode === 'pan'
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+              }`}
+            >
+              <Hand className="w-4 h-4" />
+              <span>{interactionMode === 'pan' ? 'Pan Tool: On' : 'Free Pan Tool'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                handleToggleViewMode();
+                setMobileToolsOpen(false);
+              }}
+              disabled={loadingDoc}
+              className="h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5"
+            >
+              {viewMode === 'continuous' ? (
+                <ScrollText className="w-4 h-4 text-emerald-600" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+              <span>{viewMode === 'continuous' ? 'Continuous Scroll' : 'Single Page'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPanelTab('thumbs');
+                setPanelOpen(true);
+                setMobileToolsOpen(false);
+              }}
+              disabled={loadingDoc}
+              className="h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5"
+            >
+              <LayoutGrid className="w-4 h-4" />
+              <span>Page Thumbnails</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 setCropMode((prev) => !prev);
+                setActiveCropPage(null);
                 setCropRect(null);
                 setMobileToolsOpen(false);
               }}
@@ -2139,14 +2729,14 @@ export default function PdfReader({
                 setDarkPaper((prev) => !prev);
                 setMobileToolsOpen(false);
               }}
-              className={`h-10 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 ${
+              className={`col-span-2 h-10 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 ${
                 darkPaper
                   ? 'bg-slate-800 border-slate-700 text-emerald-300'
                   : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
               }`}
             >
               {darkPaper ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              <span>{darkPaper ? 'Light Paper' : 'Night Paper'}</span>
+              <span>{darkPaper ? 'Light Paper' : 'Night Paper Contrast'}</span>
             </button>
           </div>
         )}
@@ -2250,7 +2840,7 @@ export default function PdfReader({
             type="button"
             onClick={() => setMobileToolsOpen((prev) => !prev)}
             className={`inline-flex items-center justify-center w-10 h-10 rounded-xl border transition-colors ${
-              mobileToolsOpen || cropMode
+              mobileToolsOpen || cropMode || interactionMode === 'pan'
                 ? 'bg-emerald-600 border-emerald-600 text-white'
                 : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
             }`}

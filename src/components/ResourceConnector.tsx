@@ -8,10 +8,13 @@ import {
   Globe,
   Images,
   Loader2,
+  Scale,
   Search,
   Upload
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
+import { getAllReferences } from '../modules/reference-center/referenceDb';
+import { COLLECTION_TYPE_LABELS, ReferenceItem } from '../modules/reference-center/types';
 import { getAttachedResourcesForContext } from '../modules/resource-hub/resourceHubStorage';
 import { SavedResourceRecord } from '../modules/resource-hub/types';
 import { sanitizeHttpUrl } from '../modules/resource-hub/utils';
@@ -53,7 +56,8 @@ export default function ResourceConnector({
   defaultSearchQuery = '',
   title = 'Linked Visuals & Textbook References'
 }: ResourceConnectorProps) {
-  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub } = useLibraryNavigation();
+  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub, openReferenceCenter } =
+    useLibraryNavigation();
 
   const [visuals, setVisuals] = useState<VisualMediaItem[]>([]);
   const [allVisuals, setAllVisuals] = useState<VisualMediaItem[]>([]);
@@ -65,6 +69,7 @@ export default function ResourceConnector({
   const [textResults, setTextResults] = useState<CrossBookSearchResult[]>([]);
   const [searchingBooks, setSearchingBooks] = useState(false);
   const [attachedRefs, setAttachedRefs] = useState<SavedResourceRecord[]>([]);
+  const [centerRefs, setCenterRefs] = useState<ReferenceItem[]>([]);
 
   useEffect(() => {
     setQuery(defaultSearchQuery);
@@ -84,13 +89,49 @@ export default function ResourceConnector({
     Promise.all([
       getVisualsForContext({ department, topic, experiment, equipment }),
       getAllVisuals(),
-      getAllBooks()
+      getAllBooks(),
+      getAllReferences()
     ])
-      .then(([contextItems, completeVisuals, storedBooks]) => {
+      .then(([contextItems, completeVisuals, storedBooks, allCenterRefs]) => {
         if (cancelled) return;
         setVisuals(contextItems.slice(0, 4));
         setAllVisuals(completeVisuals);
         setBooks(storedBooks);
+
+        const hints = [department, topic, experiment, equipment, defaultSearchQuery]
+          .filter((x): x is string => Boolean(x && x.trim().length >= 2))
+          .map((x) => x.toLowerCase());
+
+        const matchedCenter = allCenterRefs
+          .map((ref) => {
+            let score = 0;
+            if (
+              ref.academicConnections.some(
+                (c) =>
+                  c.departmentId === department ||
+                  hints.some((h) => c.label.toLowerCase().includes(h))
+              )
+            ) {
+              score += 5;
+            }
+            const hay = `${ref.title} ${ref.subject} ${ref.description} ${ref.tags.join(' ')}`.toLowerCase();
+            if (department === 'anatomy' && hay.includes('anatomy')) score += 4;
+            if (department === 'general_pharmacy' && (hay.includes('pharmaceutics') || ref.shortTitle === 'IP' || ref.shortTitle === 'Ph. Int.')) score += 4;
+            if (department === 'inorganic' && (hay.includes('analysis') || hay.includes('limit test') || ref.shortTitle === 'IP')) score += 4;
+            if (department === 'pharmacognosy' && hay.includes('pharmacognosy')) score += 4;
+            if (department === 'python' && (hay.includes('pharmacokinetics') || hay.includes('bioavailability'))) score += 3;
+            for (const h of hints) {
+              if (hay.includes(h)) score += 2;
+            }
+            if (ref.linkedBookId) score += 1;
+            return { ref, score };
+          })
+          .filter((x) => x.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 4)
+          .map((x) => x.ref);
+
+        setCenterRefs(matchedCenter);
       })
       .catch(() => {
         if (!cancelled) {
@@ -104,7 +145,7 @@ export default function ResourceConnector({
     return () => {
       cancelled = true;
     };
-  }, [department, topic, experiment, equipment]);
+  }, [department, topic, experiment, equipment, defaultSearchQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +193,14 @@ export default function ResourceConnector({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => openReferenceCenter({ query: defaultSearchQuery || topic || '' })}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+          >
+            <Scale className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Reference Center</span>
+          </button>
           <button
             type="button"
             onClick={() => openVisualLibrary({ department })}
@@ -371,6 +420,47 @@ export default function ResourceConnector({
           )}
         </div>
       </div>
+
+      {centerRefs.length > 0 && (
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              Pharmacopoeias, Textbooks &amp; Standards ({centerRefs.length})
+            </span>
+            <button
+              type="button"
+              onClick={() => openReferenceCenter({ section: 'overview' })}
+              className="text-emerald-600 dark:text-emerald-400 font-medium hover:underline"
+            >
+              Open Reference Center
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {centerRefs.map((ref) => (
+              <div
+                key={ref.id}
+                className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                    {COLLECTION_TYPE_LABELS[ref.collectionType]} · {ref.subject}
+                  </p>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                    {ref.title}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openReferenceCenter({ referenceId: ref.id })}
+                  className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap shrink-0"
+                >
+                  Open
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {attachedRefs.length > 0 && (
         <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">

@@ -13,6 +13,7 @@ import AnatomyModule from './modules/bp104t-anatomy/AnatomyModule';
 import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyModule';
 import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
+import ReferenceCenterModule from './modules/reference-center/ReferenceCenterModule';
 import ResourceHubModule from './modules/resource-hub/ResourceHubModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
@@ -58,6 +59,12 @@ export default function App() {
     tab: null,
     resourceType: null,
     context: null,
+    nonce: 0
+  });
+  const [referenceJump, setReferenceJump] = useState({
+    section: null,
+    referenceId: null,
+    query: null,
     nonce: 0
   });
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -148,7 +155,8 @@ export default function App() {
         moduleId !== 'dashboard' &&
         moduleId !== 'knowledge_library' &&
         moduleId !== 'visual_library' &&
-        moduleId !== 'resource_hub'
+        moduleId !== 'resource_hub' &&
+        moduleId !== 'reference_center'
       ) {
         setLastModule(moduleId);
         try {
@@ -242,6 +250,19 @@ export default function App() {
     [navigateTo]
   );
 
+  const openReferenceCenter = useCallback(
+    (opts = {}) => {
+      setReferenceJump((prev) => ({
+        section: opts.section ?? null,
+        referenceId: opts.referenceId ?? null,
+        query: opts.query ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('reference_center');
+    },
+    [navigateTo]
+  );
+
   const handleOpenRecentItem = useCallback(
     (item) => {
       if (item.kind === 'book' && item.bookId) {
@@ -283,6 +304,7 @@ export default function App() {
       openKnowledgeLibrary,
       openVisualLibrary,
       openResourceHub,
+      openReferenceCenter,
       navigateToModule: navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -293,6 +315,7 @@ export default function App() {
       openKnowledgeLibrary,
       openVisualLibrary,
       openResourceHub,
+      openReferenceCenter,
       navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -420,6 +443,9 @@ export default function App() {
             initialContext={resourceJump.context}
             navNonce={resourceJump.nonce}
           />
+        )}
+        {activeModule === 'reference_center' && (
+          <ReferenceCenterModule jumpTarget={referenceJump} />
         )}
       </DashboardLayout>
 
