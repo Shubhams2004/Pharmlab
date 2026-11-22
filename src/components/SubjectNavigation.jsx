@@ -11,11 +11,13 @@ import {
   Microscope,
   TestTube,
   BookOpen,
-  Check
+  Check,
+  Library
 } from 'lucide-react';
 
 export const SUBJECT_NAV_ITEMS = [
   { id: 'dashboard', label: 'Overview & Hub', group: 'Workspace', icon: LayoutGrid, code: 'Home' },
+  { id: 'knowledge_library', label: 'Knowledge Library', group: 'Workspace', icon: Library, code: 'PDF Library & Search' },
   { id: 'general_pharmacy', label: 'Pharmaceutics', group: 'Core Pharmacy Subjects', icon: FlaskConical, code: 'BP102T / BP107P' },
   { id: 'anatomy', label: 'Anatomy & Physiology', group: 'Core Pharmacy Subjects', icon: Activity, code: 'BP104T / BP109P' },
   { id: 'pharmacognosy', label: 'Pharmacognosy', group: 'Core Pharmacy Subjects', icon: Microscope, code: 'BP105T / BP110P' },
@@ -35,8 +37,11 @@ export default function SubjectNavigation({
   onOpenGlossary,
   onCloseMobile
 }) {
-  const totalSubjects = SUBJECT_NAV_ITEMS.filter((item) => item.id !== 'dashboard').length;
-  const exploredCount = visitedModules.length;
+  const labItems = SUBJECT_NAV_ITEMS.filter((item) => NAV_GROUPS.includes(item.group));
+  const totalSubjects = labItems.length;
+  const exploredCount = visitedModules.filter((id) =>
+    labItems.some((item) => item.id === id)
+  ).length;
   const progressPct = Math.min(100, Math.round((exploredCount / totalSubjects) * 100));
 
   return (
@@ -108,6 +113,22 @@ export default function SubjectNavigation({
             <span className="flex items-center gap-2.5 truncate">
               <LayoutGrid className="w-4 h-4 shrink-0" />
               <span className="truncate">Overview &amp; Hub</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSelectModule('knowledge_library')}
+            aria-current={activeModule === 'knowledge_library' ? 'page' : undefined}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors whitespace-nowrap ${
+              activeModule === 'knowledge_library'
+                ? 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+            }`}
+          >
+            <span className="flex items-center gap-2.5 truncate">
+              <Library className="w-4 h-4 shrink-0" />
+              <span className="truncate">Knowledge Library</span>
             </span>
           </button>
 

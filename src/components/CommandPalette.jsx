@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, ArrowRight, Compass, BookOpen, FlaskConical, Activity, Microscope, Code, MessageSquareHeart } from 'lucide-react';
+import { Search, X, ArrowRight, Compass, BookOpen, FlaskConical, Activity, Microscope, Code, MessageSquareHeart, Library } from 'lucide-react';
 
 export const QUICK_INDEX = [
+  // Knowledge Library
+  { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search & Bookmarks', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
+
   // Anatomy & Diagrams
   { title: 'Heart, Valves & Conduction Diagram', sub: 'BP104T · Interactive Annotated 2D/3D Diagram', module: 'anatomy', tab: 'diagrams', cat: 'Diagram', icon: Activity },
   { title: 'Eukaryotic Cell Organelles Diagram', sub: 'BP104T · Unit I Cell Membrane & Organelles', module: 'anatomy', tab: 'diagrams', cat: 'Diagram', icon: Activity },

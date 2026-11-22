@@ -10,6 +10,7 @@ import PsychologyCommunicationModule from './modules/bp103t-psychology/Psycholog
 import AnatomyModule from './modules/bp104t-anatomy/AnatomyModule';
 import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyModule';
 import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
+import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState('dashboard');
@@ -64,7 +65,7 @@ export default function App() {
     setNavTarget((prev) => ({ module: moduleId, tab, nonce: prev.nonce + 1 }));
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    if (moduleId !== 'dashboard') {
+    if (moduleId !== 'dashboard' && moduleId !== 'knowledge_library') {
       setLastModule(moduleId);
       try {
         localStorage.setItem('pharmlab_last_module', moduleId);
@@ -153,6 +154,7 @@ export default function App() {
             navNonce={navTarget.nonce}
           />
         )}
+        {activeModule === 'knowledge_library' && <KnowledgeLibraryModule />}
       </DashboardLayout>
 
       <CommandPalette
