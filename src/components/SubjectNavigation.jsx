@@ -207,9 +207,14 @@ export default function SubjectNavigation({
             style={{ width: `${progressPct}%` }}
           />
         </div>
-        <p className="text-slate-500 dark:text-slate-400 truncate">
-          Y. B. Chavan College of Pharmacy
-        </p>
+        <div className="space-y-0.5 text-slate-500 dark:text-slate-400">
+          <p className="font-semibold text-slate-700 dark:text-slate-300 truncate">
+            Shubham
+          </p>
+          <p className="truncate">
+            Y. B. Chavan College of Pharmacy
+          </p>
+        </div>
       </div>
     </div>
   );

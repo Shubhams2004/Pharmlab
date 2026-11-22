@@ -183,6 +183,13 @@ export default function DashboardLayout({
         <main className="flex-1 p-5 sm:p-6 md:p-8 lg:p-10 max-w-7xl w-full mx-auto min-w-0">
           {children}
         </main>
+
+        <footer className="px-5 sm:px-6 md:px-8 lg:px-10 py-4 border-t border-slate-200/70 dark:border-slate-800/70 text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2 max-w-7xl w-full mx-auto">
+          <span>PharmLab · B.Pharm Semester I Virtual Laboratory</span>
+          <span>
+            Curated by <strong className="font-medium text-slate-700 dark:text-slate-300">Shubham</strong> · Y. B. Chavan College of Pharmacy
+          </span>
+        </footer>
       </div>
     </div>
   );
