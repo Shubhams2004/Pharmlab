@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Crop,
   Eye,
   FileText,
@@ -15,10 +16,11 @@ import {
   Images,
   Info,
   Loader2,
-  Maximize,
   Maximize2,
   Minimize2,
   Moon,
+  MoreHorizontal,
+  RotateCw,
   Search,
   StickyNote,
   Sun,
@@ -71,6 +73,7 @@ interface PdfReaderProps {
 }
 
 type SidePanelTab = 'search' | 'bookmarks' | 'notes' | 'info';
+type FitMode = 'width' | 'page' | 'manual';
 
 interface CropRectNormalized {
   x: number;
@@ -128,13 +131,12 @@ function applyTextLayerHighlights(
   const spans = Array.from(container.querySelectorAll('span'));
   let firstMark: HTMLElement | null = null;
 
-  // Apply saved user quote highlights for this page
   for (const note of pageNotes) {
     const quote = note.quote.trim();
     if (quote.length < 3) continue;
     const snippet = quote.slice(0, 64).replace(/\s+/g, ' ');
     const tokens = snippet
-      .split(/\s+/)
+      .split(/\s+/g)
       .filter((t) => t.length >= 3)
       .slice(0, 4);
     if (tokens.length === 0) continue;
@@ -177,7 +179,6 @@ function applyTextLayerHighlights(
     }
   }
 
-  // Apply active search query highlight on top
   const trimmed = query.trim();
   if (!trimmed || trimmed.length < 2) return;
 
@@ -229,6 +230,12 @@ function applyTextLayerHighlights(
   }
 }
 
+function getTouchDistance(t1: React.Touch | Touch, t2: React.Touch | Touch): number {
+  const dx = t1.clientX - t2.clientX;
+  const dy = t1.clientY - t2.clientY;
+  return Math.hypot(dx, dy);
+}
+
 export default function PdfReader({
   book,
   onBack,
@@ -256,16 +263,23 @@ export default function PdfReader({
     String(Math.max(1, Math.min(initialPage || book.lastReadPage || 1, book.pageCount || 1)))
   );
 
-  const [fitWidth, setFitWidth] = useState(true);
+  const [fitMode, setFitMode] = useState<FitMode>('width');
   const [manualScale, setManualScale] = useState(1.15);
   const [effectiveScale, setEffectiveScale] = useState(1.15);
-  const [containerWidth, setContainerWidth] = useState(820);
+  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [stageSize, setStageSize] = useState({ width: 820, height: 640 });
+  const [pinchPreviewRatio, setPinchPreviewRatio] = useState(1);
 
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelTab, setPanelTab] = useState<SidePanelTab>('search');
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const [activeHighlight, setActiveHighlight] = useState(initialSearchQuery || '');
   const [bookmarkLabel, setBookmarkLabel] = useState('');
+
+  // Mobile overflow menu & floating text selection bar
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [selectedPageText, setSelectedPageText] = useState('');
+  const [copiedSelection, setCopiedSelection] = useState(false);
 
   // Highlight & Note composer state
   const [noteQuote, setNoteQuote] = useState('');
@@ -301,6 +315,27 @@ export default function PdfReader({
   const pageFrameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
+
+  // Touch gesture refs
+  const pinchStateRef = useRef<{
+    active: boolean;
+    startDist: number;
+    startScale: number;
+    ratio: number;
+  }>({ active: false, startDist: 0, startScale: 1, ratio: 1 });
+
+  const swipeStateRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    startTime: number;
+  }>({ active: false, startX: 0, startY: 0, startTime: 0 });
+
+  const lastTapRef = useRef<{ time: number; x: number; y: number }>({
+    time: 0,
+    x: 0,
+    y: 0
+  });
 
   const totalPages = pdfDoc?.numPages || book.pageCount || 1;
 
@@ -398,32 +433,39 @@ export default function PdfReader({
     };
   }, [capturedPreviewUrl]);
 
-  // Close drawer automatically on small viewports initially so page fills screen
+  // Close drawer automatically on small/tablet viewports initially so page fills screen
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024 && !initialSearchQuery) {
       setPanelOpen(false);
     }
   }, [initialSearchQuery]);
 
-  // Measure viewport stage width for responsive Fit-to-Width zoom
+  // Measure viewport stage width & height for Fit Width / Fit Page zoom
   useEffect(() => {
     const el = stageContainerRef.current;
     if (!el) return;
 
-    const updateWidth = () => {
-      const next = el.clientWidth;
-      if (next > 0) setContainerWidth(next);
+    const updateSize = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w > 0 && h > 0) {
+        setStageSize((prev) =>
+          Math.abs(prev.width - w) > 2 || Math.abs(prev.height - h) > 2
+            ? { width: w, height: h }
+            : prev
+        );
+      }
     };
-    updateWidth();
+    updateSize();
 
     if (typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver(() => updateWidth());
+      const observer = new ResizeObserver(() => updateSize());
       observer.observe(el);
       return () => observer.disconnect();
     }
 
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
   }, [panelOpen, isFullscreen]);
 
   // Sync native fullscreen change events
@@ -434,6 +476,40 @@ export default function PdfReader({
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
+
+  // Track text selection inside PDF TextLayer for quick Highlight/Copy floating bar (great on mobile & desktop)
+  useEffect(() => {
+    let timer: number | undefined;
+    const onSelectionChange = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (cropMode) {
+          setSelectedPageText('');
+          return;
+        }
+        const sel = window.getSelection();
+        const text = sel?.toString()?.replace(/\s+/g, ' ').trim() || '';
+        const anchorNode = sel?.anchorNode;
+        if (
+          text.length >= 2 &&
+          anchorNode &&
+          textLayerRef.current &&
+          textLayerRef.current.contains(anchorNode)
+        ) {
+          setSelectedPageText(text.slice(0, 400));
+          setCopiedSelection(false);
+        } else {
+          setSelectedPageText('');
+        }
+      }, 120);
+    };
+
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('selectionchange', onSelectionChange);
+    };
+  }, [cropMode]);
 
   const currentPageNotes = useMemo(
     () => notes.filter((n) => n.pageNumber === currentPage),
@@ -462,16 +538,26 @@ export default function PdfReader({
         activePageProxy = page;
         if (cancelled) return;
 
-        const baseViewport = page.getViewport({ scale: 1 });
-        const horizontalPadding = window.innerWidth < 640 ? 24 : 56;
-        const availableWidth = Math.max(260, containerWidth - horizontalPadding);
-        const computedScale = fitWidth
-          ? Math.max(0.45, Math.min(2.4, availableWidth / baseViewport.width))
-          : manualScale;
+        const baseViewport = page.getViewport({ scale: 1, rotation });
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+        const horizontalPadding = isMobile ? 16 : 48;
+        const verticalPadding = isMobile ? 24 : 48;
+
+        const availableWidth = Math.max(240, stageSize.width - horizontalPadding);
+        const availableHeight = Math.max(240, stageSize.height - verticalPadding);
+
+        let computedScale = manualScale;
+        if (fitMode === 'width') {
+          computedScale = Math.max(0.4, Math.min(2.6, availableWidth / baseViewport.width));
+        } else if (fitMode === 'page') {
+          const widthRatio = availableWidth / baseViewport.width;
+          const heightRatio = availableHeight / baseViewport.height;
+          computedScale = Math.max(0.35, Math.min(2.6, Math.min(widthRatio, heightRatio)));
+        }
 
         setEffectiveScale(computedScale);
 
-        const viewport = page.getViewport({ scale: computedScale });
+        const viewport = page.getViewport({ scale: computedScale, rotation });
         const outputScale = Math.min(window.devicePixelRatio || 1, 2.5);
 
         canvas.width = Math.floor(viewport.width * outputScale);
@@ -497,7 +583,6 @@ export default function PdfReader({
         await renderTask.promise;
         if (cancelled) return;
 
-        // Render PDF.js TextLayer for text selection & search highlights
         textLayerDiv.innerHTML = '';
         textLayerDiv.style.width = `${Math.floor(viewport.width)}px`;
         textLayerDiv.style.height = `${Math.floor(viewport.height)}px`;
@@ -528,7 +613,7 @@ export default function PdfReader({
           try {
             activePageProxy.cleanup();
           } catch {
-            // ignore cleanup errors
+            // ignore
           }
         }
         if (!cancelled) {
@@ -556,7 +641,7 @@ export default function PdfReader({
         }
       }
     };
-  }, [pdfDoc, currentPage, fitWidth, manualScale, containerWidth, activeHighlight, currentPageNotes]);
+  }, [pdfDoc, currentPage, fitMode, manualScale, rotation, stageSize, activeHighlight, currentPageNotes]);
 
   // Persist reading position in IndexedDB
   useEffect(() => {
@@ -576,12 +661,13 @@ export default function PdfReader({
       }
       setCropMode(false);
       setCropRect(null);
+      setSelectedPageText('');
       stageContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     },
     [totalPages]
   );
 
-  // Keyboard navigation (Left/Right arrows when not typing)
+  // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -594,6 +680,19 @@ export default function PdfReader({
       } else if (e.key === 'ArrowLeft' && currentPage > 1) {
         e.preventDefault();
         goToPage(currentPage - 1);
+      } else if ((e.key === '+' || e.key === '=') && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        const next = Math.min(3.0, Number((effectiveScale + 0.15).toFixed(2)));
+        setFitMode('manual');
+        setManualScale(next);
+      } else if (e.key === '-' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        const next = Math.max(0.45, Number((effectiveScale - 0.15).toFixed(2)));
+        setFitMode('manual');
+        setManualScale(next);
+      } else if (e.key === '0' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setFitMode('width');
       } else if (e.key === 'Escape' && isFullscreen && !document.fullscreenElement) {
         setIsFullscreen(false);
       }
@@ -601,7 +700,7 @@ export default function PdfReader({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [currentPage, totalPages, goToPage, isFullscreen]);
+  }, [currentPage, totalPages, goToPage, isFullscreen, effectiveScale]);
 
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -614,15 +713,27 @@ export default function PdfReader({
   };
 
   const handleZoomIn = () => {
-    const next = Math.min(2.5, Number(((fitWidth ? effectiveScale : manualScale) + 0.15).toFixed(2)));
-    setFitWidth(false);
+    const next = Math.min(3.0, Number((effectiveScale + 0.2).toFixed(2)));
+    setFitMode('manual');
     setManualScale(next);
   };
 
   const handleZoomOut = () => {
-    const next = Math.max(0.5, Number(((fitWidth ? effectiveScale : manualScale) - 0.15).toFixed(2)));
-    setFitWidth(false);
+    const next = Math.max(0.45, Number((effectiveScale - 0.2).toFixed(2)));
+    setFitMode('manual');
     setManualScale(next);
+  };
+
+  const handleCycleFitMode = () => {
+    setFitMode((prev) => {
+      if (prev === 'width') return 'page';
+      if (prev === 'page') return 'width';
+      return 'width';
+    });
+  };
+
+  const handleRotatePage = () => {
+    setRotation((prev) => ((prev + 90) % 360) as 0 | 90 | 180 | 270);
   };
 
   const handleToggleFullscreen = async () => {
@@ -652,11 +763,191 @@ export default function PdfReader({
     }
   };
 
+  // Non-passive touchmove listener on stage container so 2-finger pinch never fights browser zoom
+  useEffect(() => {
+    const stage = stageContainerRef.current;
+    if (!stage) return;
+
+    const onNativeTouchMove = (e: TouchEvent) => {
+      if (cropMode) return;
+      if (e.touches.length === 2 && pinchStateRef.current.active) {
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
+    stage.addEventListener('touchmove', onNativeTouchMove, { passive: false });
+    return () => stage.removeEventListener('touchmove', onNativeTouchMove);
+  }, [cropMode]);
+
+  const handleStageTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (cropMode || loadingDoc) return;
+    if ((e.target as HTMLElement | null)?.closest('button, a, input, select, textarea')) {
+      swipeStateRef.current.active = false;
+      return;
+    }
+
+    if (e.touches.length === 2) {
+      swipeStateRef.current.active = false;
+      const dist = getTouchDistance(e.touches[0], e.touches[1]);
+      if (dist > 10) {
+        pinchStateRef.current = {
+          active: true,
+          startDist: dist,
+          startScale: effectiveScale,
+          ratio: 1
+        };
+      }
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      swipeStateRef.current = {
+        active: true,
+        startX: t.clientX,
+        startY: t.clientY,
+        startTime: Date.now()
+      };
+    }
+  };
+
+  const handleStageTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (cropMode || loadingDoc) return;
+
+    if (e.touches.length === 2 && pinchStateRef.current.active) {
+      const dist = getTouchDistance(e.touches[0], e.touches[1]);
+      if (pinchStateRef.current.startDist > 0) {
+        const rawRatio = dist / pinchStateRef.current.startDist;
+        const clampedTargetScale = Math.max(
+          0.45,
+          Math.min(3.0, pinchStateRef.current.startScale * rawRatio)
+        );
+        const clampedRatio = clampedTargetScale / pinchStateRef.current.startScale;
+        pinchStateRef.current.ratio = clampedRatio;
+        setPinchPreviewRatio(clampedRatio);
+      }
+      return;
+    }
+
+    if (e.touches.length === 1 && swipeStateRef.current.active) {
+      const dx = Math.abs(e.touches[0].clientX - swipeStateRef.current.startX);
+      const dy = Math.abs(e.touches[0].clientY - swipeStateRef.current.startY);
+      if (dy > dx && dy > 16) {
+        swipeStateRef.current.active = false;
+      }
+    }
+  };
+
+  const handleStageTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (pinchStateRef.current.active && e.touches.length < 2) {
+      const finalScale = Math.max(
+        0.45,
+        Math.min(3.0, Number((pinchStateRef.current.startScale * pinchStateRef.current.ratio).toFixed(2)))
+      );
+      pinchStateRef.current.active = false;
+      setPinchPreviewRatio(1);
+      if (Math.abs(finalScale - effectiveScale) > 0.04) {
+        setFitMode('manual');
+        setManualScale(finalScale);
+      }
+      return;
+    }
+
+    if (
+      !cropMode &&
+      e.changedTouches.length === 1 &&
+      e.touches.length === 0
+    ) {
+      if ((e.target as HTMLElement | null)?.closest('button, a, input, select, textarea')) {
+        swipeStateRef.current.active = false;
+        return;
+      }
+      const t = e.changedTouches[0];
+      const stage = stageContainerRef.current;
+      const hasHorizontalScroll =
+        stage ? stage.scrollWidth > stage.clientWidth + 6 : false;
+      const hasSelection = (window.getSelection()?.toString()?.trim().length || 0) > 0;
+
+      // Horizontal swipe page turn when page fits viewport width & no text selected
+      if (swipeStateRef.current.active && !hasHorizontalScroll && !hasSelection) {
+        const dx = t.clientX - swipeStateRef.current.startX;
+        const dy = t.clientY - swipeStateRef.current.startY;
+        const dt = Date.now() - swipeStateRef.current.startTime;
+
+        if (dt < 450 && Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 2) {
+          swipeStateRef.current.active = false;
+          if (dx < 0 && currentPage < totalPages) {
+            goToPage(currentPage + 1);
+            return;
+          }
+          if (dx > 0 && currentPage > 1) {
+            goToPage(currentPage - 1);
+            return;
+          }
+        }
+      }
+      swipeStateRef.current.active = false;
+
+      // Double-tap on mobile to zoom in / reset to Fit Width
+      const now = Date.now();
+      const dtTap = now - lastTapRef.current.time;
+      const distTap = Math.hypot(
+        t.clientX - lastTapRef.current.x,
+        t.clientY - lastTapRef.current.y
+      );
+      if (dtTap > 40 && dtTap < 290 && distTap < 28 && !hasSelection) {
+        lastTapRef.current = { time: 0, x: 0, y: 0 };
+        if (fitMode === 'manual' && manualScale > 1.35) {
+          setFitMode('width');
+        } else {
+          setFitMode('manual');
+          setManualScale(Math.min(2.4, Number((effectiveScale * 1.55).toFixed(2))));
+        }
+      } else {
+        lastTapRef.current = { time: now, x: t.clientX, y: t.clientY };
+      }
+    }
+  };
+
   // Search results memoized across pre-extracted IndexedDB pages
   const searchResults: SearchMatch[] = useMemo(() => {
     if (!book.hasSearchableText || searchQuery.trim().length < 2) return [];
     return searchBookPages(pagesText, searchQuery);
   }, [book.hasSearchableText, pagesText, searchQuery]);
+
+  // Unique pages matching active highlight for Next/Prev match stepping
+  const matchingPagesOrdered = useMemo(() => {
+    const unique: number[] = [];
+    const seen = new Set<number>();
+    const list =
+      searchResults.length > 0
+        ? searchResults
+        : activeHighlight.trim().length >= 2 && book.hasSearchableText
+          ? searchBookPages(pagesText, activeHighlight)
+          : [];
+    for (const m of list) {
+      if (!seen.has(m.pageNumber)) {
+        seen.add(m.pageNumber);
+        unique.push(m.pageNumber);
+      }
+    }
+    return unique.sort((a, b) => a - b);
+  }, [searchResults, activeHighlight, book.hasSearchableText, pagesText]);
+
+  const stepSearchMatchPage = (dir: -1 | 1) => {
+    if (matchingPagesOrdered.length === 0) return;
+    if (dir === 1) {
+      const next = matchingPagesOrdered.find((p) => p > currentPage) ?? matchingPagesOrdered[0];
+      goToPage(next, activeHighlight);
+    } else {
+      const prevCandidates = matchingPagesOrdered.filter((p) => p < currentPage);
+      const prev =
+        prevCandidates.length > 0
+          ? prevCandidates[prevCandidates.length - 1]
+          : matchingPagesOrdered[matchingPagesOrdered.length - 1];
+      goToPage(prev, activeHighlight);
+    }
+  };
 
   const currentPageBookmark = useMemo(
     () => bookmarks.find((bm) => bm.pageNumber === currentPage) || null,
@@ -698,13 +989,29 @@ export default function PdfReader({
     setBookmarks((prev) => prev.filter((b) => b.id !== bookmarkId));
   };
 
-  const handleCaptureSelectionForNote = () => {
-    const selected = window.getSelection()?.toString()?.replace(/\s+/g, ' ').trim() || '';
+  const handleCaptureSelectionForNote = (overrideText?: string) => {
+    const selected =
+      overrideText ||
+      selectedPageText ||
+      window.getSelection()?.toString()?.replace(/\s+/g, ' ').trim() ||
+      '';
     if (selected) {
       setNoteQuote(selected.slice(0, 400));
     }
     setPanelTab('notes');
     setPanelOpen(true);
+    setMobileToolsOpen(false);
+  };
+
+  const handleCopySelection = async () => {
+    if (!selectedPageText) return;
+    try {
+      await navigator.clipboard.writeText(selectedPageText);
+      setCopiedSelection(true);
+      window.setTimeout(() => setCopiedSelection(false), 1800);
+    } catch {
+      // ignore clipboard restrictions
+    }
   };
 
   const handleSaveNote = async (e: React.FormEvent) => {
@@ -736,8 +1043,8 @@ export default function PdfReader({
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
   };
 
-  // Interactive crop extraction from the PDF <canvas>
-  const getNormalizedPointerPos = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Unified Pointer-based interactive crop extraction (supports mouse, touch, and stylus)
+  const getNormalizedPointerPos = (e: React.PointerEvent<HTMLDivElement>) => {
     const rect = pageFrameRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
     return {
@@ -828,42 +1135,43 @@ export default function PdfReader({
       ref={readerRootRef}
       className={
         isFullscreen
-          ? 'fixed inset-0 z-50 flex flex-col bg-slate-100 dark:bg-slate-950'
-          : 'flex flex-col border border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-100 dark:bg-slate-950 overflow-hidden shadow-sm h-[calc(100vh-8.5rem)] min-h-[560px]'
+          ? 'fixed inset-0 z-50 h-[100dvh] flex flex-col bg-slate-100 dark:bg-slate-950'
+          : 'flex flex-col border border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-100 dark:bg-slate-950 overflow-hidden shadow-sm h-[calc(100dvh-5.5rem)] sm:h-[calc(100dvh-8.5rem)] min-h-[500px] sm:min-h-[560px]'
       }
     >
-      {/* Document Toolbar */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+      {/* Top Document Toolbar */}
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 py-2 flex items-center justify-between gap-2 shrink-0 relative">
         {/* Left: Back + Title */}
-        <div className="flex items-center gap-2.5 min-w-0 flex-1 sm:flex-initial">
+        <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial">
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center justify-center sm:justify-start gap-1.5 h-10 sm:h-9 px-2.5 sm:px-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap shrink-0"
+            aria-label="Back to Knowledge Library"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Library</span>
+            <span className="hidden xs:inline sm:inline">Library</span>
           </button>
 
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[180px] sm:max-w-[260px] lg:max-w-[320px]">
+            <h2 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate max-w-[150px] xs:max-w-[200px] sm:max-w-[240px] lg:max-w-[300px]">
               {book.title}
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums truncate">
-              Page {currentPage} of {totalPages} · {progressPercent}% read
+              Page {currentPage} of {totalPages} · {progressPercent}%
             </p>
           </div>
         </div>
 
-        {/* Center: Page Controls */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Center: Desktop/Tablet Page Controls */}
+        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => goToPage(currentPage - 1)}
             disabled={currentPage <= 1 || loadingDoc}
             className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-colors"
             aria-label="Previous page"
-            title="Previous page"
+            title="Previous page (Left Arrow)"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -889,22 +1197,22 @@ export default function PdfReader({
             disabled={currentPage >= totalPages || loadingDoc}
             className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-colors"
             aria-label="Next page"
-            title="Next page"
+            title="Next page (Right Arrow)"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Right: Zoom, Crop Diagram, Note, Bookmark, Dark Paper, Panel, Fullscreen */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div className="hidden sm:flex items-center gap-1 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 bg-slate-50 dark:bg-slate-950">
+        {/* Right: Zoom (desktop), Actions & Fullscreen */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <div className="hidden md:flex items-center gap-0.5 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 bg-slate-50 dark:bg-slate-950">
             <button
               type="button"
               onClick={handleZoomOut}
               disabled={loadingDoc}
               className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 transition-colors"
               aria-label="Zoom out"
-              title="Zoom out"
+              title="Zoom out (-)"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
@@ -917,23 +1225,34 @@ export default function PdfReader({
               disabled={loadingDoc}
               className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 transition-colors"
               aria-label="Zoom in"
-              title="Zoom in"
+              title="Zoom in (+)"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
-              onClick={() => setFitWidth((prev) => !prev)}
+              onClick={handleCycleFitMode}
               className={`h-8 px-2.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                fitWidth
+                fitMode !== 'manual'
                   ? 'bg-emerald-600 text-white'
                   : 'text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
               }`}
-              title="Fit PDF page to reader width"
+              title="Toggle Fit Width / Fit Page (0)"
             >
-              Fit Width
+              {fitMode === 'page' ? 'Fit Page' : 'Fit Width'}
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleRotatePage}
+            disabled={loadingDoc}
+            className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 transition-colors shrink-0"
+            aria-label="Rotate page 90 degrees"
+            title="Rotate page 90°"
+          >
+            <RotateCw className="w-4 h-4" />
+          </button>
 
           <button
             type="button"
@@ -942,7 +1261,7 @@ export default function PdfReader({
               setCropRect(null);
             }}
             disabled={loadingDoc}
-            className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`hidden sm:inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
               cropMode
                 ? 'bg-emerald-600 border-emerald-600 text-white'
                 : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
@@ -955,9 +1274,9 @@ export default function PdfReader({
 
           <button
             type="button"
-            onClick={handleCaptureSelectionForNote}
+            onClick={() => handleCaptureSelectionForNote()}
             disabled={loadingDoc}
-            className="inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 text-xs font-medium transition-colors whitespace-nowrap shrink-0"
+            className="hidden sm:inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 text-xs font-medium transition-colors whitespace-nowrap shrink-0"
             title="Highlight text or add note on this page"
           >
             <Highlighter className="w-4 h-4" />
@@ -968,7 +1287,7 @@ export default function PdfReader({
             type="button"
             onClick={handleToggleBookmarkCurrentPage}
             disabled={loadingDoc}
-            className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg border text-xs font-medium transition-colors shrink-0 ${
               currentPageBookmark
                 ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300'
                 : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
@@ -986,7 +1305,7 @@ export default function PdfReader({
           <button
             type="button"
             onClick={() => setDarkPaper((prev) => !prev)}
-            className={`inline-flex items-center justify-center w-9 h-9 rounded-lg border text-xs font-medium transition-colors shrink-0 ${
+            className={`hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg border text-xs font-medium transition-colors shrink-0 ${
               darkPaper
                 ? 'bg-slate-800 border-slate-700 text-emerald-300'
                 : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
@@ -999,13 +1318,17 @@ export default function PdfReader({
 
           <button
             type="button"
-            onClick={() => setPanelOpen((prev) => !prev)}
-            className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            onClick={() => {
+              setMobileToolsOpen(false);
+              setPanelOpen((prev) => !prev);
+            }}
+            className={`inline-flex items-center justify-center sm:justify-start gap-1.5 h-10 w-10 sm:w-auto sm:h-9 sm:px-2.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
               panelOpen
                 ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
                 : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
             }`}
             aria-label="Toggle search, notes, and bookmarks panel"
+            title="Search, Bookmarks & Notes"
           >
             <Search className="w-4 h-4" />
             <span className="hidden md:inline">Panel</span>
@@ -1014,7 +1337,7 @@ export default function PdfReader({
           <button
             type="button"
             onClick={handleToggleFullscreen}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 transition-colors shrink-0"
+            className="inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 transition-colors shrink-0"
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen reading mode'}
           >
@@ -1033,10 +1356,10 @@ export default function PdfReader({
 
       {/* Capture Success Banner */}
       {cropNotice && (
-        <div className="bg-emerald-500/10 border-b border-emerald-500/30 px-4 py-2 flex items-center justify-between gap-3 text-xs shrink-0">
-          <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-200 font-medium">
+        <div className="bg-emerald-500/10 border-b border-emerald-500/30 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
+          <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-200 font-medium min-w-0">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span>{cropNotice}</span>
+            <span className="truncate">{cropNotice}</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
@@ -1045,7 +1368,7 @@ export default function PdfReader({
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 text-white font-semibold"
             >
               <Images className="w-3.5 h-3.5" />
-              <span>View in Visual Library</span>
+              <span>Visual Library</span>
             </button>
             <button
               type="button"
@@ -1061,16 +1384,16 @@ export default function PdfReader({
 
       {/* Crop Mode Instruction Bar */}
       {cropMode && (
-        <div className="bg-emerald-600 text-white px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
+        <div className="bg-emerald-600 text-white px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
           <span>
-            Drag a box over any figure on Page {currentPage} to extract it into the Scientific Visual Library.
+            Drag with finger or cursor over any figure on Page {currentPage} to extract it.
           </span>
           <div className="flex items-center gap-2">
             {cropRect && cropRect.w >= 0.02 && cropRect.h >= 0.02 && (
               <button
                 type="button"
                 onClick={() => handleExportCropRegion()}
-                className="px-3 py-1 rounded-md bg-white text-emerald-700 font-semibold"
+                className="px-3 py-1.5 rounded-md bg-white text-emerald-700 font-semibold"
               >
                 Extract Selection
               </button>
@@ -1078,9 +1401,9 @@ export default function PdfReader({
             <button
               type="button"
               onClick={() => handleExportCropRegion({ x: 0, y: 0, w: 1, h: 1 })}
-              className="px-3 py-1 rounded-md bg-emerald-700 hover:bg-emerald-800 text-white font-medium"
+              className="px-3 py-1.5 rounded-md bg-emerald-700 hover:bg-emerald-800 text-white font-medium"
             >
-              Capture Full Page
+              Full Page
             </button>
             <button
               type="button"
@@ -1088,7 +1411,7 @@ export default function PdfReader({
                 setCropMode(false);
                 setCropRect(null);
               }}
-              className="px-2.5 py-1 rounded-md bg-emerald-700/70 hover:bg-emerald-800 text-white"
+              className="px-2.5 py-1.5 rounded-md bg-emerald-700/70 hover:bg-emerald-800 text-white"
             >
               Cancel
             </button>
@@ -1101,48 +1424,85 @@ export default function PdfReader({
         {/* PDF Page Canvas Viewport */}
         <div
           ref={stageContainerRef}
-          className={`flex-1 overflow-auto p-3 sm:p-6 flex flex-col items-center transition-colors ${
+          onTouchStart={handleStageTouchStart}
+          onTouchMove={handleStageTouchMove}
+          onTouchEnd={handleStageTouchEnd}
+          className={`flex-1 overflow-auto p-2 sm:p-6 flex flex-col items-center relative transition-colors ${
             darkPaper ? 'bg-slate-950' : 'bg-slate-200/75 dark:bg-slate-950'
           }`}
         >
-          {/* Mobile Zoom Row */}
-          <div className="sm:hidden w-full flex items-center justify-between gap-2 mb-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handleZoomOut}
-                className="p-1.5 rounded-md text-slate-700 dark:text-slate-300"
-                aria-label="Zoom out"
-              >
-                <ZoomOut className="w-4 h-4" />
-              </button>
-              <span className="text-xs font-medium tabular-nums text-slate-700 dark:text-slate-300 min-w-[40px] text-center">
-                {Math.round(effectiveScale * 100)}%
+          {/* Active Search Highlight Banner with Prev/Next Match Stepper */}
+          {activeHighlight.trim().length >= 2 && !loadingDoc && !docError && (
+            <div className="sticky top-1 z-20 mb-2.5 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50/95 dark:bg-slate-900/95 backdrop-blur-md border border-amber-500/40 shadow-sm text-xs text-amber-900 dark:text-amber-200 max-w-full">
+              <span className="truncate max-w-[160px] sm:max-w-xs">
+                Match: <strong>"{activeHighlight}"</strong>
               </span>
+              {matchingPagesOrdered.length > 1 && (
+                <div className="flex items-center gap-0.5 pl-1 border-l border-amber-500/30">
+                  <button
+                    type="button"
+                    onClick={() => stepSearchMatchPage(-1)}
+                    className="p-1 rounded hover:bg-amber-500/20"
+                    aria-label="Previous matching page"
+                    title="Previous matching page"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[11px] tabular-nums px-0.5">
+                    {Math.max(1, matchingPagesOrdered.indexOf(currentPage) + 1)}/{matchingPagesOrdered.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => stepSearchMatchPage(1)}
+                    className="p-1 rounded hover:bg-amber-500/20"
+                    aria-label="Next matching page"
+                    title="Next matching page"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
               <button
                 type="button"
-                onClick={handleZoomIn}
-                className="p-1.5 rounded-md text-slate-700 dark:text-slate-300"
-                aria-label="Zoom in"
+                onClick={() => setActiveHighlight('')}
+                className="p-1 rounded hover:bg-amber-500/20 ml-0.5"
+                aria-label="Clear highlight"
               >
-                <ZoomIn className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setFitWidth((prev) => !prev)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium ${
-                fitWidth
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1">
-                <Maximize className="w-3 h-3" />
-                Fit Width
-              </span>
-            </button>
-          </div>
+          )}
+
+          {/* Floating Selection Action Pill (Mobile & Desktop 1-tap Highlight / Copy) */}
+          {selectedPageText && !cropMode && (
+            <div className="sticky top-11 z-20 mb-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/95 dark:bg-slate-800/95 text-white shadow-lg border border-slate-700 text-xs">
+              <button
+                type="button"
+                onClick={() => handleCaptureSelectionForNote(selectedPageText)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold transition-colors"
+              >
+                <Highlighter className="w-3.5 h-3.5" />
+                <span>Highlight &amp; Note</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCopySelection}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-700 font-medium transition-colors"
+              >
+                {copiedSelection ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
           {loadingDoc ? (
             <div className="my-auto flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -1175,41 +1535,31 @@ export default function PdfReader({
               <p className="text-xs text-slate-600 dark:text-slate-400">{renderError}</p>
             </div>
           ) : (
-            <div className="relative flex flex-col items-center">
-              {activeHighlight.trim().length >= 2 && (
-                <div className="mb-3 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/35 text-xs text-amber-800 dark:text-amber-200">
-                  <span>
-                    Highlighting matches for <strong>"{activeHighlight}"</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveHighlight('')}
-                    className="p-0.5 rounded hover:bg-amber-500/20"
-                    aria-label="Clear highlight"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-
+            <div className="relative flex flex-col items-center my-auto">
               <div
                 ref={pageFrameRef}
-                className={`relative shadow-lg border border-slate-300/80 dark:border-slate-700/80 bg-white ${
-                  cropMode ? 'cursor-crosshair select-none' : 'select-text'
+                className={`relative shadow-lg border border-slate-300/80 dark:border-slate-700/80 bg-white origin-top transition-transform duration-75 ${
+                  cropMode ? 'cursor-crosshair select-none touch-none' : 'select-text'
                 }`}
-                style={
-                  darkPaper && !cropMode
+                style={{
+                  ...(darkPaper && !cropMode
                     ? { filter: 'invert(0.89) hue-rotate(180deg) contrast(0.95)' }
-                    : undefined
-                }
-                onMouseDown={(e) => {
+                    : undefined),
+                  ...(pinchPreviewRatio !== 1
+                    ? { transform: `scale(${pinchPreviewRatio})` }
+                    : undefined)
+                }}
+                onPointerDown={(e) => {
                   if (!cropMode) return;
+                  e.preventDefault();
+                  e.currentTarget.setPointerCapture(e.pointerId);
                   const pos = getNormalizedPointerPos(e);
                   setCropDragStart(pos);
                   setCropRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
                 }}
-                onMouseMove={(e) => {
+                onPointerMove={(e) => {
                   if (!cropMode || !cropDragStart) return;
+                  e.preventDefault();
                   const pos = getNormalizedPointerPos(e);
                   setCropRect({
                     x: Math.min(cropDragStart.x, pos.x),
@@ -1218,7 +1568,14 @@ export default function PdfReader({
                     h: Math.abs(pos.y - cropDragStart.y)
                   });
                 }}
-                onMouseUp={() => {
+                onPointerUp={(e) => {
+                  if (!cropMode) return;
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                  setCropDragStart(null);
+                }}
+                onPointerCancel={() => {
                   if (!cropMode) return;
                   setCropDragStart(null);
                 }}
@@ -1255,462 +1612,656 @@ export default function PdfReader({
           )}
         </div>
 
-        {/* Search, Bookmarks, Notes & Info Side Panel */}
+        {/* Search, Bookmarks, Notes & Info Panel (Bottom sheet on mobile, slide-over on tablet, docked on desktop) */}
         {panelOpen && (
-          <aside
-            aria-label="Book search, bookmarks, and notes panel"
-            className="w-full sm:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 absolute inset-y-0 right-0 lg:static z-20 shadow-xl lg:shadow-none"
-          >
-            {/* Panel Tabs */}
-            <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
-              <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex-1">
-                {[
-                  { id: 'search', label: 'Search', icon: Search },
-                  { id: 'bookmarks', label: `Marks (${bookmarks.length})`, icon: Bookmark },
-                  { id: 'notes', label: `Notes (${notes.length})`, icon: StickyNote },
-                  { id: 'info', label: 'Info', icon: Info }
-                ].map((tab) => {
-                  const Icon = tab.icon;
-                  const active = panelTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setPanelTab(tab.id as SidePanelTab)}
-                      className={`inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors whitespace-nowrap ${
-                        active
-                          ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
-                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span>{tab.label}</span>
-                    </button>
-                  );
-                })}
+          <>
+            {/* Backdrop on mobile/tablet */}
+            <div
+              onClick={() => setPanelOpen(false)}
+              className="fixed inset-0 bg-slate-950/50 backdrop-blur-[1px] z-20 lg:hidden"
+              aria-hidden="true"
+            />
+            <aside
+              aria-label="Book search, bookmarks, and notes panel"
+              className="fixed sm:absolute inset-x-0 bottom-0 sm:inset-y-0 sm:left-auto sm:right-0 sm:w-96 max-h-[78dvh] sm:max-h-none rounded-t-2xl sm:rounded-none bg-white dark:bg-slate-900 border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 lg:static z-30 shadow-2xl lg:shadow-none"
+            >
+              {/* Mobile Sheet Handle */}
+              <div className="sm:hidden pt-2 pb-0.5 flex justify-center shrink-0">
+                <span className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
               </div>
 
-              <button
-                type="button"
-                onClick={() => setPanelOpen(false)}
-                className="lg:hidden p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
-                aria-label="Close side panel"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+              {/* Panel Tabs */}
+              <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+                <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 flex-1">
+                  {[
+                    { id: 'search', label: 'Search', icon: Search },
+                    { id: 'bookmarks', label: `Marks (${bookmarks.length})`, icon: Bookmark },
+                    { id: 'notes', label: `Notes (${notes.length})`, icon: StickyNote },
+                    { id: 'info', label: 'Info', icon: Info }
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    const active = panelTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setPanelTab(tab.id as SidePanelTab)}
+                        className={`inline-flex items-center justify-center gap-1 px-1.5 py-2 sm:py-1.5 rounded-lg text-[11px] font-medium transition-colors whitespace-nowrap ${
+                          active
+                            ? 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 shadow-sm dark:shadow-none'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
 
-            {/* Panel Body */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {panelTab === 'search' && (
-                <>
-                  {!book.hasSearchableText ? (
-                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
-                      <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-sm font-semibold">
-                        <AlertTriangle className="w-4 h-4 shrink-0" />
-                        <span>Searchable Text Unavailable</span>
-                      </div>
-                      <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                        This PDF appears to be a scanned document or image-only file without embedded text. Full-book search is unavailable for scanned pages, though you can read, zoom, crop diagrams, and bookmark pages normally.
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        <div className="relative">
-                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                          <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search entire book (e.g. pharmacokinetics)..."
-                            className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-8 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                          />
-                          {searchQuery && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSearchQuery('');
-                                setActiveHighlight('');
-                              }}
-                              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                              aria-label="Clear book search"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                <button
+                  type="button"
+                  onClick={() => setPanelOpen(false)}
+                  className="lg:hidden p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+                  aria-label="Close side panel"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Panel Body */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {panelTab === 'search' && (
+                  <>
+                    {!book.hasSearchableText ? (
+                      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 text-sm font-semibold">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          <span>Searchable Text Unavailable</span>
                         </div>
-
-                        {searchQuery.trim().length > 0 && (
-                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-                            <span>
-                              {searchResults.length === 0
-                                ? 'No matching passages found'
-                                : `${searchResults.length} relevant ${
-                                    searchResults.length === 1 ? 'passage' : 'passages'
-                                  } ranked`}
-                            </span>
-                            {activeHighlight && (
-                              <button
-                                type="button"
-                                onClick={() => setActiveHighlight('')}
-                                className="text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
-                              >
-                                Clear highlight
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                          This PDF appears to be a scanned document or image-only file without embedded text. Full-book search is unavailable for scanned pages, though you can read, zoom, crop diagrams, and bookmark pages normally.
+                        </p>
                       </div>
-
-                      {searchQuery.trim().length < 2 ? (
-                        <div className="space-y-3">
-                          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                            Quick Pharmaceutical Concept Queries
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {PHARMACEUTICAL_SUGGESTIONS.map((term) => (
-                              <button
-                                key={term}
-                                type="button"
-                                onClick={() => setSearchQuery(term)}
-                                className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
-                              >
-                                {term}
-                              </button>
-                            ))}
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
-                            Searches across all {book.searchablePagesCount} indexed pages locally in your browser.
-                          </p>
-                        </div>
-                      ) : searchResults.length > 0 ? (
-                        <div className="space-y-3">
-                          {searchResults.map((match) => (
-                            <div
-                              key={match.id}
-                              className={`p-3.5 rounded-xl border transition-colors space-y-2.5 ${
-                                currentPage === match.pageNumber
-                                  ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/40'
-                                  : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2 text-xs">
-                                <span className="font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
-                                  Page {match.pageNumber}
-                                </span>
-                                <span className="text-slate-500 dark:text-slate-400 tabular-nums">
-                                  {match.matchCountOnPage}{' '}
-                                  {match.matchCountOnPage === 1 ? 'hit' : 'hits'}
-                                </span>
-                              </div>
-
-                              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed break-words">
-                                <span>{match.beforeContext}</span>
-                                <mark className="bg-amber-300/60 dark:bg-amber-500/35 text-slate-900 dark:text-amber-100 px-1 rounded font-semibold">
-                                  {match.matchedText}
-                                </mark>
-                                <span>{match.afterContext}</span>
-                              </p>
-
+                    ) : (
+                      <>
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              placeholder="Search entire book (e.g. pharmacokinetics)..."
+                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-8 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                            />
+                            {searchQuery && (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  goToPage(match.pageNumber, searchQuery);
-                                  if (window.innerWidth < 1024) {
-                                    setPanelOpen(false);
-                                  }
+                                  setSearchQuery('');
+                                  setActiveHighlight('');
                                 }}
-                                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 text-xs font-semibold text-emerald-700 dark:text-emerald-300 transition-colors"
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                                aria-label="Clear book search"
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>Open Page {match.pageNumber}</span>
+                                <X className="w-3.5 h-3.5" />
                               </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="py-10 text-center space-y-1.5">
-                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            No matches for "{searchQuery}"
-                          </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Try checking spelling or searching a shorter scientific root term.
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-
-              {panelTab === 'bookmarks' && (
-                <div className="space-y-4">
-                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Bookmark Current Page (Page {currentPage})
-                    </label>
-                    <input
-                      type="text"
-                      value={bookmarkLabel}
-                      onChange={(e) => setBookmarkLabel(e.target.value)}
-                      placeholder="Optional note (e.g. First-pass metabolism)"
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleToggleBookmarkCurrentPage}
-                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors"
-                    >
-                      {currentPageBookmark ? (
-                        <>
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Remove Page {currentPage} Bookmark</span>
-                        </>
-                      ) : (
-                        <>
-                          <Bookmark className="w-3.5 h-3.5" />
-                          <span>Save Bookmark</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {bookmarks.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                      No bookmarks saved for this book yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {bookmarks.map((bm) => (
-                        <div
-                          key={bm.id}
-                          className={`p-3 rounded-xl border transition-colors space-y-1.5 ${
-                            bm.pageNumber === currentPage
-                              ? 'bg-amber-500/10 border-amber-500/40'
-                              : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() => goToPage(bm.pageNumber)}
-                              className="text-left text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
-                            >
-                              Page {bm.pageNumber} · {bm.label}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteBookmark(bm.id)}
-                              className="p-1 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
-                              aria-label={`Remove bookmark on page ${bm.pageNumber}`}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            )}
                           </div>
-                          {bm.excerpt && (
-                            <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
-                              {bm.excerpt}
-                            </p>
+
+                          {searchQuery.trim().length > 0 && (
+                            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                              <span>
+                                {searchResults.length === 0
+                                  ? 'No matching passages found'
+                                  : `${searchResults.length} relevant ${
+                                      searchResults.length === 1 ? 'passage' : 'passages'
+                                    } ranked`}
+                              </span>
+                              {activeHighlight && (
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveHighlight('')}
+                                  className="text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+                                >
+                                  Clear highlight
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {panelTab === 'notes' && (
-                <div className="space-y-4">
-                  <form
-                    onSubmit={handleSaveNote}
-                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Highlight &amp; Study Note (Page {currentPage})
-                      </span>
+                        {searchQuery.trim().length < 2 ? (
+                          <div className="space-y-3">
+                            <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                              Quick Pharmaceutical Concept Queries
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {PHARMACEUTICAL_SUGGESTIONS.map((term) => (
+                                <button
+                                  key={term}
+                                  type="button"
+                                  onClick={() => setSearchQuery(term)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+                                >
+                                  {term}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
+                              Searches across all {book.searchablePagesCount} indexed pages locally in your browser.
+                            </p>
+                          </div>
+                        ) : searchResults.length > 0 ? (
+                          <div className="space-y-3">
+                            {searchResults.map((match) => (
+                              <div
+                                key={match.id}
+                                className={`p-3.5 rounded-xl border transition-colors space-y-2.5 ${
+                                  currentPage === match.pageNumber
+                                    ? 'bg-emerald-500/5 dark:bg-emerald-500/10 border-emerald-500/40'
+                                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                    Page {match.pageNumber}
+                                  </span>
+                                  <span className="text-slate-500 dark:text-slate-400 tabular-nums">
+                                    {match.matchCountOnPage}{' '}
+                                    {match.matchCountOnPage === 1 ? 'hit' : 'hits'}
+                                  </span>
+                                </div>
+
+                                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed break-words">
+                                  <span>{match.beforeContext}</span>
+                                  <mark className="bg-amber-300/60 dark:bg-amber-500/35 text-slate-900 dark:text-amber-100 px-1 rounded font-semibold">
+                                    {match.matchedText}
+                                  </mark>
+                                  <span>{match.afterContext}</span>
+                                </p>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    goToPage(match.pageNumber, searchQuery);
+                                    if (window.innerWidth < 1024) {
+                                      setPanelOpen(false);
+                                    }
+                                  }}
+                                  className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 text-xs font-semibold text-emerald-700 dark:text-emerald-300 transition-colors"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Open Page {match.pageNumber}</span>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="py-10 text-center space-y-1.5">
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                              No matches for "{searchQuery}"
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Try checking spelling or searching a shorter scientific root term.
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+
+                {panelTab === 'bookmarks' && (
+                  <div className="space-y-4">
+                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Bookmark Current Page (Page {currentPage})
+                      </label>
+                      <input
+                        type="text"
+                        value={bookmarkLabel}
+                        onChange={(e) => setBookmarkLabel(e.target.value)}
+                        placeholder="Optional note (e.g. First-pass metabolism)"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                      />
                       <button
                         type="button"
-                        onClick={handleCaptureSelectionForNote}
-                        className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                        onClick={handleToggleBookmarkCurrentPage}
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors"
                       >
-                        Pull PDF Selection
+                        {currentPageBookmark ? (
+                          <>
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remove Page {currentPage} Bookmark</span>
+                          </>
+                        ) : (
+                          <>
+                            <Bookmark className="w-3.5 h-3.5" />
+                            <span>Save Bookmark</span>
+                          </>
+                        )}
                       </button>
                     </div>
 
-                    <textarea
-                      rows={2}
-                      value={noteQuote}
-                      onChange={(e) => setNoteQuote(e.target.value)}
-                      placeholder="Select text on PDF page or paste a passage to highlight..."
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                    />
-
-                    <textarea
-                      rows={2}
-                      value={noteBody}
-                      onChange={(e) => setNoteBody(e.target.value)}
-                      placeholder="Study note or clinical correlation..."
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                    />
-
-                    <div className="flex items-center justify-between gap-2 pt-0.5">
-                      <div className="flex items-center gap-1.5">
-                        {(Object.keys(HIGHLIGHT_STYLES) as HighlightColor[]).map((col) => (
-                          <button
-                            key={col}
-                            type="button"
-                            onClick={() => setNoteColor(col)}
-                            aria-label={`Highlight color ${HIGHLIGHT_STYLES[col].label}`}
-                            className={`w-5 h-5 rounded-full ${HIGHLIGHT_STYLES[col].chip} border-2 transition-transform ${
-                              noteColor === col
-                                ? 'border-slate-900 dark:border-white scale-110'
-                                : 'border-transparent opacity-75'
+                    {bookmarks.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                        No bookmarks saved for this book yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {bookmarks.map((bm) => (
+                          <div
+                            key={bm.id}
+                            className={`p-3 rounded-xl border transition-colors space-y-1.5 ${
+                              bm.pageNumber === currentPage
+                                ? 'bg-amber-500/10 border-amber-500/40'
+                                : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
                             }`}
-                          />
-                        ))}
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={!noteQuote.trim() && !noteBody.trim()}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold"
-                      >
-                        Save Note
-                      </button>
-                    </div>
-                  </form>
-
-                  {notes.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                      Select any text on a PDF page and click Highlight to save passages and notes locally.
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {notes.map((entry) => (
-                        <div
-                          key={entry.id}
-                          className={`p-3 rounded-xl border space-y-1.5 ${
-                            entry.pageNumber === currentPage
-                              ? 'bg-emerald-500/5 border-emerald-500/40'
-                              : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() => goToPage(entry.pageNumber, entry.quote.slice(0, 40))}
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
-                            >
-                              <span
-                                className={`w-2.5 h-2.5 rounded-full ${HIGHLIGHT_STYLES[entry.color].chip}`}
-                              />
-                              <span>Page {entry.pageNumber}</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteNote(entry.id)}
-                              className="p-1 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
-                              aria-label="Delete study note"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  goToPage(bm.pageNumber);
+                                  if (window.innerWidth < 1024) setPanelOpen(false);
+                                }}
+                                className="text-left text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                              >
+                                Page {bm.pageNumber} · {bm.label}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBookmark(bm.id)}
+                                className="p-1.5 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
+                                aria-label={`Remove bookmark on page ${bm.pageNumber}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            {bm.excerpt && (
+                              <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
+                                {bm.excerpt}
+                              </p>
+                            )}
                           </div>
-                          {entry.quote && (
-                            <p className="text-xs italic text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
-                              "{entry.quote}"
-                            </p>
-                          )}
-                          {entry.note && (
-                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                              {entry.note}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {panelTab === 'info' && (
-                <div className="space-y-4 text-xs">
-                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
-                    <div className="flex items-center gap-2 text-slate-900 dark:text-white font-semibold text-sm">
-                      <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span className="truncate">{book.title}</span>
-                    </div>
-
-                    <div className="space-y-1.5 pt-1 border-t border-slate-200 dark:border-slate-800">
-                      <label className="block text-slate-500 dark:text-slate-400 font-medium">
-                        Linked B.Pharm Subject
-                      </label>
-                      <select
-                        value={book.department || 'all'}
-                        onChange={(e) => handleUpdateDepartment(e.target.value as BookDepartmentTag)}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs"
-                      >
-                        {(Object.keys(BOOK_DEPARTMENT_LABELS) as BookDepartmentTag[]).map((k) => (
-                          <option key={k} value={k}>
-                            {BOOK_DEPARTMENT_LABELS[k]}
-                          </option>
                         ))}
-                      </select>
-                    </div>
-
-                    <dl className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-slate-500 dark:text-slate-400">Original File</dt>
-                        <dd className="text-slate-900 dark:text-slate-200 font-medium truncate max-w-[190px]">
-                          {book.fileName}
-                        </dd>
                       </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-slate-500 dark:text-slate-400">File Size</dt>
-                        <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums">
-                          {formatBytes(book.fileSize)}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-slate-500 dark:text-slate-400">Total Pages</dt>
-                        <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums">
-                          {totalPages}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-slate-500 dark:text-slate-400">Search Index</dt>
-                        <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums">
-                          {book.hasSearchableText
-                            ? `${book.searchablePagesCount} / ${totalPages} pages`
-                            : 'No embedded text'}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-slate-500 dark:text-slate-400">Uploaded</dt>
-                        <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums">
-                          {formatDate(book.uploadedAt)}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-slate-500 dark:text-slate-400">Reading Progress</dt>
-                        <dd className="text-emerald-700 dark:text-emerald-400 font-semibold tabular-nums">
-                          Page {currentPage} of {totalPages} ({progressPercent}%)
-                        </dd>
-                      </div>
-                    </dl>
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
-          </aside>
+                )}
+
+                {panelTab === 'notes' && (
+                  <div className="space-y-4">
+                    <form
+                      onSubmit={handleSaveNote}
+                      className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Highlight &amp; Study Note (Page {currentPage})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCaptureSelectionForNote()}
+                          className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                        >
+                          Pull PDF Selection
+                        </button>
+                      </div>
+
+                      <textarea
+                        rows={2}
+                        value={noteQuote}
+                        onChange={(e) => setNoteQuote(e.target.value)}
+                        placeholder="Select text on PDF page or paste a passage to highlight..."
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                      />
+
+                      <textarea
+                        rows={2}
+                        value={noteBody}
+                        onChange={(e) => setNoteBody(e.target.value)}
+                        placeholder="Study note or clinical correlation..."
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                      />
+
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
+                        <div className="flex items-center gap-1.5">
+                          {(Object.keys(HIGHLIGHT_STYLES) as HighlightColor[]).map((col) => (
+                            <button
+                              key={col}
+                              type="button"
+                              onClick={() => setNoteColor(col)}
+                              aria-label={`Highlight color ${HIGHLIGHT_STYLES[col].label}`}
+                              className={`w-6 h-6 rounded-full ${HIGHLIGHT_STYLES[col].chip} border-2 transition-transform ${
+                                noteColor === col
+                                  ? 'border-slate-900 dark:border-white scale-110'
+                                  : 'border-transparent opacity-75'
+                              }`}
+                            />
+                          ))}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={!noteQuote.trim() && !noteBody.trim()}
+                          className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold"
+                        >
+                          Save Note
+                        </button>
+                      </div>
+                    </form>
+
+                    {notes.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                        Select any text on a PDF page and tap Highlight to save passages and notes locally.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {notes.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className={`p-3 rounded-xl border space-y-1.5 ${
+                              entry.pageNumber === currentPage
+                                ? 'bg-emerald-500/5 border-emerald-500/40'
+                                : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  goToPage(entry.pageNumber, entry.quote.slice(0, 40));
+                                  if (window.innerWidth < 1024) setPanelOpen(false);
+                                }}
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                              >
+                                <span
+                                  className={`w-2.5 h-2.5 rounded-full ${HIGHLIGHT_STYLES[entry.color].chip}`}
+                                />
+                                <span>Page {entry.pageNumber}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteNote(entry.id)}
+                                className="p-1.5 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
+                                aria-label="Delete study note"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            {entry.quote && (
+                              <p className="text-xs italic text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-800">
+                                "{entry.quote}"
+                              </p>
+                            )}
+                            {entry.note && (
+                              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                {entry.note}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {panelTab === 'info' && (
+                  <div className="space-y-4 text-xs">
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                      <div className="flex items-center gap-2 text-slate-900 dark:text-white font-semibold text-sm">
+                        <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span className="truncate">{book.title}</span>
+                      </div>
+
+                      <div className="space-y-1.5 pt-1 border-t border-slate-200 dark:border-slate-800">
+                        <label className="block text-slate-500 dark:text-slate-400 font-medium">
+                          Linked B.Pharm Subject
+                        </label>
+                        <select
+                          value={book.department || 'all'}
+                          onChange={(e) => handleUpdateDepartment(e.target.value as BookDepartmentTag)}
+                          className="w-full px-2.5 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs"
+                        >
+                          {(Object.keys(BOOK_DEPARTMENT_LABELS) as BookDepartmentTag[]).map((k) => (
+                            <option key={k} value={k}>
+                              {BOOK_DEPARTMENT_LABELS[k]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <dl className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-500 dark:text-slate-400">Original File</dt>
+                          <dd className="text-slate-900 dark:text-slate-200 font-medium truncate max-w-[190px]">
+                            {book.fileName}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-500 dark:text-slate-400">File Size</dt>
+                          <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums">
+                            {formatBytes(book.fileSize)}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-500 dark:text-slate-400">Total Pages</dt>
+                          <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums">
+                            {totalPages}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-500 dark:text-slate-400">Search Index</dt>
+                          <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums">
+                            {book.hasSearchableText
+                              ? `${book.searchablePagesCount} / ${totalPages} pages`
+                              : 'No embedded text'}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-500 dark:text-slate-400">Uploaded</dt>
+                          <dd className="text-slate-900 dark:text-slate-200 font-medium tabular-nums">
+                            {formatDate(book.uploadedAt)}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-slate-500 dark:text-slate-400">Reading Progress</dt>
+                          <dd className="text-emerald-700 dark:text-emerald-400 font-semibold tabular-nums">
+                            Page {currentPage} of {totalPages} ({progressPercent}%)
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </aside>
+          </>
         )}
+      </div>
+
+      {/* Persistent Mobile Thumb Dock (Hidden on sm+ where top bar has full controls) */}
+      <div className="sm:hidden bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-2.5 py-2 shrink-0 relative space-y-2">
+        {/* Popover Tools Drawer on Mobile */}
+        {mobileToolsOpen && (
+          <div className="grid grid-cols-2 gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                setCropMode((prev) => !prev);
+                setCropRect(null);
+                setMobileToolsOpen(false);
+              }}
+              disabled={loadingDoc}
+              className={`h-10 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                cropMode
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+              }`}
+            >
+              <Crop className="w-4 h-4" />
+              <span>{cropMode ? 'Cancel Crop' : 'Capture Diagram'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleCaptureSelectionForNote()}
+              disabled={loadingDoc}
+              className="h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5"
+            >
+              <Highlighter className="w-4 h-4" />
+              <span>Notes &amp; Highlights</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                handleRotatePage();
+                setMobileToolsOpen(false);
+              }}
+              disabled={loadingDoc}
+              className="h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5"
+            >
+              <RotateCw className="w-4 h-4" />
+              <span>Rotate 90° ({rotation}°)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setDarkPaper((prev) => !prev);
+                setMobileToolsOpen(false);
+              }}
+              className={`h-10 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                darkPaper
+                  ? 'bg-slate-800 border-slate-700 text-emerald-300'
+                  : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+              }`}
+            >
+              {darkPaper ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <span>{darkPaper ? 'Light Paper' : 'Night Paper'}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Quick Page Scrubber when > 2 pages */}
+        {totalPages > 2 && !loadingDoc && (
+          <div className="flex items-center gap-2 px-1">
+            <input
+              type="range"
+              min={1}
+              max={totalPages}
+              value={currentPage}
+              onChange={(e) => goToPage(Number(e.target.value))}
+              aria-label="Scrub through book pages"
+              className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none accent-emerald-600 cursor-pointer"
+            />
+          </div>
+        )}
+
+        {/* Primary Thumb Row */}
+        <div className="flex items-center justify-between gap-1.5">
+          {/* Page Nav */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => goToPage(currentPage - 1)}
+              disabled={currentPage <= 1 || loadingDoc}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-200 disabled:opacity-40"
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+
+            <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={pageInput}
+                onChange={(e) => setPageInput(e.target.value)}
+                onBlur={handlePageInputSubmit}
+                aria-label="Current page number"
+                className="w-11 h-10 text-center text-xs font-semibold tabular-nums rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+              />
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                /{totalPages}
+              </span>
+            </form>
+
+            <button
+              type="button"
+              onClick={() => goToPage(currentPage + 1)}
+              disabled={currentPage >= totalPages || loadingDoc}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-200 disabled:opacity-40"
+              aria-label="Next page"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Mobile Zoom & Fit */}
+          <div className="flex items-center gap-0.5 border border-slate-200 dark:border-slate-800 rounded-xl p-0.5 bg-slate-50 dark:bg-slate-950">
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              disabled={loadingDoc}
+              className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-slate-700 dark:text-slate-200"
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleCycleFitMode}
+              disabled={loadingDoc}
+              className={`h-9 px-2 rounded-lg text-[11px] font-semibold tabular-nums whitespace-nowrap ${
+                fitMode !== 'manual'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-slate-700 dark:text-slate-200'
+              }`}
+              title="Toggle Fit Width / Fit Page"
+            >
+              {fitMode === 'width'
+                ? 'Fit W'
+                : fitMode === 'page'
+                  ? 'Fit P'
+                  : `${Math.round(effectiveScale * 100)}%`}
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              disabled={loadingDoc}
+              className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-slate-700 dark:text-slate-200"
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Mobile Tools Menu Toggle */}
+          <button
+            type="button"
+            onClick={() => setMobileToolsOpen((prev) => !prev)}
+            className={`inline-flex items-center justify-center w-10 h-10 rounded-xl border transition-colors ${
+              mobileToolsOpen || cropMode
+                ? 'bg-emerald-600 border-emerald-600 text-white'
+                : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+            }`}
+            aria-label="Reader tools menu"
+            aria-expanded={mobileToolsOpen}
+          >
+            {mobileToolsOpen ? <X className="w-4 h-4" /> : <MoreHorizontal className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
 
       {/* Save Cropped Textbook Diagram Modal */}
       {cropModalOpen && capturedPreviewUrl && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
           onClick={() => !savingCrop && setCropModalOpen(false)}
           role="dialog"
           aria-modal="true"
@@ -1718,7 +2269,7 @@ export default function PdfReader({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+            className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 max-h-[90dvh] overflow-y-auto shadow-2xl"
           >
             <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
@@ -1727,7 +2278,7 @@ export default function PdfReader({
               <button
                 type="button"
                 onClick={() => !savingCrop && setCropModalOpen(false)}
-                className="p-1 text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-white"
                 aria-label="Close modal"
               >
                 <X className="w-4 h-4" />
