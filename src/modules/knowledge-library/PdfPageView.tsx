@@ -165,7 +165,6 @@ interface PdfPageViewProps {
   activeHighlight: string;
   shouldScrollToHit: boolean;
   pageNotes: BookHighlightNote[];
-  pinchPreviewRatio: number;
   registerWrapperRef: (pageNumber: number, el: HTMLDivElement | null) => void;
   registerCanvasRef: (pageNumber: number, el: HTMLCanvasElement | null) => void;
   onMeasureBaseSize: (pageNumber: number, unrotatedSize: PageSize) => void;
@@ -190,7 +189,6 @@ export const PdfPageView = React.memo(function PdfPageView({
   activeHighlight,
   shouldScrollToHit,
   pageNotes,
-  pinchPreviewRatio,
   registerWrapperRef,
   registerCanvasRef,
   onMeasureBaseSize,
@@ -202,10 +200,11 @@ export const PdfPageView = React.memo(function PdfPageView({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const cropDragActiveRef = useRef(false);
+  const hasBitmapRef = useRef(false);
 
   const [rendering, setRendering] = useState(false);
   const [renderError, setRenderError] = useState<string | null>(null);
-  const [renderedOnce, setRenderedOnce] = useState(false);
+  const [hasBitmap, setHasBitmap] = useState(false);
 
   const isSwapped = rotation === 90 || rotation === 270;
   const displayWidth = Math.max(
@@ -223,10 +222,11 @@ export const PdfPageView = React.memo(function PdfPageView({
     return () => registerCanvasRef(pageNumber, null);
   }, [pageNumber, registerCanvasRef, shouldRender]);
 
-  // Reset rendered flag when page leaves virtualization window
+  // Reset rendered bitmap ONLY when page is explicitly evicted from retention cache
   useEffect(() => {
     if (!shouldRender) {
-      setRenderedOnce(false);
+      hasBitmapRef.current = false;
+      setHasBitmap(false);
       setRendering(false);
       setRenderError(null);
       if (canvasRef.current) {
@@ -239,7 +239,8 @@ export const PdfPageView = React.memo(function PdfPageView({
     }
   }, [shouldRender]);
 
-  // Render HiDPI canvas + selectable TextLayer when inside virtualization window
+  // Double-buffered HiDPI canvas + selectable TextLayer render:
+  // Renders offscreen and atomically swaps into the visible canvas so zooming/moving never blanks out existing pages.
   useEffect(() => {
     if (!shouldRender || !pdfDoc) return;
 
@@ -248,10 +249,15 @@ export const PdfPageView = React.memo(function PdfPageView({
     let textLayerInstance: pdfjsLib.TextLayer | null = null;
     let activePageProxy: pdfjsLib.PDFPageProxy | null = null;
 
-    async function renderPage() {
-      const canvas = canvasRef.current;
+    // Slight debounce ONLY when re-rendering an already visible page during rapid wheel/button zoom
+    const debounceMs = hasBitmapRef.current ? 45 : 0;
+
+    const timerId = window.setTimeout(async () => {
+      if (cancelled) return;
+
+      const visibleCanvas = canvasRef.current;
       const textLayerDiv = textLayerRef.current;
-      if (!canvas || !textLayerDiv) return;
+      if (!visibleCanvas || !textLayerDiv) return;
 
       setRendering(true);
       setRenderError(null);
@@ -274,15 +280,18 @@ export const PdfPageView = React.memo(function PdfPageView({
         }
 
         const viewport = page.getViewport({ scale, rotation });
-        const outputScale = Math.min(window.devicePixelRatio || 1, 2.25);
+        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        const outputScale = Math.min(dpr, scale > 2 ? 1.5 : 2.25);
 
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        const targetW = Math.max(1, Math.floor(viewport.width * outputScale));
+        const targetH = Math.max(1, Math.floor(viewport.height * outputScale));
 
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
+        // Render onto an offscreen canvas first so visible page stays intact during zoom
+        const offscreen = document.createElement('canvas');
+        offscreen.width = targetW;
+        offscreen.height = targetH;
+        const offCtx = offscreen.getContext('2d');
+        if (!offCtx) {
           throw new Error('Unable to acquire 2D canvas context to render PDF page.');
         }
 
@@ -290,15 +299,26 @@ export const PdfPageView = React.memo(function PdfPageView({
           outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
 
         renderTask = page.render({
-          canvasContext: ctx,
+          canvasContext: offCtx,
           viewport,
           transform,
-          canvas
+          canvas: offscreen
         });
 
         await renderTask.promise;
         if (cancelled) return;
 
+        // Atomically swap completed crisp bitmap into the visible canvas
+        visibleCanvas.width = targetW;
+        visibleCanvas.height = targetH;
+        const visibleCtx = visibleCanvas.getContext('2d');
+        if (visibleCtx) {
+          visibleCtx.drawImage(offscreen, 0, 0);
+        }
+        hasBitmapRef.current = true;
+        setHasBitmap(true);
+
+        // Update TextLayer alignment to match exact viewport
         textLayerDiv.innerHTML = '';
         textLayerDiv.style.width = `${Math.floor(viewport.width)}px`;
         textLayerDiv.style.height = `${Math.floor(viewport.height)}px`;
@@ -319,7 +339,6 @@ export const PdfPageView = React.memo(function PdfPageView({
         if (cancelled) return;
 
         applyTextLayerHighlights(textLayerDiv, activeHighlight, pageNotes, shouldScrollToHit);
-        setRenderedOnce(true);
       } catch (err) {
         if (cancelled) return;
         const record = err as { name?: string };
@@ -337,12 +356,11 @@ export const PdfPageView = React.memo(function PdfPageView({
           setRendering(false);
         }
       }
-    }
-
-    renderPage();
+    }, debounceMs);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timerId);
       if (renderTask) {
         try {
           renderTask.cancel();
@@ -397,9 +415,6 @@ export const PdfPageView = React.memo(function PdfPageView({
           height: `${displayHeight}px`,
           ...(darkPaper && !cropMode
             ? { filter: 'invert(0.89) hue-rotate(180deg) contrast(0.95)' }
-            : undefined),
-          ...(pinchPreviewRatio !== 1
-            ? { transform: `scale(${pinchPreviewRatio})` }
             : undefined)
         }}
         className={`relative bg-white shadow-[0_6px_28px_-6px_rgba(15,23,42,0.22)] dark:shadow-[0_10px_30px_-8px_rgba(0,0,0,0.65)] border transition-shadow origin-top ${
@@ -445,7 +460,7 @@ export const PdfPageView = React.memo(function PdfPageView({
       >
         {shouldRender ? (
           <>
-            <canvas ref={canvasRef} className="block" />
+            <canvas ref={canvasRef} className="block w-full h-full" />
             <div
               ref={textLayerRef}
               className={`pdf-text-layer ${cropMode || panMode ? 'pointer-events-none' : ''}`}
@@ -475,8 +490,8 @@ export const PdfPageView = React.memo(function PdfPageView({
           </div>
         )}
 
-        {shouldRender && rendering && !renderedOnce && !renderError && (
-          <div className="absolute inset-0 bg-white/75 flex items-center justify-center pointer-events-none z-10">
+        {shouldRender && rendering && !hasBitmap && !renderError && (
+          <div className="absolute inset-0 bg-white/80 flex items-center justify-center pointer-events-none z-10">
             <div className="flex flex-col items-center gap-2 text-slate-500">
               <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
               <span className="text-xs font-medium tabular-nums">Rendering page {pageNumber}</span>
@@ -561,19 +576,28 @@ export const PdfThumbnailTile = React.memo(function PdfThumbnailTile({
         const scale = targetWidth / base.width;
         const viewport = page.getViewport({ scale, rotation });
 
-        canvas.width = Math.max(40, Math.floor(viewport.width));
-        canvas.height = Math.max(52, Math.floor(viewport.height));
+        const offscreen = document.createElement('canvas');
+        offscreen.width = Math.max(40, Math.floor(viewport.width));
+        offscreen.height = Math.max(52, Math.floor(viewport.height));
 
-        const ctx = canvas.getContext('2d');
+        const ctx = offscreen.getContext('2d');
         if (!ctx) return;
 
         renderTask = page.render({
           canvasContext: ctx,
           viewport,
-          canvas
+          canvas: offscreen
         });
         await renderTask.promise;
-        if (!cancelled) setLoaded(true);
+        if (cancelled) return;
+
+        canvas.width = offscreen.width;
+        canvas.height = offscreen.height;
+        const visibleCtx = canvas.getContext('2d');
+        if (visibleCtx) {
+          visibleCtx.drawImage(offscreen, 0, 0);
+        }
+        setLoaded(true);
       } catch {
         // ignore thumbnail cancellation errors
       } finally {

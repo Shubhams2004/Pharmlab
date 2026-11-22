@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -98,6 +105,26 @@ interface PdfOutlineNode {
 }
 
 const ZOOM_PRESETS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5];
+const MAX_RETAINED_PAGES = 24;
+
+interface SavedReaderViewState {
+  viewMode?: ViewMode;
+  fitMode?: FitMode;
+  manualScale?: number;
+  rotation?: 0 | 90 | 180 | 270;
+  darkPaper?: boolean;
+}
+
+function readSavedReaderState(bookId: string): SavedReaderViewState | null {
+  try {
+    const raw = window.localStorage.getItem(`pharmalab_pdf_view_${bookId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SavedReaderViewState;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -133,6 +160,7 @@ export default function PdfReader({
   jumpNonce
 }: PdfReaderProps) {
   const { openVisualLibrary, setWorkspaceSection, preferences } = useLibraryNavigation();
+  const savedState = useMemo(() => readSavedReaderState(book.id), [book.id]);
 
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [outlineItems, setOutlineItems] = useState<PdfOutlineNode[]>([]);
@@ -151,23 +179,37 @@ export default function PdfReader({
   );
 
   // Full viewer modes: continuous scroll vs single page, select vs free hand-pan
-  const [viewMode, setViewMode] = useState<ViewMode>('continuous');
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    () => savedState?.viewMode || 'continuous'
+  );
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('select');
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isDraggingPan, setIsDraggingPan] = useState(false);
 
   // Zoom, Fit & Rotation
-  const [fitMode, setFitMode] = useState<FitMode>(() => preferences.defaultPdfFit || 'width');
-  const [manualScale, setManualScale] = useState(1.15);
-  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [fitMode, setFitMode] = useState<FitMode>(
+    () => savedState?.fitMode || preferences.defaultPdfFit || 'width'
+  );
+  const [manualScale, setManualScale] = useState<number>(() =>
+    typeof savedState?.manualScale === 'number' &&
+    savedState.manualScale >= 0.35 &&
+    savedState.manualScale <= 3.5
+      ? savedState.manualScale
+      : 1.15
+  );
+  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(
+    () => savedState?.rotation || 0
+  );
   const [stageSize, setStageSize] = useState({ width: 820, height: 640 });
   const [pinchPreviewRatio, setPinchPreviewRatio] = useState(1);
+  const [pinchOrigin, setPinchOrigin] = useState<string>('50% 0%');
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
 
-  // Per-page dimensions + virtualization state
+  // Per-page dimensions + sticky page retention state
   const [defaultPageSize, setDefaultPageSize] = useState<PageSize>({ width: 612, height: 792 });
   const [pageSizes, setPageSizes] = useState<Record<number, PageSize>>({});
   const [visiblePages, setVisiblePages] = useState<Set<number>>(() => new Set([1]));
+  const [retainedPages, setRetainedPages] = useState<Set<number>>(() => new Set([1]));
 
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelTab, setPanelTab] = useState<SidePanelTab>('search');
@@ -209,7 +251,7 @@ export default function PdfReader({
   const [savingCrop, setSavingCrop] = useState(false);
   const [cropNotice, setCropNotice] = useState<string | null>(null);
 
-  const [darkPaper, setDarkPaper] = useState(false);
+  const [darkPaper, setDarkPaper] = useState<boolean>(() => Boolean(savedState?.darkPaper));
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const readerRootRef = useRef<HTMLDivElement | null>(null);
@@ -217,17 +259,19 @@ export default function PdfReader({
   const zoomMenuRef = useRef<HTMLDivElement | null>(null);
   const pageWrapperRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const pageCanvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const stageSizeRef = useRef({ width: 820, height: 640 });
   const onBookProgressChangeRef = useRef(onBookProgressChange);
   onBookProgressChangeRef.current = onBookProgressChange;
 
-  // Scroll synchronization & jump guards
+  // Scroll synchronization & exact page-relative zoom anchor
   const suppressScrollSyncUntilRef = useRef<number>(0);
   const pendingInitialScrollPageRef = useRef<number | null>(null);
-  const wheelFocalAnchorRef = useRef<{
-    ratioX: number;
-    ratioY: number;
-    offsetX: number;
-    offsetY: number;
+  const viewportAnchorRef = useRef<{
+    pageNumber: number;
+    relX: number;
+    relY: number;
+    screenOffsetX: number;
+    screenOffsetY: number;
   } | null>(null);
 
   // Panning gesture state
@@ -253,7 +297,9 @@ export default function PdfReader({
     startDist: number;
     startScale: number;
     ratio: number;
-  }>({ active: false, startDist: 0, startScale: 1, ratio: 1 });
+    midX: number;
+    midY: number;
+  }>({ active: false, startDist: 0, startScale: 1, ratio: 1, midX: 0, midY: 0 });
 
   const swipeStateRef = useRef<{
     active: boolean;
@@ -271,11 +317,30 @@ export default function PdfReader({
   const totalPages = pdfDoc?.numPages || book.pageCount || 1;
   const effectivePanMode = !cropMode && (interactionMode === 'pan' || isSpacePressed);
 
-  // Compute effective scale from fit mode, container stage dimensions, and current page aspect
-  const activeBaseSize = pageSizes[currentPage] || defaultPageSize;
+  // Persist user's per-book viewer configuration (zoom, fit, scroll mode, rotation, night paper)
+  useEffect(() => {
+    try {
+      const payload: SavedReaderViewState = {
+        viewMode,
+        fitMode,
+        manualScale,
+        rotation,
+        darkPaper
+      };
+      window.localStorage.setItem(`pharmalab_pdf_view_${book.id}`, JSON.stringify(payload));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [book.id, viewMode, fitMode, manualScale, rotation, darkPaper]);
+
+  // Compute effective scale stably (avoid re-scaling all pages mid-scroll in continuous mode)
+  const fitReferenceSize =
+    viewMode === 'continuous'
+      ? defaultPageSize
+      : pageSizes[currentPage] || defaultPageSize;
   const isSwappedRotation = rotation === 90 || rotation === 270;
-  const rotatedBaseWidth = isSwappedRotation ? activeBaseSize.height : activeBaseSize.width;
-  const rotatedBaseHeight = isSwappedRotation ? activeBaseSize.width : activeBaseSize.height;
+  const rotatedBaseWidth = isSwappedRotation ? fitReferenceSize.height : fitReferenceSize.width;
+  const rotatedBaseHeight = isSwappedRotation ? fitReferenceSize.width : fitReferenceSize.height;
 
   const effectiveScale = useMemo(() => {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -285,12 +350,12 @@ export default function PdfReader({
     const availableHeight = Math.max(240, stageSize.height - verticalPadding);
 
     if (fitMode === 'width') {
-      return Math.max(0.35, Math.min(3.0, availableWidth / rotatedBaseWidth));
+      return Math.max(0.35, Math.min(3.5, availableWidth / rotatedBaseWidth));
     }
     if (fitMode === 'page') {
       const widthRatio = availableWidth / rotatedBaseWidth;
       const heightRatio = availableHeight / rotatedBaseHeight;
-      return Math.max(0.35, Math.min(3.0, Math.min(widthRatio, heightRatio)));
+      return Math.max(0.35, Math.min(3.5, Math.min(widthRatio, heightRatio)));
     }
     return manualScale;
   }, [fitMode, manualScale, rotatedBaseWidth, rotatedBaseHeight, stageSize.width, stageSize.height]);
@@ -471,6 +536,7 @@ export default function PdfReader({
         setCurrentPage(startPage);
         setPageInput(String(startPage));
         setVisiblePages(new Set([startPage]));
+        setRetainedPages(new Set([startPage]));
         if (startPage > 1) {
           pendingInitialScrollPageRef.current = startPage;
         }
@@ -495,6 +561,51 @@ export default function PdfReader({
     };
   }, [book.id]);
 
+  // Capture exact page-relative focal point before any zoom, fit-mode, rotation, or container resize
+  const captureViewportAnchor = useCallback(
+    (clientX?: number, clientY?: number) => {
+      const stage = stageContainerRef.current;
+      if (!stage || loadingDoc || !pdfDoc) return;
+
+      const sRect = stage.getBoundingClientRect();
+      if (sRect.width === 0 || sRect.height === 0) return;
+
+      const focalX =
+        typeof clientX === 'number' ? clientX : sRect.left + sRect.width / 2;
+      const focalY =
+        typeof clientY === 'number' ? clientY : sRect.top + sRect.height / 2;
+
+      let bestPage = currentPage;
+      let bestDist = Number.POSITIVE_INFINITY;
+      let bestRect: DOMRect | null = null;
+
+      pageWrapperRefs.current.forEach((el, pageNum) => {
+        const rect = el.getBoundingClientRect();
+        let dist = 0;
+        if (focalY < rect.top) dist = rect.top - focalY;
+        else if (focalY > rect.bottom) dist = focalY - rect.bottom;
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestPage = pageNum;
+          bestRect = rect;
+        }
+      });
+
+      const targetRect =
+        bestRect || pageWrapperRefs.current.get(currentPage)?.getBoundingClientRect();
+      if (!targetRect || targetRect.width === 0 || targetRect.height === 0) return;
+
+      viewportAnchorRef.current = {
+        pageNumber: bestPage,
+        relX: (focalX - targetRect.left) / targetRect.width,
+        relY: (focalY - targetRect.top) / targetRect.height,
+        screenOffsetX: focalX - sRect.left,
+        screenOffsetY: focalY - sRect.top
+      };
+    },
+    [loadingDoc, pdfDoc, currentPage]
+  );
+
   // Execute pending scroll once pages mount after initial open / deep link / mode toggle
   useEffect(() => {
     if (loadingDoc || !pdfDoc || viewMode !== 'continuous') return;
@@ -509,23 +620,30 @@ export default function PdfReader({
     return () => window.clearTimeout(timer);
   }, [loadingDoc, pdfDoc, viewMode, scrollToPageFrame]);
 
-  // Maintain cursor focal position after smooth Ctrl+Wheel zoom
-  useEffect(() => {
-    const anchor = wheelFocalAnchorRef.current;
+  // Synchronously restore exact focal viewport position BEFORE browser paint on scale / rotation changes
+  useLayoutEffect(() => {
+    const anchor = viewportAnchorRef.current;
     const stage = stageContainerRef.current;
-    if (!anchor || !stage) return;
+    if (!anchor || !stage || loadingDoc) return;
 
-    wheelFocalAnchorRef.current = null;
-    requestAnimationFrame(() => {
-      const nextScrollLeft = anchor.ratioX * stage.scrollWidth - anchor.offsetX;
-      const nextScrollTop = anchor.ratioY * stage.scrollHeight - anchor.offsetY;
-      stage.scrollTo({
-        left: Math.max(0, nextScrollLeft),
-        top: Math.max(0, nextScrollTop),
-        behavior: 'auto'
-      });
-    });
-  }, [effectiveScale]);
+    const wrapper = pageWrapperRefs.current.get(anchor.pageNumber);
+    viewportAnchorRef.current = null;
+    if (!wrapper) return;
+
+    const sRect = stage.getBoundingClientRect();
+    const wRect = wrapper.getBoundingClientRect();
+    const wrapperLeftInScroll = wRect.left - sRect.left + stage.scrollLeft;
+    const wrapperTopInScroll = wRect.top - sRect.top + stage.scrollTop;
+
+    const nextLeft =
+      wrapperLeftInScroll + anchor.relX * wRect.width - anchor.screenOffsetX;
+    const nextTop =
+      wrapperTopInScroll + anchor.relY * wRect.height - anchor.screenOffsetY;
+
+    suppressScrollSyncUntilRef.current = Date.now() + 240;
+    stage.scrollLeft = Math.max(0, nextLeft);
+    stage.scrollTop = Math.max(0, nextTop);
+  }, [effectiveScale, rotation, viewMode, loadingDoc]);
 
   // Revoke crop preview object URL on unmount/change
   useEffect(() => {
@@ -563,12 +681,18 @@ export default function PdfReader({
     const updateSize = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;
-      if (w > 0 && h > 0) {
-        setStageSize((prev) =>
-          Math.abs(prev.width - w) > 2 || Math.abs(prev.height - h) > 2
-            ? { width: w, height: h }
-            : prev
-        );
+      if (
+        w > 0 &&
+        h > 0 &&
+        (Math.abs(stageSizeRef.current.width - w) > 2 ||
+          Math.abs(stageSizeRef.current.height - h) > 2)
+      ) {
+        if (fitMode !== 'manual' && !viewportAnchorRef.current) {
+          captureViewportAnchor();
+        }
+        const nextSize = { width: w, height: h };
+        stageSizeRef.current = nextSize;
+        setStageSize(nextSize);
       }
     };
     updateSize();
@@ -581,7 +705,7 @@ export default function PdfReader({
 
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
-  }, [panelOpen, isFullscreen]);
+  }, [panelOpen, isFullscreen, fitMode, captureViewportAnchor]);
 
   // Sync native fullscreen change events
   useEffect(() => {
@@ -629,7 +753,7 @@ export default function PdfReader({
     };
   }, [cropMode, effectivePanMode]);
 
-  // Virtualization observer: track visible pages in Continuous Scroll mode
+  // Virtualization observer: persistent across zoom/rotation so zooming never resets visiblePages
   useEffect(() => {
     if (loadingDoc || !pdfDoc || viewMode !== 'continuous') return;
     const stage = stageContainerRef.current;
@@ -659,7 +783,7 @@ export default function PdfReader({
       },
       {
         root: stage,
-        rootMargin: '420px 0px',
+        rootMargin: '1100px 0px',
         threshold: [0, 0.05]
       }
     );
@@ -669,7 +793,47 @@ export default function PdfReader({
     });
 
     return () => observer.disconnect();
-  }, [loadingDoc, pdfDoc, viewMode, totalPages, effectiveScale, rotation]);
+  }, [loadingDoc, pdfDoc, viewMode, totalPages]);
+
+  // Sticky page retention cache: keeps up to MAX_RETAINED_PAGES visited/adjacent pages live in memory
+  useEffect(() => {
+    if (loadingDoc || !pdfDoc) return;
+    if (viewMode === 'single') {
+      setRetainedPages(new Set([currentPage]));
+      return;
+    }
+
+    setRetainedPages((prev) => {
+      const next = new Set(prev);
+      visiblePages.forEach((p) => next.add(p));
+      for (let d = -3; d <= 3; d++) {
+        const candidate = currentPage + d;
+        if (candidate >= 1 && candidate <= totalPages) {
+          next.add(candidate);
+        }
+      }
+
+      if (next.size > MAX_RETAINED_PAGES) {
+        const sortedByDistance = Array.from(next).sort((a, b) => {
+          const aProtected = visiblePages.has(a) || Math.abs(a - currentPage) <= 3;
+          const bProtected = visiblePages.has(b) || Math.abs(b - currentPage) <= 3;
+          if (aProtected && !bProtected) return -1;
+          if (!aProtected && bProtected) return 1;
+          return Math.abs(a - currentPage) - Math.abs(b - currentPage);
+        });
+        const pruned = new Set(sortedByDistance.slice(0, MAX_RETAINED_PAGES));
+        if (pruned.size === prev.size && Array.from(pruned).every((p) => prev.has(p))) {
+          return prev;
+        }
+        return pruned;
+      }
+
+      if (next.size === prev.size && Array.from(next).every((p) => prev.has(p))) {
+        return prev;
+      }
+      return next;
+    });
+  }, [loadingDoc, pdfDoc, viewMode, totalPages, currentPage, visiblePages]);
 
   // Update active currentPage based on free vertical scrolling in Continuous mode
   const handleStageScroll = useCallback(() => {
@@ -687,7 +851,6 @@ export default function PdfReader({
 
     pageWrapperRefs.current.forEach((el, pageNum) => {
       const rect = el.getBoundingClientRect();
-      // If focal line sits directly inside this page, distance = 0
       let dist = 0;
       if (focalY < rect.top) {
         dist = rect.top - focalY;
@@ -717,7 +880,7 @@ export default function PdfReader({
     return () => window.clearTimeout(timer);
   }, [book.id, currentPage, pdfDoc]);
 
-  // Ctrl/Cmd + Mouse Wheel smooth zoom around cursor focal point
+  // Ctrl/Cmd + Mouse Wheel smooth zoom anchored around cursor position
   useEffect(() => {
     const stage = stageContainerRef.current;
     if (!stage) return;
@@ -726,14 +889,6 @@ export default function PdfReader({
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
 
-      const stageRect = stage.getBoundingClientRect();
-      const offsetX = e.clientX - stageRect.left;
-      const offsetY = e.clientY - stageRect.top;
-      const ratioX =
-        stage.scrollWidth > 0 ? (stage.scrollLeft + offsetX) / stage.scrollWidth : 0.5;
-      const ratioY =
-        stage.scrollHeight > 0 ? (stage.scrollTop + offsetY) / stage.scrollHeight : 0.5;
-
       const factor = Math.exp(-e.deltaY * 0.0022);
       const next = Math.max(
         0.35,
@@ -741,7 +896,7 @@ export default function PdfReader({
       );
 
       if (Math.abs(next - effectiveScale) >= 0.01) {
-        wheelFocalAnchorRef.current = { ratioX, ratioY, offsetX, offsetY };
+        captureViewportAnchor(e.clientX, e.clientY);
         setFitMode('manual');
         setManualScale(next);
       }
@@ -749,7 +904,7 @@ export default function PdfReader({
 
     stage.addEventListener('wheel', onWheel, { passive: false });
     return () => stage.removeEventListener('wheel', onWheel);
-  }, [effectiveScale]);
+  }, [effectiveScale, captureViewportAnchor]);
 
   const handleOpenOutlineNode = useCallback(
     async (node: PdfOutlineNode, key: string) => {
@@ -801,16 +956,19 @@ export default function PdfReader({
         goToPage(currentPage - 1);
       } else if ((e.key === '+' || e.key === '=') && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
+        captureViewportAnchor();
         const next = Math.min(3.5, Number((effectiveScale + 0.15).toFixed(2)));
         setFitMode('manual');
         setManualScale(next);
       } else if (e.key === '-' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
+        captureViewportAnchor();
         const next = Math.max(0.35, Number((effectiveScale - 0.15).toFixed(2)));
         setFitMode('manual');
         setManualScale(next);
       } else if (e.key === '0' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
+        captureViewportAnchor();
         setFitMode('width');
       } else if ((e.key === 'h' || e.key === 'H') && !e.metaKey && !e.ctrlKey) {
         setInteractionMode((prev) => (prev === 'pan' ? 'select' : 'pan'));
@@ -843,7 +1001,16 @@ export default function PdfReader({
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, [currentPage, totalPages, goToPage, isFullscreen, effectiveScale, cropMode, zoomMenuOpen]);
+  }, [
+    currentPage,
+    totalPages,
+    goToPage,
+    isFullscreen,
+    effectiveScale,
+    cropMode,
+    zoomMenuOpen,
+    captureViewportAnchor
+  ]);
 
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -856,18 +1023,21 @@ export default function PdfReader({
   };
 
   const handleZoomIn = () => {
+    captureViewportAnchor();
     const next = Math.min(3.5, Number((effectiveScale + 0.2).toFixed(2)));
     setFitMode('manual');
     setManualScale(next);
   };
 
   const handleZoomOut = () => {
+    captureViewportAnchor();
     const next = Math.max(0.35, Number((effectiveScale - 0.2).toFixed(2)));
     setFitMode('manual');
     setManualScale(next);
   };
 
   const handleSelectZoomPreset = (preset: 'width' | 'page' | number) => {
+    captureViewportAnchor();
     if (preset === 'width' || preset === 'page') {
       setFitMode(preset);
     } else {
@@ -878,10 +1048,12 @@ export default function PdfReader({
   };
 
   const handleCycleFitMode = () => {
+    captureViewportAnchor();
     setFitMode((prev) => (prev === 'width' ? 'page' : 'width'));
   };
 
   const handleRotatePage = () => {
+    captureViewportAnchor();
     setRotation((prev) => ((prev + 90) % 360) as 0 | 90 | 180 | 270);
   };
 
@@ -1010,11 +1182,19 @@ export default function PdfReader({
       setIsDraggingPan(false);
       const dist = getTouchDistance(e.touches[0], e.touches[1]);
       if (dist > 10) {
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const sRect = stageContainerRef.current?.getBoundingClientRect();
+        if (sRect) {
+          setPinchOrigin(`${midX - sRect.left}px ${midY - sRect.top}px`);
+        }
         pinchStateRef.current = {
           active: true,
           startDist: dist,
           startScale: effectiveScale,
-          ratio: 1
+          ratio: 1,
+          midX,
+          midY
         };
       }
       return;
@@ -1036,6 +1216,8 @@ export default function PdfReader({
 
     if (e.touches.length === 2 && pinchStateRef.current.active) {
       const dist = getTouchDistance(e.touches[0], e.touches[1]);
+      pinchStateRef.current.midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      pinchStateRef.current.midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       if (pinchStateRef.current.startDist > 0) {
         const rawRatio = dist / pinchStateRef.current.startDist;
         const clampedTargetScale = Math.max(
@@ -1064,9 +1246,11 @@ export default function PdfReader({
         0.35,
         Math.min(3.5, Number((pinchStateRef.current.startScale * pinchStateRef.current.ratio).toFixed(2)))
       );
+      const { midX, midY } = pinchStateRef.current;
       pinchStateRef.current.active = false;
       setPinchPreviewRatio(1);
       if (Math.abs(finalScale - effectiveScale) > 0.04) {
+        captureViewportAnchor(midX, midY);
         setFitMode('manual');
         setManualScale(finalScale);
       }
@@ -1110,7 +1294,7 @@ export default function PdfReader({
       }
       swipeStateRef.current.active = false;
 
-      // Double-tap on mobile to zoom in / reset to Fit Width
+      // Double-tap on mobile to zoom in / reset to Fit Width around tap position
       const now = Date.now();
       const dtTap = now - lastTapRef.current.time;
       const distTap = Math.hypot(
@@ -1119,6 +1303,7 @@ export default function PdfReader({
       );
       if (dtTap > 40 && dtTap < 290 && distTap < 28 && !hasSelection && !effectivePanMode) {
         lastTapRef.current = { time: 0, x: 0, y: 0 };
+        captureViewportAnchor(t.clientX, t.clientY);
         if (fitMode === 'manual' && manualScale > 1.35) {
           setFitMode('width');
         } else {
@@ -1398,10 +1583,10 @@ export default function PdfReader({
   const shouldRenderPage = useCallback(
     (pageNumber: number) => {
       if (viewMode === 'single') return pageNumber === currentPage;
-      if (Math.abs(pageNumber - currentPage) <= 2) return true;
-      return visiblePages.has(pageNumber);
+      if (Math.abs(pageNumber - currentPage) <= 3) return true;
+      return visiblePages.has(pageNumber) || retainedPages.has(pageNumber);
     },
-    [viewMode, currentPage, visiblePages]
+    [viewMode, currentPage, visiblePages, retainedPages]
   );
 
   const progressPercent = Math.round((currentPage / totalPages) * 100);
@@ -1955,7 +2140,15 @@ export default function PdfReader({
               </div>
             ) : pdfDoc ? (
               <div
-                className={`min-w-full w-max mx-auto flex flex-col items-center ${
+                style={
+                  pinchPreviewRatio !== 1
+                    ? {
+                        transform: `scale(${pinchPreviewRatio})`,
+                        transformOrigin: pinchOrigin
+                      }
+                    : undefined
+                }
+                className={`min-w-full w-max mx-auto flex flex-col items-center transition-transform duration-75 ${
                   viewMode === 'continuous'
                     ? 'gap-4 sm:gap-6 pb-14'
                     : 'min-h-full justify-center pb-10'
@@ -1979,7 +2172,6 @@ export default function PdfReader({
                     activeHighlight={activeHighlight}
                     shouldScrollToHit={searchScrollTargetPage === pageNum}
                     pageNotes={notesByPage.get(pageNum) || EMPTY_NOTES}
-                    pinchPreviewRatio={pageNum === currentPage ? pinchPreviewRatio : 1}
                     registerWrapperRef={registerWrapperRef}
                     registerCanvasRef={registerCanvasRef}
                     onMeasureBaseSize={handleMeasureBaseSize}
