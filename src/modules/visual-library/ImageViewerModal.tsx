@@ -170,7 +170,7 @@ export default function ImageViewerModal({
       observer?.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [item, infoOpen, mobilePanelExpanded, isFullscreen]);
+  }, [item, infoOpen, mobileViewMode, isFullscreen]);
 
   useEffect(() => {
     if (!item) return;
