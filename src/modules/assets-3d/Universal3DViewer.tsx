@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { unzipSync } from 'fflate';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { buildMacromoleculeGroupFromPdb, buildMolecularGroupFromSdf } from './molecularLoaders';
 import {
   AlertTriangle,
   Box,
@@ -551,10 +554,13 @@ export default function Universal3DViewer({
 
           const posAttr = mesh.geometry?.getAttribute('position');
           if (posAttr) {
-            totalVertices += posAttr.count;
-            totalTriangles += mesh.geometry.index
-              ? mesh.geometry.index.count / 3
-              : posAttr.count / 3;
+            const instCount = (mesh as THREE.InstancedMesh).isInstancedMesh
+              ? (mesh as THREE.InstancedMesh).count
+              : 1;
+            totalVertices += posAttr.count * instCount;
+            totalTriangles +=
+              (mesh.geometry.index ? mesh.geometry.index.count / 3 : posAttr.count / 3) *
+              instCount;
           }
 
           const meshBox = new THREE.Box3().setFromObject(mesh);
@@ -614,7 +620,7 @@ export default function Universal3DViewer({
           : 'Failed to parse 3D model file.';
       const helpfulMsg =
         modelFormat === 'gltf'
-          ? `${msg} Note: Multi-file .gltf assemblies that reference external .bin or texture files must be imported as a self-contained .glb binary.`
+          ? `${msg} Tip: If this .gltf references external .bin or texture files, upload the complete .ZIP archive (or select all files together) in "Upload Local File".`
           : msg;
       setLoadingState({
         status: 'error',
@@ -633,89 +639,248 @@ export default function Universal3DViewer({
       }
     };
 
-    if (modelFormat === 'glb' || modelFormat === 'gltf') {
-      const draco = new DRACOLoader();
-      draco.setDecoderPath('./draco/');
-      const loader = new GLTFLoader();
-      loader.setDRACOLoader(draco);
-      loader.load(
-        modelUrl,
-        (gltf) => {
-          draco.dispose();
-          normalizeAndMount(gltf.scene);
-        },
-        onProgress,
-        (err) => {
-          draco.dispose();
-          handleLoadError(err);
+    const extraRevokeUrls: string[] = [];
+
+    const loadFormatFromUrl = (
+      targetUrl: string,
+      fmt: ModelFormat,
+      manager?: THREE.LoadingManager,
+      mtlUrl?: string
+    ) => {
+      if (fmt === 'glb' || fmt === 'gltf') {
+        const draco = new DRACOLoader();
+        draco.setDecoderPath('./draco/');
+        const loader = new GLTFLoader(manager);
+        loader.setDRACOLoader(draco);
+        loader.load(
+          targetUrl,
+          (gltf) => {
+            draco.dispose();
+            normalizeAndMount(gltf.scene);
+          },
+          onProgress,
+          (err) => {
+            draco.dispose();
+            handleLoadError(err);
+          }
+        );
+      } else if (fmt === 'stl') {
+        const loader = new STLLoader(manager);
+        loader.load(
+          targetUrl,
+          (geometry) => {
+            geometry.computeVertexNormals();
+            const hasColor = geometry.hasAttribute('color');
+            const mat = new THREE.MeshStandardMaterial({
+              color: hasColor ? 0xffffff : 0xcbd5e1,
+              vertexColors: hasColor,
+              roughness: 0.45,
+              metalness: 0.12
+            });
+            const mesh = new THREE.Mesh(geometry, mat);
+            mesh.name = asset.name || 'STL Mesh';
+            normalizeAndMount(mesh);
+          },
+          onProgress,
+          handleLoadError
+        );
+      } else if (fmt === 'obj') {
+        const runObj = (materials?: MTLLoader.MaterialCreator) => {
+          const loader = new OBJLoader(manager);
+          if (materials) {
+            materials.preload();
+            loader.setMaterials(materials);
+          }
+          loader.load(
+            targetUrl,
+            (group) => {
+              group.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh) {
+                  const m = child as THREE.Mesh;
+                  if (!m.material) {
+                    m.material = new THREE.MeshStandardMaterial({
+                      color: 0xd1d5db,
+                      roughness: 0.5,
+                      metalness: 0.1
+                    });
+                  }
+                }
+              });
+              normalizeAndMount(group);
+            },
+            onProgress,
+            handleLoadError
+          );
+        };
+
+        if (mtlUrl) {
+          const mtlLoader = new MTLLoader(manager);
+          mtlLoader.load(
+            mtlUrl,
+            (mats) => runObj(mats),
+            undefined,
+            () => runObj()
+          );
+        } else {
+          runObj();
         }
-      );
-    } else if (modelFormat === 'stl') {
-      const loader = new STLLoader();
-      loader.load(
-        modelUrl,
-        (geometry) => {
-          geometry.computeVertexNormals();
-          const hasColor = geometry.hasAttribute('color');
-          const mat = new THREE.MeshStandardMaterial({
-            color: hasColor ? 0xffffff : 0xcbd5e1,
-            vertexColors: hasColor,
-            roughness: 0.45,
-            metalness: 0.12
-          });
-          const mesh = new THREE.Mesh(geometry, mat);
-          mesh.name = asset.name || 'STL Mesh';
-          normalizeAndMount(mesh);
-        },
-        onProgress,
-        handleLoadError
-      );
-    } else if (modelFormat === 'obj') {
-      const loader = new OBJLoader();
-      loader.load(
-        modelUrl,
-        (group) => {
-          group.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              const m = child as THREE.Mesh;
-              if (!m.material) {
-                m.material = new THREE.MeshStandardMaterial({
-                  color: 0xd1d5db,
-                  roughness: 0.5,
-                  metalness: 0.1
-                });
+      } else if (fmt === 'ply') {
+        const loader = new PLYLoader(manager);
+        loader.load(
+          targetUrl,
+          (geometry) => {
+            geometry.computeVertexNormals();
+            const hasColor = geometry.hasAttribute('color');
+            const mat = new THREE.MeshStandardMaterial({
+              color: hasColor ? 0xffffff : 0xcbd5e1,
+              vertexColors: hasColor,
+              roughness: 0.45,
+              metalness: 0.1
+            });
+            const mesh = new THREE.Mesh(geometry, mat);
+            mesh.name = asset.name || 'PLY Mesh';
+            normalizeAndMount(mesh);
+          },
+          onProgress,
+          handleLoadError
+        );
+      } else if (fmt === 'sdf' || fmt === 'mol') {
+        fetch(targetUrl)
+          .then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.text();
+          })
+          .then((txt) => {
+            const molGroup = buildMolecularGroupFromSdf(txt, asset.name || 'Molecule');
+            normalizeAndMount(molGroup);
+          })
+          .catch(handleLoadError);
+      } else if (fmt === 'pdb') {
+        fetch(targetUrl)
+          .then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.text();
+          })
+          .then((txt) => {
+            const pdbGroup = buildMacromoleculeGroupFromPdb(txt, asset.name || 'Protein Structure');
+            normalizeAndMount(pdbGroup);
+          })
+          .catch(handleLoadError);
+      }
+    };
+
+    if (modelFormat === 'zip') {
+      fetch(modelUrl)
+        .then((r) => {
+          if (!r.ok) throw new Error(`Unable to read ZIP bundle (HTTP ${r.status}).`);
+          return r.arrayBuffer();
+        })
+        .then((buf) => {
+          if (cancelled) return;
+          const entries = unzipSync(new Uint8Array(buf));
+          const urlMap = new Map<string, string>();
+          const baseMap = new Map<string, string>();
+          const createdBlobSet = new Set<string>([modelUrl]);
+          const modelFiles: Array<{ path: string; fmt: ModelFormat }> = [];
+          let mtlUrl: string | undefined;
+          let mtlDir = '';
+
+          const priority: Record<ModelFormat, number> = {
+            glb: 10,
+            gltf: 9,
+            obj: 7,
+            stl: 6,
+            ply: 5,
+            pdb: 4,
+            sdf: 3,
+            mol: 2,
+            zip: 0
+          };
+
+          for (const [rawPath, bytes] of Object.entries(entries)) {
+            if (rawPath.endsWith('/') || rawPath.startsWith('__MACOSX/')) continue;
+            const normPath = rawPath.replace(/\\/g, '/').replace(/^\.?\//, '');
+            const lower = normPath.toLowerCase();
+            const baseName = lower.split('/').pop() || lower;
+            const copy = new Uint8Array(bytes.byteLength);
+            copy.set(bytes);
+            const blobUrl = URL.createObjectURL(new Blob([copy.buffer]));
+            extraRevokeUrls.push(blobUrl);
+            createdBlobSet.add(blobUrl);
+            urlMap.set(lower, blobUrl);
+            if (!baseMap.has(baseName)) baseMap.set(baseName, blobUrl);
+
+            if (lower.endsWith('.mtl') && !mtlUrl) {
+              mtlUrl = blobUrl;
+              mtlDir = lower.includes('/') ? lower.slice(0, lower.lastIndexOf('/') + 1) : '';
+            }
+
+            const extMap: Array<[string, ModelFormat]> = [
+              ['.glb', 'glb'],
+              ['.gltf', 'gltf'],
+              ['.obj', 'obj'],
+              ['.stl', 'stl'],
+              ['.ply', 'ply'],
+              ['.pdb', 'pdb'],
+              ['.ent', 'pdb'],
+              ['.sdf', 'sdf'],
+              ['.mol', 'mol']
+            ];
+            for (const [ext, fmt] of extMap) {
+              if (lower.endsWith(ext)) {
+                modelFiles.push({ path: normPath, fmt });
+                break;
               }
             }
+          }
+
+          if (modelFiles.length === 0) {
+            throw new Error(
+              'This ZIP archive does not contain a supported .glb, .gltf, .obj, .stl, .ply, .pdb, or .sdf 3D model.'
+            );
+          }
+
+          modelFiles.sort((a, b) => priority[b.fmt] - priority[a.fmt]);
+          const primary = modelFiles[0];
+          const primaryBlobUrl = urlMap.get(primary.path.toLowerCase())!;
+          const primaryDir = primary.path.includes('/')
+            ? primary.path.slice(0, primary.path.lastIndexOf('/') + 1).toLowerCase()
+            : '';
+
+          const manager = new THREE.LoadingManager();
+          manager.setURLModifier((reqUrl) => {
+            if (createdBlobSet.has(reqUrl) || reqUrl.startsWith('data:') || reqUrl.includes('draco')) {
+              return reqUrl;
+            }
+            const withoutBlobOrigin = reqUrl.startsWith('blob:')
+              ? reqUrl.replace(/^blob:(?:null|https?:\/\/[^/]+)\//i, '')
+              : reqUrl;
+            const cleanReq = decodeURIComponent(withoutBlobOrigin.split('?')[0].split('#')[0])
+              .replace(/\\/g, '/')
+              .replace(/^\.?\//, '')
+              .toLowerCase();
+            if (urlMap.has(cleanReq)) return urlMap.get(cleanReq)!;
+            if (primaryDir && urlMap.has(primaryDir + cleanReq)) {
+              return urlMap.get(primaryDir + cleanReq)!;
+            }
+            if (mtlDir && urlMap.has(mtlDir + cleanReq)) {
+              return urlMap.get(mtlDir + cleanReq)!;
+            }
+            const reqBase = cleanReq.split('/').pop() || cleanReq;
+            if (baseMap.has(reqBase)) return baseMap.get(reqBase)!;
+            return reqUrl;
           });
-          normalizeAndMount(group);
-        },
-        onProgress,
-        handleLoadError
-      );
-    } else if (modelFormat === 'ply') {
-      const loader = new PLYLoader();
-      loader.load(
-        modelUrl,
-        (geometry) => {
-          geometry.computeVertexNormals();
-          const hasColor = geometry.hasAttribute('color');
-          const mat = new THREE.MeshStandardMaterial({
-            color: hasColor ? 0xffffff : 0xcbd5e1,
-            vertexColors: hasColor,
-            roughness: 0.45,
-            metalness: 0.1
-          });
-          const mesh = new THREE.Mesh(geometry, mat);
-          mesh.name = asset.name || 'PLY Mesh';
-          normalizeAndMount(mesh);
-        },
-        onProgress,
-        handleLoadError
-      );
+
+          loadFormatFromUrl(primaryBlobUrl, primary.fmt, manager, mtlUrl);
+        })
+        .catch(handleLoadError);
+    } else {
+      loadFormatFromUrl(modelUrl, modelFormat);
     }
 
     return () => {
       cancelled = true;
+      extraRevokeUrls.forEach((u) => URL.revokeObjectURL(u));
     };
   }, [modelUrl, modelFormat, asset.name, resetCamera]);
 

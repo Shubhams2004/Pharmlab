@@ -1,4 +1,13 @@
-export type ModelFormat = 'glb' | 'gltf' | 'stl' | 'obj' | 'ply';
+export type ModelFormat =
+  | 'glb'
+  | 'gltf'
+  | 'stl'
+  | 'obj'
+  | 'ply'
+  | 'zip'
+  | 'pdb'
+  | 'sdf'
+  | 'mol';
 
 export type Asset3DCategory =
   | 'anatomy'
@@ -100,9 +109,12 @@ export interface Asset3DBinaryRecord {
 }
 
 export type Provider3DId =
+  | 'human_atlas_3d'
+  | 'pubchem_3d'
+  | 'rcsb_pdb'
   | 'wikimedia_3d'
-  | 'sketchfab_public'
   | 'smithsonian_3d'
+  | 'sketchfab_public'
   | 'nih_3d_portal';
 
 export type DownloadPolicy =
@@ -128,6 +140,8 @@ export interface Discovered3DCandidate {
   usageRestrictions: string;
   downloadPolicy: DownloadPolicy;
   downloadNotice: string;
+  suggestedCategory?: Asset3DCategory;
+  suggestedDepartment?: BPharmDepartmentId;
   vertexCount?: number;
   faceCount?: number;
   tags: string[];
@@ -237,6 +251,10 @@ export function detectModelFormatFromName(fileName: string): ModelFormat | null 
   if (lower.endsWith('.stl')) return 'stl';
   if (lower.endsWith('.obj')) return 'obj';
   if (lower.endsWith('.ply')) return 'ply';
+  if (lower.endsWith('.zip')) return 'zip';
+  if (lower.endsWith('.pdb') || lower.endsWith('.ent')) return 'pdb';
+  if (lower.endsWith('.sdf')) return 'sdf';
+  if (lower.endsWith('.mol')) return 'mol';
   return null;
 }
 

@@ -67,14 +67,14 @@ interface Assets3DModuleProps {
 }
 
 const DISCOVER_SUGGESTIONS = [
-  'human skull',
-  'heart anatomy',
+  'heart',
+  'aspirin',
   'kidney',
-  'microscope',
-  'caffeine molecule',
-  'centrifuge',
-  'skeleton',
-  'brain'
+  'hemoglobin',
+  'paracetamol',
+  'skull',
+  'liver',
+  'insulin'
 ];
 
 export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
@@ -237,8 +237,14 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
     try {
       const downloaded = await fetchRemote3DBinary(
         cand.directFileUrl,
-        `${cand.title}.${cand.format || 'glb'}`
+        `${cand.title}.${cand.format || 'glb'}`,
+        cand.format
       );
+      const resolvedCategory =
+        libCategory !== 'all' ? libCategory : cand.suggestedCategory || 'anatomy';
+      const resolvedDept =
+        libDept !== 'all' ? libDept : cand.suggestedDepartment || 'anatomy';
+
       const newItem: Asset3DItem = {
         id: `3d_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         name: cand.title,
@@ -247,8 +253,8 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
         format: downloaded.format,
         fileName: downloaded.fileName,
         byteSize: downloaded.byteSize,
-        category: libCategory !== 'all' ? libCategory : 'anatomy',
-        departments: [libDept !== 'all' ? libDept : 'anatomy'],
+        category: resolvedCategory,
+        departments: [resolvedDept],
         syllabusLinks: [],
         tags: cand.tags,
         sourceName: cand.providerName,
@@ -366,7 +372,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
               Universal Scientific 3D Asset Engine
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Import and explore real GLB, glTF, STL, OBJ, and PLY models of anatomical organs, molecules, lab apparatus, medicinal plants, microorganisms, and pharmaceutical machinery across all 12 B.Pharm departments.
+              Import and explore real GLB, glTF, ZIP bundles, STL, OBJ, PLY, PDB macromolecules, and SDF molecules across all 12 B.Pharm departments — with 1-click imports from NIH Human Reference Atlas, PubChem 3D, RCSB PDB, Wikimedia Commons, and Smithsonian.
             </p>
           </div>
 
@@ -685,7 +691,9 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                 }}
                 className="sm:w-56 min-h-[44px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white"
               >
-                <option value="all">All Live 3D APIs (3)</option>
+                <option value="all">
+                  All Live 3D APIs ({PROVIDER_3D_REGISTRY.filter((p) => p.supportsLiveApi).length})
+                </option>
                 {PROVIDER_3D_REGISTRY.filter((p) => p.supportsLiveApi).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.shortName}
@@ -774,7 +782,9 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
           {discovering ? (
             <div className="py-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col items-center justify-center gap-2 text-sm text-slate-600 dark:text-slate-400">
               <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-              <span>Querying Wikimedia Commons 3D, Sketchfab Public Catalog &amp; Smithsonian Open Access...</span>
+              <span>
+                Querying Human Reference Atlas, PubChem 3D, RCSB PDB, Wikimedia Commons, Smithsonian &amp; Sketchfab...
+              </span>
             </div>
           ) : !hasSearched ? (
             <div className="py-10 px-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-center space-y-2">
@@ -783,7 +793,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                 Search Public Scientific 3D Repositories
               </h2>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
-                Search real 3D meshes by anatomical organ, pharmaceutical apparatus, molecule, medicinal plant, or scientific instrument. Direct CORS files can be imported in one click; repositories requiring account sign-in open cleanly for manual download and local upload.
+                Search real 3D meshes by anatomical organ, drug molecule, protein/receptor, pharmaceutical apparatus, or medicinal plant. Direct CORS assets import in one click; Sketchfab &amp; portal `.ZIP`/`.GLB` downloads drop cleanly into Upload Local File.
               </p>
             </div>
           ) : discovered.length === 0 ? (
@@ -792,7 +802,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                 No public 3D entries matched &ldquo;{discoverQuery}&rdquo;
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Try broader anatomical or scientific terms (e.g. &ldquo;skull&rdquo;, &ldquo;heart&rdquo;, &ldquo;microscope&rdquo;) or search NIH 3D directly via the portal link above.
+                Try anatomical or scientific terms (e.g. &ldquo;heart&rdquo;, &ldquo;aspirin&rdquo;, &ldquo;hemoglobin&rdquo;, &ldquo;kidney&rdquo;, &ldquo;skull&rdquo;) or search NIH 3D directly via the portal link above.
               </p>
             </div>
           ) : (
@@ -887,7 +897,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                           className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-semibold inline-flex items-center gap-1.5"
                         >
                           <Upload className="w-3.5 h-3.5" />
-                          <span>Upload Downloaded GLB/STL</span>
+                          <span>Upload Downloaded ZIP/GLB/STL</span>
                         </button>
                       )}
                     </div>

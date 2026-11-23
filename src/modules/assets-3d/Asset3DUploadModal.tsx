@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { unzipSync, zipSync } from 'fflate';
 import { AlertTriangle, Box, Globe, Loader2, Upload, X } from 'lucide-react';
 import { getAllSyllabi } from '../study-mode/studyDb';
 import { SyllabusProfile } from '../study-mode/types';
@@ -49,7 +50,9 @@ export default function Asset3DUploadModal({
   initialContext
 }: Asset3DUploadModalProps) {
   const [sourceMode, setSourceMode] = useState<'file' | 'url'>('file');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const [bundleSummary, setBundleSummary] = useState<string | null>(null);
   const [remoteUrl, setRemoteUrl] = useState('');
 
   const [name, setName] = useState('');
@@ -82,7 +85,9 @@ export default function Asset3DUploadModal({
       .then((list) => setSyllabi(list))
       .catch(() => setSyllabi([]));
 
-    setSelectedFile(null);
+    setSelectedFiles([]);
+    setDragActive(false);
+    setBundleSummary(null);
     setRemoteUrl('');
     setErrorMsg(null);
     setName(initialContext?.defaultTitle || '');
@@ -128,19 +133,74 @@ export default function Asset3DUploadModal({
     );
   };
 
-  const handleFilePick = (file: File | null) => {
+  const handleFilesPick = async (fileList: FileList | File[] | null) => {
     setErrorMsg(null);
-    if (!file) return;
-    const fmt = detectModelFormatFromName(file.name);
-    if (!fmt) {
+    setBundleSummary(null);
+    if (!fileList || fileList.length === 0) return;
+
+    const files = Array.from(fileList);
+    const totalBytes = files.reduce((s, f) => s + f.size, 0);
+    if (totalBytes > 45 * 1024 * 1024) {
       setErrorMsg(
-        'Unsupported 3D format. Please select a .glb, .gltf, .stl, .obj, or .ply file.'
+        `Total selected size is ${formatBytes(totalBytes)}, exceeding the 45 MB IndexedDB storage limit.`
       );
       return;
     }
-    setSelectedFile(file);
+
+    if (files.length === 1) {
+      const file = files[0];
+      const fmt = detectModelFormatFromName(file.name);
+      if (!fmt) {
+        setErrorMsg(
+          'Unsupported format. Choose .glb, .gltf, .stl, .obj, .ply, .zip, .pdb, .sdf, or .mol.'
+        );
+        return;
+      }
+      if (fmt === 'zip') {
+        try {
+          const buf = await file.arrayBuffer();
+          const entries = unzipSync(new Uint8Array(buf));
+          const names = Object.keys(entries).filter((n) => !n.endsWith('/') && !n.startsWith('__MACOSX/'));
+          const modelHits = names.filter((n) => Boolean(detectModelFormatFromName(n)) && !n.toLowerCase().endsWith('.zip'));
+          if (modelHits.length === 0) {
+            setErrorMsg(
+              'This ZIP archive does not contain a supported .glb, .gltf, .stl, .obj, .ply, .pdb, or .sdf model.'
+            );
+            return;
+          }
+          setBundleSummary(
+            `Detected ${modelHits[0]} inside ZIP (${names.length} total archive ${names.length === 1 ? 'file' : 'files'}).`
+          );
+        } catch {
+          setErrorMsg('Unable to read this ZIP archive. Ensure it is a valid uncompressed/deflate .zip file.');
+          return;
+        }
+      }
+      setSelectedFiles([file]);
+      if (!name.trim()) {
+        setName(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
+      }
+      return;
+    }
+
+    // Multiple files selected together (e.g. scene.gltf + scene.bin + textures, or model.obj + model.mtl)
+    const primaryModel = files.find(
+      (f) => Boolean(detectModelFormatFromName(f.name)) && !f.name.toLowerCase().endsWith('.zip')
+    );
+    if (!primaryModel) {
+      setErrorMsg(
+        'When dropping multiple files, include at least one .gltf, .glb, .obj, .stl, or .ply file alongside its .bin/.mtl/textures.'
+      );
+      return;
+    }
+    setSelectedFiles(files);
+    setBundleSummary(
+      `Bundling ${primaryModel.name} + ${files.length - 1} companion ${
+        files.length - 1 === 1 ? 'file' : 'files'
+      } (.bin / .mtl / textures).`
+    );
     if (!name.trim()) {
-      setName(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
+      setName(primaryModel.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
     }
   };
 
@@ -155,24 +215,74 @@ export default function Asset3DUploadModal({
     setSubmitting(true);
     try {
       let buffer: ArrayBuffer;
-      let format = selectedFile ? detectModelFormatFromName(selectedFile.name) : null;
-      let fileName = selectedFile?.name || 'model.glb';
-      let byteSize = selectedFile?.size || 0;
-      let mimeType = selectedFile?.type || 'model/gltf-binary';
+      let format: ReturnType<typeof detectModelFormatFromName> = null;
+      let fileName = 'model.glb';
+      let byteSize = 0;
+      let mimeType = 'model/gltf-binary';
 
       if (sourceMode === 'file') {
-        if (!selectedFile || !format) {
-          throw new Error('Select a valid .glb, .gltf, .stl, .obj, or .ply 3D model file.');
-        }
-        if (selectedFile.size > 45 * 1024 * 1024) {
+        if (selectedFiles.length === 0) {
           throw new Error(
-            `File is ${formatBytes(selectedFile.size)}, exceeding the 45 MB IndexedDB storage limit.`
+            'Select or drop a .glb, .gltf, .stl, .obj, .ply, .zip, .pdb, or .sdf 3D file.'
           );
         }
-        buffer = await selectedFile.arrayBuffer();
+        if (selectedFiles.length === 1) {
+          const f = selectedFiles[0];
+          format = detectModelFormatFromName(f.name);
+          if (!format) {
+            throw new Error('Unsupported 3D file format.');
+          }
+          buffer = await f.arrayBuffer();
+          fileName = f.name;
+          byteSize = f.size;
+          mimeType = f.type || 'application/octet-stream';
+
+          // Unwrap single-model ZIPs directly to native format for smaller storage
+          if (format === 'zip') {
+            const entries = unzipSync(new Uint8Array(buffer));
+            const realNames = Object.keys(entries).filter(
+              (n) => !n.endsWith('/') && !n.startsWith('__MACOSX/')
+            );
+            if (realNames.length === 1) {
+              const innerFmt = detectModelFormatFromName(realNames[0]);
+              if (innerFmt && innerFmt !== 'zip') {
+                const rawBytes = entries[realNames[0]];
+                const copy = new Uint8Array(rawBytes.byteLength);
+                copy.set(rawBytes);
+                buffer = copy.buffer;
+                format = innerFmt;
+                fileName = realNames[0].split('/').pop() || realNames[0];
+                byteSize = copy.byteLength;
+              }
+            }
+          }
+        } else {
+          // Package multiple companion files (.gltf + .bin + textures OR .obj + .mtl) into a self-contained ZIP
+          const zipInput: Record<string, Uint8Array> = {};
+          for (const f of selectedFiles) {
+            const arr = new Uint8Array(await f.arrayBuffer());
+            zipInput[f.name] = arr;
+          }
+          const zipped = zipSync(zipInput, { level: 1 });
+          const copy = new Uint8Array(zipped.byteLength);
+          copy.set(zipped);
+          if (copy.byteLength > 45 * 1024 * 1024) {
+            throw new Error(
+              `Packaged bundle is ${formatBytes(copy.byteLength)}, exceeding the 45 MB storage limit.`
+            );
+          }
+          buffer = copy.buffer;
+          format = 'zip';
+          const primary = selectedFiles.find((f) => Boolean(detectModelFormatFromName(f.name)));
+          fileName = `${(primary?.name || 'model').replace(/\.[^.]+$/, '')}.zip`;
+          byteSize = copy.byteLength;
+          mimeType = 'application/zip';
+        }
       } else {
         if (!remoteUrl.trim()) {
-          throw new Error('Enter a direct HTTPS URL to a .glb, .stl, .obj, or .ply file.');
+          throw new Error(
+            'Enter a Wikimedia Commons, PubChem, RCSB PDB, Smithsonian, GitHub, or direct .GLB/.STL/.ZIP URL.'
+          );
         }
         const fetched = await fetchRemote3DBinary(remoteUrl.trim());
         buffer = fetched.buffer;
@@ -273,7 +383,7 @@ export default function Asset3DUploadModal({
               PharmaLab 3D Asset Library · Offline IndexedDB Storage
             </p>
             <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-              Import Scientific 3D Model (.glb, .gltf, .stl, .obj, .ply)
+              Import Scientific 3D Model (.glb, .gltf, .zip, .stl, .obj, .pdb, .sdf)
             </h2>
           </div>
           <button
@@ -323,35 +433,60 @@ export default function Asset3DUploadModal({
           </div>
 
           {sourceMode === 'file' ? (
-            <label className="block p-5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500/60 bg-slate-50 dark:bg-slate-950 text-center cursor-pointer space-y-1.5">
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+                void handleFilesPick(e.dataTransfer.files);
+              }}
+              className={`block p-5 rounded-xl border-2 border-dashed transition-colors text-center cursor-pointer space-y-1.5 ${
+                dragActive
+                  ? 'border-emerald-500 bg-emerald-500/10'
+                  : 'border-slate-300 dark:border-slate-700 hover:border-emerald-500/60 bg-slate-50 dark:bg-slate-950'
+              }`}
+            >
               <Box className="w-7 h-7 text-emerald-600 dark:text-emerald-400 mx-auto" />
               <p className="text-sm font-bold text-slate-900 dark:text-white">
-                {selectedFile
-                  ? `${selectedFile.name} (${formatBytes(selectedFile.size)})`
-                  : 'Click to choose a .glb, .gltf, .stl, .obj, or .ply file'}
+                {selectedFiles.length === 1
+                  ? `${selectedFiles[0].name} (${formatBytes(selectedFiles[0].size)})`
+                  : selectedFiles.length > 1
+                  ? `${selectedFiles.length} files selected (${formatBytes(
+                      selectedFiles.reduce((s, f) => s + f.size, 0)
+                    )})`
+                  : 'Drop or click to import .glb, .zip, .gltf (+ .bin/textures), .stl, .obj, .ply, .pdb, or .sdf'}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                GLB (self-contained binary glTF) is recommended for full textures &amp; multi-part selection. Max 45 MB.
+                {bundleSummary ||
+                  'Supports downloaded Sketchfab / NIH 3D / Smithsonian .ZIP bundles, multi-file .gltf assemblies, and molecular .PDB / .SDF files (max 45 MB).'}
               </p>
               <input
                 type="file"
-                accept=".glb,.gltf,.stl,.obj,.ply"
+                multiple
+                accept=".glb,.gltf,.stl,.obj,.mtl,.ply,.zip,.pdb,.ent,.sdf,.mol,.bin,.png,.jpg,.jpeg,.webp"
                 className="hidden"
-                onChange={(e) => handleFilePick(e.target.files?.[0] || null)}
+                onChange={(e) => void handleFilesPick(e.target.files)}
               />
             </label>
           ) : (
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                Direct CORS-Enabled 3D File URL (.glb / .stl / .obj / .ply)
+                3D Model or Scientific Page URL (Direct .GLB/.STL/.ZIP, Wikimedia File, PubChem, RCSB PDB, Smithsonian, GitHub)
               </label>
               <input
                 type="url"
                 value={remoteUrl}
                 onChange={(e) => setRemoteUrl(e.target.value)}
-                placeholder="https://upload.wikimedia.org/.../model.stl"
+                placeholder="https://commons.wikimedia.org/wiki/File:3D_model_of_a_human_heart.stl"
                 className="w-full min-h-[40px] px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white"
               />
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Automatically resolves Wikimedia Commons pages, GitHub blob links, PubChem compounds, RCSB PDB entries (e.g. rcsb.org/structure/1HHO), Smithsonian 3d.si.edu records, and direct .GLB/.STL/.ZIP URLs.
+              </p>
             </div>
           )}
 
