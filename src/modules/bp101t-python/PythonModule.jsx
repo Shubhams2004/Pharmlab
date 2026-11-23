@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Code, Play, Terminal, RefreshCw, BarChart3, Calculator, Activity, Database } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Code, Play, Terminal, RefreshCw, BarChart3, Calculator, Database, ExternalLink } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
 import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
+import { getPyodideStudioRuntime } from '../python-studio/pyodideRuntime';
 
 const PYTHON_TABS = [
   { id: 'unit1-2', label: 'Unit I & II: Syntax, BMI & Dosage' },
@@ -15,7 +16,7 @@ const PYTHON_TABS = [
 ];
 
 export default function PythonModule({ initialTab, navNonce }) {
-  const { setWorkspaceSection, recordActivity, navigateToModule } = useLibraryNavigation();
+  const { setWorkspaceSection, recordActivity, navigateToModule, openPythonStudio } = useLibraryNavigation();
   const [activeUnit, setActiveUnit] = useState(initialTab || 'unit1-2');
 
   useEffect(() => {
@@ -44,10 +45,12 @@ export default function PythonModule({ initialTab, navNonce }) {
     }
   };
 
-  // Pyodide Runtime State
-  const [pyodide, setPyodide] = useState(null);
-  const [isLoadingPyodide, setIsLoadingPyodide] = useState(true);
-  const [runtimeStatus, setRuntimeStatus] = useState('Initializing Python 3.11 WebAssembly...');
+  // Shared Persistent Pyodide Runtime State
+  const runtimeManager = useMemo(() => getPyodideStudioRuntime(), []);
+  const [runtimeSnap, setRuntimeSnap] = useState(() => runtimeManager.getSnapshot());
+  const isLoadingPyodide =
+    runtimeSnap.status === 'idle' || runtimeSnap.status === 'initializing';
+  const runtimeStatus = runtimeSnap.statusDetail;
 
   // Interactive Unit V Matplotlib-style Plotter State
   const [plotType, setPlotType] = useState('pk_curve');
@@ -181,83 +184,65 @@ arr = np.linspace(0, 10, 5)
 print("Generated Array:", arr)`);
 
   const [consoleOutput, setConsoleOutput] = useState([
-    '>>> PharmLab WebAssembly Python 3.11 Environment Loading...'
+    '>>> PharmLab WebAssembly Python Environment Loading...'
   ]);
 
   useEffect(() => {
     let isMounted = true;
-    async function loadPyodideEnvironment() {
-      try {
-        if (!window.loadPyodide) {
-          const script = document.createElement('script');
-          script.src = "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js";
-          script.async = true;
-          document.body.appendChild(script);
-          await new Promise((resolve, reject) => {
-            script.onload = resolve;
-            script.onerror = reject;
-          });
-        }
-        const pyInstance = await window.loadPyodide({
-          indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"
-        });
-        await pyInstance.loadPackage(["numpy", "pandas"]);
+    const unsub = runtimeManager.subscribe((snap) => {
+      if (isMounted) setRuntimeSnap(snap);
+    });
+
+    runtimeManager
+      .ensureInitialized()
+      .then(() => {
         if (isMounted) {
-          setPyodide(pyInstance);
-          setIsLoadingPyodide(false);
-          setRuntimeStatus('Python 3.11 + NumPy + Pandas Ready.');
           setConsoleOutput([
-            '>>> Python 3.11 WebAssembly Runtime Initialized Successfully.',
-            '>>> Select any unit tab, edit code freely, and click "Run in Browser".'
+            `>>> Python ${runtimeManager.getSnapshot().pythonVersion} WebAssembly Runtime Initialized Successfully.`,
+            '>>> Select any unit tab, edit code freely, and click "Run in Browser" or open full-screen Python Studio.'
           ]);
         }
-      } catch (err) {
+      })
+      .catch((err) => {
         if (isMounted) {
-          setIsLoadingPyodide(false);
-          setRuntimeStatus('Pyodide CDN offline — interactive BMI, dosage & Unit V SVG plotters remain active locally.');
           setConsoleOutput([
             '>>> Notice: External Pyodide WebAssembly CDN is currently unreachable.',
-            `> Details: ${err.message}`,
+            `> Details: ${err?.message || err}`,
             '>>> Local browser tools (Unit II BMI/Dosage Calculators, Unit V SVG PK Plots & Pandas Explorer) remain available offline.'
           ]);
         }
-      }
-    }
-    loadPyodideEnvironment();
-    return () => { isMounted = false; };
-  }, []);
+      });
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, [runtimeManager]);
 
   const executeCode = async (codeToRun) => {
-    if (!pyodide) {
-      setConsoleOutput(['>>> Python runtime is still initializing. Please wait a moment and try again.']);
+    setConsoleOutput([`>>> Executing script in browser...`, `----------------------------------------`]);
+    const res = await runtimeManager.execute({
+      mode: 'file',
+      code: codeToRun,
+      filePath: `${activeUnit}.py`,
+      files: [{ path: `${activeUnit}.py`, content: codeToRun }]
+    });
+
+    if (res.status === 'error') {
+      const tb = res.artifacts.find((a) => a.kind === 'traceback');
+      setConsoleOutput([
+        `>>> Python Execution Error (${res.durationMs} ms):`,
+        `----------------------------------------`,
+        tb && tb.kind === 'traceback' ? tb.rawText : res.stderr || 'Execution failed'
+      ]);
       return;
     }
 
-    setConsoleOutput([`>>> Executing script in browser...`, `----------------------------------------`]);
-
-    try {
-      pyodide.runPython(`
-        import sys
-        import io
-        sys.stdout = io.StringIO()
-      `);
-
-      await pyodide.runPythonAsync(codeToRun);
-
-      const stdout = pyodide.runPython("sys.stdout.getvalue()");
-
-      setConsoleOutput([
-        `>>> Execution Successful:`,
-        `----------------------------------------`,
-        stdout || '[Code executed with no stdout output]'
-      ]);
-    } catch (err) {
-      setConsoleOutput([
-        `>>> Python Execution Error:`,
-        `----------------------------------------`,
-        err.toString()
-      ]);
-    }
+    setConsoleOutput([
+      `>>> Execution Successful (${res.durationMs} ms):`,
+      `----------------------------------------`,
+      res.stdout || '[Code executed with no stdout output]'
+    ]);
   };
 
   const getCurrentCode = () => {
@@ -333,14 +318,29 @@ print("Generated Array:", arr)`);
             ariaLabel="BP101T Python Curriculum Units"
           />
         </div>
-        <button
-          type="button"
-          onClick={() => navigateToModule('pandas')}
-          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
-        >
-          <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-          <span>Open Pandas DataFrames</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() =>
+              openPythonStudio({
+                scriptName: `${activeUnit.replace(/[^a-z0-9]+/gi, '_')}.py`,
+                scriptContent: getCurrentCode()
+              })
+            }
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Open in Python Studio</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigateToModule('pandas')}
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+          >
+            <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Open Pandas DataFrames</span>
+          </button>
+        </div>
       </div>
 
       {/* Unit II Interactive BMI & Dosage Verification Tool */}

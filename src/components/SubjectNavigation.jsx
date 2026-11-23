@@ -20,7 +20,8 @@ import {
   Scale,
   FileText,
   GraduationCap,
-  Box
+  Box,
+  Terminal
 } from 'lucide-react';
 
 export const SUBJECT_NAV_ITEMS = [
@@ -37,6 +38,7 @@ export const SUBJECT_NAV_ITEMS = [
   { id: 'pharmacognosy', label: 'Pharmacognosy', group: 'Departments', icon: Microscope, code: 'BP105T / BP110P' },
   { id: 'inorganic', label: 'Inorganic Chemistry', group: 'Departments', icon: TestTube, code: 'BP106T / BP111P' },
   { id: 'psychology', label: 'Psychology & Comm.', group: 'Departments', icon: MessageSquareHeart, code: 'BP103T / BP108P' },
+  { id: 'python_studio', label: 'Python Studio', group: 'Data Science', icon: Terminal, code: 'Full-Screen IDE · Pyodide' },
   { id: 'python', label: 'Python Fundamentals', group: 'Data Science', icon: Code, code: 'BP101T' },
   { id: 'pandas', label: 'Pandas & PK Plots', group: 'Data Science', icon: Database, code: 'BP101T Unit IV–V' }
 ];

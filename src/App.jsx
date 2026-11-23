@@ -19,6 +19,7 @@ import ResourceHubModule from './modules/resource-hub/ResourceHubModule';
 import StudyModeModule from './modules/study-mode/StudyModeModule';
 import SyllabusModule from './modules/syllabus/SyllabusModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
+import PythonStudioWorkspace from './modules/python-studio/PythonStudioWorkspace';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
 import {
   DEFAULT_TEXT_SIZE,
@@ -87,6 +88,12 @@ export default function App() {
     openUpload: false,
     nonce: 0
   });
+  const [pythonStudioJump, setPythonStudioJump] = useState({
+    scriptName: null,
+    scriptContent: null,
+    nonce: 0
+  });
+  const [studioReturnModule, setStudioReturnModule] = useState('dashboard');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -175,6 +182,17 @@ export default function App() {
 
   const navigateTo = useCallback(
     (moduleId, tab = null, opts = {}) => {
+      if (moduleId === 'python_studio') {
+        setActiveModule((prev) => {
+          if (prev && prev !== 'python_studio') {
+            setStudioReturnModule(prev);
+          }
+          return 'python_studio';
+        });
+        setWorkspaceSectionState({ section: null, detail: null });
+        return;
+      }
+
       const nextStructureId = opts?.structureId ?? null;
       setActiveModule(moduleId);
       setNavTarget((prev) => ({
@@ -197,7 +215,8 @@ export default function App() {
         moduleId !== 'visual_library' &&
         moduleId !== 'assets_3d' &&
         moduleId !== 'resource_hub' &&
-        moduleId !== 'reference_center'
+        moduleId !== 'reference_center' &&
+        moduleId !== 'python_studio'
       ) {
         setLastModule(moduleId);
         try {
@@ -333,6 +352,18 @@ export default function App() {
     [navigateTo]
   );
 
+  const openPythonStudio = useCallback(
+    (opts = {}) => {
+      setPythonStudioJump((prev) => ({
+        scriptName: opts.scriptName ?? null,
+        scriptContent: opts.scriptContent ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('python_studio');
+    },
+    [navigateTo]
+  );
+
   const handleOpenRecentItem = useCallback(
     (item) => {
       if (item.kind === 'model_3d' && item.asset3dId) {
@@ -389,6 +420,7 @@ export default function App() {
       openReferenceCenter,
       openStudyMode,
       openAsset3DEngine,
+      openPythonStudio,
       navigateToModule: navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -405,6 +437,7 @@ export default function App() {
       openReferenceCenter,
       openStudyMode,
       openAsset3DEngine,
+      openPythonStudio,
       navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -432,6 +465,17 @@ export default function App() {
     activeModule === 'visual_library' &&
     visualJump.category === 'equipment' &&
     workspaceSection.section === 'Equipment & Apparatus';
+
+  if (activeModule === 'python_studio') {
+    return (
+      <LibraryNavigationContext.Provider value={libraryContextValue}>
+        <PythonStudioWorkspace
+          jumpTarget={pythonStudioJump}
+          onExitStudio={() => setActiveModule(studioReturnModule || 'dashboard')}
+        />
+      </LibraryNavigationContext.Provider>
+    );
+  }
 
   return (
     <LibraryNavigationContext.Provider value={libraryContextValue}>

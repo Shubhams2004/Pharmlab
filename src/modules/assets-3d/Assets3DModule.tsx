@@ -30,18 +30,20 @@ import {
   addSyllabusAssociation,
   delete3DAsset,
   getAll3DAssets,
-  removeSyllabusAssociation,
-  save3DAssetWithFile
+  removeSyllabusAssociation
 } from './asset3dDb';
+import Asset3DImportModal from './Asset3DImportModal';
 import {
   discoverScientific3DAssets,
-  fetchRemote3DBinary,
-  PROVIDER_3D_REGISTRY
+  PROVIDER_3D_REGISTRY,
+  sortAndFilterDiscovered3D
 } from './discoveryProviders';
 import {
   ALL_3D_CATEGORIES,
   ALL_BPHARM_DEPARTMENTS,
+  Asset3DAvailabilityFilter,
   Asset3DCategory,
+  Asset3DDiscoverySort,
   Asset3DItem,
   BPHARM_DEPARTMENT_LABELS,
   BPharmDepartmentId,
@@ -66,15 +68,22 @@ interface Assets3DModuleProps {
   jumpTarget?: Assets3DJumpTarget;
 }
 
-const DISCOVER_SUGGESTIONS = [
-  'heart',
-  'aspirin',
-  'kidney',
-  'hemoglobin',
-  'paracetamol',
-  'skull',
-  'liver',
-  'insulin'
+const DISCOVER_DOMAIN_PRESETS: Array<{
+  label: string;
+  query: string;
+  category: 'all' | Asset3DCategory;
+}> = [
+  { label: 'Anatomical Heart', query: 'heart', category: 'all' },
+  { label: 'Kidney & Renal', query: 'kidney', category: 'all' },
+  { label: 'Cells & Organelles', query: 'eukaryotic cell', category: 'all' },
+  { label: 'Aspirin (Molecule)', query: 'aspirin', category: 'all' },
+  { label: 'Insulin Receptor', query: 'insulin', category: 'all' },
+  { label: 'Medicinal Plants', query: 'medicinal plant', category: 'all' },
+  { label: 'Microorganisms', query: 'bacteria', category: 'all' },
+  { label: 'Pharma Apparatus', query: 'soxhlet distillation', category: 'all' },
+  { label: 'Lab Instruments', query: 'microscope', category: 'all' },
+  { label: 'Tablet Press', query: 'tablet press', category: 'all' },
+  { label: 'Medical Devices', query: 'heart valve', category: 'all' }
 ];
 
 export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
@@ -96,11 +105,15 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
   // Discovery state
   const [discoverQuery, setDiscoverQuery] = useState('');
   const [discoverProvider, setDiscoverProvider] = useState<'all' | Provider3DId>('all');
+  const [discoverCategory, setDiscoverCategory] = useState<'all' | Asset3DCategory>('all');
+  const [discoverAvailability, setDiscoverAvailability] =
+    useState<Asset3DAvailabilityFilter>('all');
+  const [discoverSort, setDiscoverSort] = useState<Asset3DDiscoverySort>('recommended');
   const [discovering, setDiscovering] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [discovered, setDiscovered] = useState<Discovered3DCandidate[]>([]);
+  const [rawDiscovered, setRawDiscovered] = useState<Discovered3DCandidate[]>([]);
   const [discoverWarnings, setDiscoverWarnings] = useState<string[]>([]);
-  const [importingCandId, setImportingCandId] = useState<string | null>(null);
+  const [importCandidate, setImportCandidate] = useState<Discovered3DCandidate | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // Mapping state
@@ -169,13 +182,20 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
       setDiscoverWarnings([]);
 
       try {
-        const res = await discoverScientific3DAssets(clean, provider, ctrl.signal);
+        const res = await discoverScientific3DAssets({
+          query: clean,
+          providerFilter: provider,
+          categoryFilter: 'all',
+          availabilityFilter: 'all',
+          sortBy: 'recommended',
+          signal: ctrl.signal
+        });
         if (ctrl.signal.aborted) return;
-        setDiscovered(res.candidates);
+        setRawDiscovered(res.candidates);
         setDiscoverWarnings(res.warnings);
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
-        setDiscovered([]);
+        setRawDiscovered([]);
         setDiscoverWarnings([
           err instanceof Error ? err.message : 'Unable to query 3D repositories.'
         ]);
@@ -184,6 +204,16 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
       }
     },
     [discoverProvider]
+  );
+
+  const discovered = useMemo(
+    () =>
+      sortAndFilterDiscovered3D(rawDiscovered, {
+        categoryFilter: discoverCategory,
+        availabilityFilter: discoverAvailability,
+        sortBy: discoverSort
+      }),
+    [rawDiscovered, discoverCategory, discoverAvailability, discoverSort]
   );
 
   // Handle deep-link navigation into 3D Engine
@@ -230,67 +260,23 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
     setViewerAsset(item);
   };
 
-  const handleDirectCorsImport = async (cand: Discovered3DCandidate) => {
-    if (!cand.directFileUrl) return;
-    setImportingCandId(cand.id);
-    setToast(null);
-    try {
-      const downloaded = await fetchRemote3DBinary(
-        cand.directFileUrl,
-        `${cand.title}.${cand.format || 'glb'}`,
-        cand.format
+  const findExistingAssetForCandidate = useCallback(
+    (cand: Discovered3DCandidate): Asset3DItem | undefined => {
+      return assets.find(
+        (a) =>
+          (cand.directFileUrl && a.externalFileUrl === cand.directFileUrl) ||
+          (cand.sourceUrl &&
+            a.sourceUrl === cand.sourceUrl &&
+            a.name.toLowerCase() === cand.title.toLowerCase())
       );
-      const resolvedCategory =
-        libCategory !== 'all' ? libCategory : cand.suggestedCategory || 'anatomy';
-      const resolvedDept =
-        libDept !== 'all' ? libDept : cand.suggestedDepartment || 'anatomy';
+    },
+    [assets]
+  );
 
-      const newItem: Asset3DItem = {
-        id: `3d_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        name: cand.title,
-        description: cand.description,
-        thumbnailUrl: cand.previewUrl,
-        format: downloaded.format,
-        fileName: downloaded.fileName,
-        byteSize: downloaded.byteSize,
-        category: resolvedCategory,
-        departments: [resolvedDept],
-        syllabusLinks: [],
-        tags: cand.tags,
-        sourceName: cand.providerName,
-        sourceUrl: cand.sourceUrl,
-        externalFileUrl: cand.directFileUrl,
-        creator: cand.creator,
-        attribution: cand.attribution,
-        license: cand.license,
-        usageRestrictions: cand.usageRestrictions,
-        importStatus: 'imported_binary',
-        hasBinaryBlob: true,
-        annotations: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-      const saved = await save3DAssetWithFile(newItem, downloaded.buffer, downloaded.mimeType);
-      setAssets((prev) => [saved, ...prev]);
-      setToast({
-        type: 'info',
-        msg: `Imported "${saved.name}" (${saved.format.toUpperCase()} · ${formatBytes(
-          saved.byteSize
-        )}) into IndexedDB for offline 3D inspection.`
-      });
-      handleOpenViewer(saved);
-    } catch (err) {
-      setToast({
-        type: 'warning',
-        msg:
-          err instanceof Error
-            ? `${err.message} Use "Open Source" to download manually, then click "Upload Local 3D File".`
-            : 'Direct CORS import blocked by source server. Download manually from source and upload locally.'
-      });
-    } finally {
-      setImportingCandId(null);
-    }
-  };
+  const importedAssets = useMemo(
+    () => assets.filter((a) => a.hasBinaryBlob || a.importStatus === 'imported_binary'),
+    [assets]
+  );
 
   const filteredAssets = useMemo(() => {
     const q = libSearch.trim().toLowerCase();
@@ -366,13 +352,13 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1.5 max-w-3xl">
             <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-              PharmaLab P3.1 · WebGL PBR Viewer &amp; Syllabus-Mapped 3D Asset Repository
+              PharmaLab P3.1 &amp; P3.2 · WebGL PBR Viewer &amp; Scientific 3D Asset Discovery
             </p>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
               Universal Scientific 3D Asset Engine
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Import and explore real GLB, glTF, ZIP bundles, STL, OBJ, PLY, PDB macromolecules, and SDF molecules across all 12 B.Pharm departments — with 1-click imports from NIH Human Reference Atlas, PubChem 3D, RCSB PDB, Wikimedia Commons, and Smithsonian.
+              Discover, preview, license-verify, and safely import GLB, glTF, ZIP bundles, STL, OBJ, PLY, PDB macromolecules, and SDF molecules across all 12 B.Pharm departments from NIH Human Reference Atlas, PubChem 3D, RCSB PDB, Wikimedia Commons, Smithsonian, and Sketchfab.
             </p>
           </div>
 
@@ -654,19 +640,19 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
             <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs sm:text-sm text-amber-900 dark:text-amber-200">
               <WifiOff className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <span>
-                Offline mode active. Live queries to Wikimedia Commons, Sketchfab, and Smithsonian require an internet connection, while your stored IndexedDB 3D assets remain available offline.
+                Offline mode active. Live queries to open 3D repositories require an internet connection, while your stored IndexedDB 3D assets remain available below and in the Library.
               </span>
             </div>
           )}
 
-          {/* Discovery Search Panel */}
+          {/* Discovery Search, Category, Source & Sort Controls */}
           <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void executeSearch(discoverQuery);
               }}
-              className="flex flex-col sm:flex-row gap-2.5"
+              className="flex flex-col lg:flex-row gap-2.5"
             >
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -674,7 +660,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                   type="text"
                   value={discoverQuery}
                   onChange={(e) => setDiscoverQuery(e.target.value)}
-                  placeholder="Search anatomical organs, skull, microscope, molecule, plant, or machinery..."
+                  placeholder="Search anatomical organs, cells, molecules, plants, microbes, apparatus, or medical devices..."
                   className="w-full min-h-[44px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-3 text-sm text-slate-900 dark:text-white"
                 />
               </div>
@@ -689,7 +675,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                     void executeSearch(discoverQuery, next);
                   }
                 }}
-                className="sm:w-56 min-h-[44px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white"
+                className="lg:w-52 min-h-[44px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white"
               >
                 <option value="all">
                   All Live 3D APIs ({PROVIDER_3D_REGISTRY.filter((p) => p.supportsLiveApi).length})
@@ -701,52 +687,118 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                 ))}
               </select>
 
-              <button
-                type="submit"
-                disabled={discovering || discoverQuery.trim().length < 2}
-                className="min-h-[44px] px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap"
-              >
-                {discovering ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Search className="w-4 h-4" />
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={discovering || discoverQuery.trim().length < 2}
+                  className="flex-1 lg:flex-initial min-h-[44px] px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 whitespace-nowrap"
+                >
+                  {discovering ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4" />
+                  )}
+                  <span>Search 3D Sources</span>
+                </button>
+                {discovering && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      abortRef.current?.abort();
+                      setDiscovering(false);
+                    }}
+                    className="min-h-[44px] px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs sm:text-sm font-semibold"
+                  >
+                    Stop
+                  </button>
                 )}
-                <span>Search 3D Sources</span>
-              </button>
+              </div>
             </form>
 
+            {/* Secondary Filters: Scientific Category, Import Availability & Sort */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+                <select
+                  aria-label="Filter discovery results by scientific category"
+                  value={discoverCategory}
+                  onChange={(e) =>
+                    setDiscoverCategory(e.target.value as 'all' | Asset3DCategory)
+                  }
+                  className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="all">All Scientific Categories</option>
+                  {ALL_3D_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {CATEGORY_3D_LABELS[c]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <select
+                aria-label="Filter discovery results by import availability"
+                value={discoverAvailability}
+                onChange={(e) =>
+                  setDiscoverAvailability(e.target.value as Asset3DAvailabilityFilter)
+                }
+                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+              >
+                <option value="all">All Import Modes</option>
+                <option value="direct_cors">1-Click Direct Import Only</option>
+                <option value="portal">Portal Download + Upload</option>
+              </select>
+
+              <select
+                aria-label="Sort discovered 3D assets"
+                value={discoverSort}
+                onChange={(e) => setDiscoverSort(e.target.value as Asset3DDiscoverySort)}
+                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+              >
+                <option value="recommended">Sort: Importable &amp; Relevant</option>
+                <option value="relevance">Sort: Query Relevance</option>
+                <option value="title_asc">Sort: Title (A–Z)</option>
+                <option value="size_asc">Sort: Smallest File First</option>
+                <option value="poly_desc">Sort: Highest Geometry Detail</option>
+              </select>
+            </div>
+
+            {/* Scientific Domain Quick-Search Chips */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <span className="font-semibold text-slate-500 dark:text-slate-400 mr-1">
-                Try:
+                Scientific Domains:
               </span>
-              {DISCOVER_SUGGESTIONS.map((term) => (
+              {DISCOVER_DOMAIN_PRESETS.map((preset) => (
                 <button
-                  key={term}
+                  key={preset.label}
                   type="button"
                   onClick={() => {
-                    setDiscoverQuery(term);
-                    void executeSearch(term);
+                    setDiscoverQuery(preset.query);
+                    setDiscoverCategory(preset.category);
+                    void executeSearch(preset.query);
                   }}
                   className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-slate-700 dark:text-slate-300"
                 >
-                  {term}
+                  {preset.label}
                 </button>
               ))}
             </div>
 
-            {/* Honest API & Access Policy Summary */}
+            {/* Honest API, Auth & CORS Policy Summary */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
               {PROVIDER_3D_REGISTRY.map((p) => (
                 <div
                   key={p.id}
-                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1 text-xs"
+                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5 text-xs"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-slate-900 dark:text-white">{p.shortName}</span>
                     <a
                       href={
                         p.id === 'nih_3d_portal' && discoverQuery.trim()
-                          ? `https://3d.nih.gov/discover?q=${encodeURIComponent(discoverQuery.trim())}`
+                          ? `https://3d.nih.gov/discover?q=${encodeURIComponent(
+                              discoverQuery.trim()
+                            )}`
                           : p.websiteUrl
                       }
                       target="_blank"
@@ -757,6 +809,16 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                       <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
+                  <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                    {p.supportedFormats.map((f) => f.toUpperCase()).join(' · ')} ·{' '}
+                    {p.authRequirement === 'none'
+                      ? 'No Auth / CORS Open'
+                      : p.authRequirement === 'demo_key_rate_limited'
+                      ? 'DEMO_KEY Rate-Limited'
+                      : p.authRequirement === 'oauth_download'
+                      ? 'Search Open · Login to Download'
+                      : 'External Portal Only'}
+                  </p>
                   <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
                     {p.policySummary}
                   </p>
@@ -792,120 +854,227 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 Search Public Scientific 3D Repositories
               </h2>
-              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
-                Search real 3D meshes by anatomical organ, drug molecule, protein/receptor, pharmaceutical apparatus, or medicinal plant. Direct CORS assets import in one click; Sketchfab &amp; portal `.ZIP`/`.GLB` downloads drop cleanly into Upload Local File.
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
+                Search real 3D meshes by anatomical organ, cell/tissue, drug molecule, enzyme/receptor, medicinal plant, microorganism, pharmaceutical apparatus, lab instrument, or medical device. Preview models and verify licenses before saving offline to IndexedDB.
               </p>
             </div>
           ) : discovered.length === 0 ? (
-            <div className="py-10 px-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-center space-y-2">
+            <div className="py-10 px-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-center space-y-2.5">
               <p className="text-sm font-bold text-slate-900 dark:text-white">
-                No public 3D entries matched &ldquo;{discoverQuery}&rdquo;
+                {rawDiscovered.length > 0
+                  ? `All ${rawDiscovered.length} results were filtered out by your Category or Import Mode filter`
+                  : `No public 3D entries matched “${discoverQuery}”`}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Try anatomical or scientific terms (e.g. &ldquo;heart&rdquo;, &ldquo;aspirin&rdquo;, &ldquo;hemoglobin&rdquo;, &ldquo;kidney&rdquo;, &ldquo;skull&rdquo;) or search NIH 3D directly via the portal link above.
+                {rawDiscovered.length > 0
+                  ? 'Reset Category or Import Mode to "All" to view all matching models.'
+                  : 'Try scientific terminology (e.g. "heart", "aspirin", "hemoglobin", "kidney", "microscope", "bacteria") or browse NIH 3D directly.'}
               </p>
+              {rawDiscovered.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDiscoverCategory('all');
+                    setDiscoverAvailability('all');
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold"
+                >
+                  Reset Discovery Filters
+                </button>
+              )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {discovered.map((cand) => {
-                const safeSrc = sanitizeHttpUrl(cand.sourceUrl);
-                const isDirect = cand.downloadPolicy === 'direct_cors' && Boolean(cand.directFileUrl);
-                const importing = importingCandId === cand.id;
-                return (
-                  <article
-                    key={cand.id}
-                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-3"
-                  >
-                    <div className="flex gap-3.5">
-                      {cand.previewUrl ? (
-                        <img
-                          src={cand.previewUrl}
-                          alt={cand.title}
-                          loading="lazy"
-                          className="w-24 h-24 rounded-xl bg-slate-950 object-cover border border-slate-200 dark:border-slate-800 shrink-0"
-                        />
-                      ) : (
-                        <div className="w-24 h-24 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
-                          <Box className="w-7 h-7 text-emerald-400" />
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span>
+                  Showing {discovered.length} of {rawDiscovered.length} discovered 3D assets
+                </span>
+                <span>
+                  Click &ldquo;Preview &amp; Import&rdquo; to inspect geometry, verify license &amp; size, and save offline.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {discovered.map((cand) => {
+                  const safeSrc = sanitizeHttpUrl(cand.sourceUrl);
+                  const isDirect =
+                    cand.downloadPolicy === 'direct_cors' && Boolean(cand.directFileUrl);
+                  const alreadyImported = findExistingAssetForCandidate(cand);
+
+                  return (
+                    <article
+                      key={cand.id}
+                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col justify-between gap-3"
+                    >
+                      <div className="flex gap-3.5">
+                        {cand.previewUrl ? (
+                          <img
+                            src={cand.previewUrl}
+                            alt={cand.title}
+                            loading="lazy"
+                            className="w-24 h-24 rounded-xl bg-slate-950 object-cover border border-slate-200 dark:border-slate-800 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-24 h-24 rounded-xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center gap-1 shrink-0">
+                            <Box className="w-7 h-7 text-emerald-400" />
+                            <span className="text-[10px] font-bold text-slate-300">
+                              {(cand.format || '3D').toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 truncate">
+                              {cand.providerName}
+                              {cand.format ? ` · ${cand.format.toUpperCase()}` : ''}
+                              {cand.byteSize ? ` · ${formatBytes(cand.byteSize)}` : ''}
+                            </p>
+                            {alreadyImported && (
+                              <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold">
+                                Imported ✓
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug">
+                            {cand.title}
+                          </h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {cand.creator} · {cand.license}
+                            {cand.suggestedCategory
+                              ? ` · ${CATEGORY_3D_LABELS[cand.suggestedCategory]}`
+                              : ''}
+                          </p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                            {cand.description}
+                          </p>
                         </div>
-                      )}
-
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 truncate">
-                          {cand.providerName}
-                          {cand.format ? ` · ${cand.format.toUpperCase()}` : ''}
-                          {cand.byteSize ? ` · ${formatBytes(cand.byteSize)}` : ''}
-                        </p>
-                        <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug">
-                          {cand.title}
-                        </h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                          Creator: {cand.creator} · {cand.license}
-                        </p>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                          {cand.description}
-                        </p>
                       </div>
-                    </div>
 
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                      <ShieldCheck className="w-3.5 h-3.5 inline mr-1 text-emerald-600 dark:text-emerald-400" />
-                      {cand.downloadNotice}
-                    </p>
+                      <div className="space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        <p className="leading-relaxed">
+                          <ShieldCheck className="w-3.5 h-3.5 inline mr-1 text-emerald-600 dark:text-emerald-400" />
+                          {cand.downloadNotice}
+                        </p>
+                        <p className="truncate">Attribution: {cand.attribution}</p>
+                      </div>
 
-                    <div className="pt-2.5 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                      {safeSrc && (
-                        <a
-                          href={safeSrc}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>
-                            {cand.downloadPolicy === 'portal_login_required'
-                              ? 'Open on Sketchfab to Download'
-                              : 'Open Original Source'}
-                          </span>
-                        </a>
-                      )}
+                      <div className="pt-2.5 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                        {safeSrc && (
+                          <a
+                            href={safeSrc}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>
+                              {cand.downloadPolicy === 'portal_login_required'
+                                ? 'Open on Sketchfab'
+                                : 'Source Page'}
+                            </span>
+                          </a>
+                        )}
 
-                      {isDirect ? (
-                        <button
-                          type="button"
-                          disabled={importing}
-                          onClick={() => void handleDirectCorsImport(cand)}
-                          className="min-h-[36px] px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-semibold inline-flex items-center gap-1.5"
-                        >
-                          {importing ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Download className="w-3.5 h-3.5" />
-                          )}
-                          <span>{importing ? 'Importing...' : 'Import to 3D Library'}</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadInitCtx({
-                              defaultTitle: cand.title,
-                              departmentId: libDept !== 'all' ? libDept : 'anatomy'
-                            });
-                            setUploadOpen(true);
-                          }}
-                          className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-semibold inline-flex items-center gap-1.5"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Upload Downloaded ZIP/GLB/STL</span>
-                        </button>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
+                        {alreadyImported ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenViewer(alreadyImported)}
+                            className="min-h-[36px] px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                          >
+                            <Box className="w-3.5 h-3.5" />
+                            <span>Inspect Imported 3D</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setImportCandidate(cand)}
+                            className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 ${
+                              isDirect
+                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+                            }`}
+                          >
+                            {isDirect ? (
+                              <Download className="w-3.5 h-3.5" />
+                            ) : (
+                              <Upload className="w-3.5 h-3.5" />
+                            )}
+                            <span>
+                              {isDirect ? 'Preview & Import' : 'Preview & Guided Import'}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
             </div>
           )}
+
+          {/* Imported Scientific Assets Shelf (reads directly from single IndexedDB library) */}
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Imported Offline 3D Assets ({importedAssets.length})</span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  All imported scientific models are stored once in IndexedDB with full provenance and immediately available across all B.Pharm departments.
+                </p>
+              </div>
+              {importedAssets.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('library')}
+                  className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                >
+                  Open Full 3D Library ({assets.length})
+                </button>
+              )}
+            </div>
+
+            {importedAssets.length === 0 ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                No external 3D models imported yet. Search above and click &ldquo;Preview &amp; Import&rdquo; on any compatible asset to store it offline.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {importedAssets.slice(0, 6).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleOpenViewer(item)}
+                    className="group p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 flex items-center gap-3 text-left transition-colors"
+                  >
+                    <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                      {item.thumbnailDataUrl || item.thumbnailUrl ? (
+                        <img
+                          src={item.thumbnailDataUrl || item.thumbnailUrl}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Box className="w-5 h-5 text-emerald-400" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
+                        {item.name}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        {item.format.toUpperCase()}
+                        {item.byteSize ? ` · ${formatBytes(item.byteSize)}` : ''} ·{' '}
+                        {item.sourceName}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       )}
 
@@ -1195,6 +1364,28 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
           </form>
         </div>
       )}
+
+      <Asset3DImportModal
+        candidate={importCandidate}
+        existingAssets={assets}
+        defaultDepartment={libDept !== 'all' ? libDept : undefined}
+        onClose={() => setImportCandidate(null)}
+        onImported={(saved) => {
+          setAssets((prev) => [saved, ...prev]);
+          setToast({
+            type: 'info',
+            msg: `Imported "${saved.name}" (${saved.format.toUpperCase()} · ${formatBytes(
+              saved.byteSize
+            )}) into IndexedDB with preserved attribution & license metadata.`
+          });
+          handleOpenViewer(saved);
+        }}
+        onOpenExisting={(existing) => handleOpenViewer(existing)}
+        onHandoffToUpload={(ctx) => {
+          setUploadInitCtx(ctx);
+          setUploadOpen(true);
+        }}
+      />
 
       <ModelViewerModal
         asset={viewerAsset}

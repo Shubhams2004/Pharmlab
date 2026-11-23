@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Database, RefreshCw, FileSpreadsheet, Terminal, Code } from 'lucide-react';
+import { Database, RefreshCw, FileSpreadsheet, Terminal, Code, ExternalLink } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
 import { DepartmentHeader, ResponsiveTableWrapper, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
@@ -11,7 +11,7 @@ const DATASET_TABS = [
 ];
 
 export default function PandasModule() {
-  const { setWorkspaceSection, navigateToModule } = useLibraryNavigation();
+  const { setWorkspaceSection, navigateToModule, openPythonStudio } = useLibraryNavigation();
   const [datasetType, setDatasetType] = useState('pk');
   const [missingAction, setMissingAction] = useState('raw');
   const [inspectMethod, setInspectMethod] = useState('head');
@@ -115,14 +115,32 @@ export default function PandasModule() {
             ariaLabel="Pandas Pharmaceutical Datasets"
           />
         </div>
-        <button
-          type="button"
-          onClick={() => navigateToModule('python', 'unit4')}
-          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
-        >
-          <Code className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-          <span>Run Pandas Script in IDE</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() =>
+              openPythonStudio({
+                scriptName: `pandas_${datasetType}_analysis.py`,
+                scriptContent:
+                  datasetType === 'pk'
+                    ? `import pandas as pd\n\npk_rows = ${JSON.stringify(pkData, null, 2).replace(/null/g, 'None')}\ndf = pd.DataFrame(pk_rows)\nprint("Raw shape:", df.shape)\ndisplay(df)\nprint("\\nGrouped Mean Conc:")\ndisplay(df.groupby("drug")["conc_mcg_ml"].mean())\n`
+                    : `import pandas as pd\n\nadr_rows = ${JSON.stringify(adrData, null, 2)}\ndf = pd.DataFrame(adr_rows)\ndisplay(df)\ndisplay(df.groupby(["drug", "severity"])["report_id"].count())\n`
+              })
+            }
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Open in Python Studio</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigateToModule('python', 'unit4')}
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-500/50 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+          >
+            <Code className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>Run Pandas Script in IDE</span>
+          </button>
+        </div>
       </div>
 
       {/* Operations Toolbar */}

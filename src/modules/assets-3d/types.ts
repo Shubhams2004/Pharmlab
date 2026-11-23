@@ -122,6 +122,23 @@ export type DownloadPolicy =
   | 'portal_login_required'
   | 'portal_browse_only';
 
+export type ProviderAuthRequirement =
+  | 'none'
+  | 'demo_key_rate_limited'
+  | 'oauth_download'
+  | 'portal_only';
+
+export type ProviderCorsSupport = 'full_cors' | 'search_only_cors' | 'no_api';
+
+export type Asset3DDiscoverySort =
+  | 'recommended'
+  | 'relevance'
+  | 'title_asc'
+  | 'size_asc'
+  | 'poly_desc';
+
+export type Asset3DAvailabilityFilter = 'all' | 'direct_cors' | 'portal';
+
 export interface Discovered3DCandidate {
   id: string;
   providerId: Provider3DId;
@@ -129,6 +146,7 @@ export interface Discovered3DCandidate {
   title: string;
   description: string;
   previewUrl?: string;
+  previewEmbedUrl?: string;
   creator: string;
   creatorUrl?: string;
   sourceUrl: string;
@@ -144,6 +162,9 @@ export interface Discovered3DCandidate {
   suggestedDepartment?: BPharmDepartmentId;
   vertexCount?: number;
   faceCount?: number;
+  popularityScore?: number;
+  relevanceScore?: number;
+  publishedAt?: string;
   tags: string[];
 }
 

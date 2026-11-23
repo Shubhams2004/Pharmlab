@@ -19,6 +19,7 @@ import {
   Play,
   Scale,
   Search,
+  Terminal,
   TestTube,
   Wrench,
   X
@@ -56,7 +57,8 @@ export default function Dashboard({
     openResourceHub,
     openReferenceCenter,
     openStudyMode,
-    openAsset3DEngine
+    openAsset3DEngine,
+    openPythonStudio
   } = useLibraryNavigation();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -438,6 +440,11 @@ export default function Dashboard({
               icon: Globe,
               action: () => openResourceHub()
             },
+            {
+              label: 'Python Studio',
+              icon: Terminal,
+              action: () => openPythonStudio()
+            },
             { label: 'Quick Glossary', icon: BookOpen, action: onOpenGlossary }
           ].map((shortcut) => {
             const Icon = shortcut.icon;
@@ -711,9 +718,9 @@ export default function Dashboard({
               const quickTabs =
                 mod.id === 'python'
                   ? [
-                      { label: 'Python IDE', moduleId: 'python', tab: 'ide' },
-                      { label: 'Pandas & PK Plots', moduleId: 'pandas', tab: null },
-                      { label: 'Curriculum Units', moduleId: 'python', tab: 'theory' }
+                      { label: 'Python Studio IDE', moduleId: 'python_studio', tab: null },
+                      { label: 'BP101T Units', moduleId: 'python', tab: 'unit1-2' },
+                      { label: 'Pandas & PK Plots', moduleId: 'pandas', tab: null }
                     ]
                   : mod.tabs.slice(0, 3).map((t) => ({
                       label: t.label,

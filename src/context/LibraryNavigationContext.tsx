@@ -58,6 +58,12 @@ export interface Asset3DJumpTarget {
   nonce: number;
 }
 
+export interface PythonStudioJumpTarget {
+  scriptName?: string | null;
+  scriptContent?: string | null;
+  nonce: number;
+}
+
 interface LibraryNavigationContextValue {
   openKnowledgeLibrary: (opts?: Omit<KnowledgeJumpTarget, 'nonce'>) => void;
   openVisualLibrary: (opts?: Omit<VisualJumpTarget, 'nonce'>) => void;
@@ -65,6 +71,7 @@ interface LibraryNavigationContextValue {
   openReferenceCenter: (opts?: Omit<ReferenceJumpTarget, 'nonce'>) => void;
   openStudyMode: (opts?: Omit<StudyModeJumpTarget, 'nonce'>) => void;
   openAsset3DEngine: (opts?: Omit<Asset3DJumpTarget, 'nonce'>) => void;
+  openPythonStudio: (opts?: Omit<PythonStudioJumpTarget, 'nonce'>) => void;
   navigateToModule: (
     moduleId: string,
     tab?: string | null,
@@ -88,6 +95,7 @@ export const LibraryNavigationContext = createContext<LibraryNavigationContextVa
   openReferenceCenter: noop,
   openStudyMode: noop,
   openAsset3DEngine: noop,
+  openPythonStudio: noop,
   navigateToModule: noop,
   setWorkspaceSection: noop,
   recordActivity: noop,

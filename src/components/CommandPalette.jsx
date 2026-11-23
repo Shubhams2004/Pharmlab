@@ -17,7 +17,8 @@ import {
   Globe,
   Scale,
   GraduationCap,
-  Box
+  Box,
+  Terminal
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 import { getAll3DAssets } from '../modules/assets-3d/asset3dDb';
@@ -80,6 +81,7 @@ export const QUICK_INDEX = [
   { title: 'BP103T Healthcare Psychology Theory', sub: 'Units I–V · Health Belief Model, CBT, TTM & Ethics', module: 'psychology', tab: 'theory', cat: 'Theory', icon: BookOpen },
 
   // Python & Data Science
+  { title: 'Python Studio (Full-Screen IDE)', sub: 'Monaco Editor, Project Explorer, Pyodide REPL, Matplotlib Plots & SciPy/SymPy', module: 'python_studio', pythonStudio: true, tab: null, cat: 'Studio IDE', icon: Terminal },
   { title: 'Live Browser Python IDE & Dosage / BMI Runner', sub: 'BP101T · Units I–V + Pyodide Interactive Console', module: 'python', tab: null, cat: 'IDE', icon: Code },
   { title: 'Pandas PK / ADR Analyzer & Matplotlib Plots', sub: 'BP101T · Units IV–V Oral vs IV Curves & Dissolution', module: 'pandas', tab: null, cat: 'Analytics', icon: Code }
 ];
@@ -91,7 +93,8 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     openResourceHub,
     openReferenceCenter,
     openStudyMode,
-    openAsset3DEngine
+    openAsset3DEngine,
+    openPythonStudio
   } = useLibraryNavigation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -245,7 +248,9 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
   }, [query, books, visuals, references, assets3d]);
 
   const launchPick = (pick) => {
-    if (pick.asset3dId) {
+    if (pick.pythonStudio) {
+      openPythonStudio();
+    } else if (pick.asset3dId) {
       openAsset3DEngine({ assetId: pick.asset3dId });
     } else if (pick.asset3dTab) {
       openAsset3DEngine({ tab: pick.asset3dTab });

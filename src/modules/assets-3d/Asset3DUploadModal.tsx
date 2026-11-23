@@ -34,6 +34,14 @@ export interface Asset3DInitialContext {
   structureName?: string;
   defaultTitle?: string;
   defaultCategory?: Asset3DCategory;
+  defaultDescription?: string;
+  defaultCreator?: string;
+  defaultSourceName?: string;
+  defaultSourceUrl?: string;
+  defaultLicense?: string;
+  defaultAttribution?: string;
+  defaultUsageRestrictions?: string;
+  defaultTags?: string[];
 }
 
 interface Asset3DUploadModalProps {
@@ -77,6 +85,8 @@ export default function Asset3DUploadModal({
   const [manualExperiment, setManualExperiment] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+  const [fetchProgress, setFetchProgress] = useState<string | null>(null);
+  const [abortCtrl, setAbortCtrl] = useState<AbortController | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,20 +99,27 @@ export default function Asset3DUploadModal({
     setDragActive(false);
     setBundleSummary(null);
     setRemoteUrl('');
+    setFetchProgress(null);
+    setAbortCtrl(null);
     setErrorMsg(null);
     setName(initialContext?.defaultTitle || '');
-    setDescription('');
+    setDescription(initialContext?.defaultDescription || '');
     setCategory(initialContext?.defaultCategory || 'anatomy');
     setSelectedDepts([initialContext?.departmentId || 'anatomy']);
     setSelectedSubjectCode(initialContext?.subjectCode || '');
     setSelectedTopicId(initialContext?.topicId || '');
     setManualSubtopic(initialContext?.subtopicTitle || '');
     setManualExperiment(initialContext?.experimentTitle || '');
-    setCreator('');
-    setSourceName('Local / User Upload');
-    setSourceUrl('');
-    setAttribution('');
-    setTagsText('');
+    setCreator(initialContext?.defaultCreator || '');
+    setSourceName(initialContext?.defaultSourceName || 'Local / User Upload');
+    setSourceUrl(initialContext?.defaultSourceUrl || '');
+    setLicense(initialContext?.defaultLicense || 'Educational Use / CC BY 4.0');
+    setAttribution(initialContext?.defaultAttribution || '');
+    setUsageRestrictions(
+      initialContext?.defaultUsageRestrictions ||
+        'Verify original author license terms before external redistribution.'
+    );
+    setTagsText(initialContext?.defaultTags?.join(', ') || '');
   }, [isOpen, initialContext]);
 
   const allSubjects = useMemo(() => {
@@ -284,7 +301,19 @@ export default function Asset3DUploadModal({
             'Enter a Wikimedia Commons, PubChem, RCSB PDB, Smithsonian, GitHub, or direct .GLB/.STL/.ZIP URL.'
           );
         }
-        const fetched = await fetchRemote3DBinary(remoteUrl.trim());
+        const ctrl = new AbortController();
+        setAbortCtrl(ctrl);
+        const fetched = await fetchRemote3DBinary({
+          url: remoteUrl.trim(),
+          signal: ctrl.signal,
+          onProgress: ({ loadedBytes, totalBytes, percent }) => {
+            setFetchProgress(
+              percent !== undefined
+                ? `Downloading ${percent}% (${formatBytes(loadedBytes)} / ${formatBytes(totalBytes)})`
+                : `Downloading ${formatBytes(loadedBytes)}...`
+            );
+          }
+        });
         buffer = fetched.buffer;
         format = fetched.format;
         fileName = fetched.fileName;
@@ -359,8 +388,14 @@ export default function Asset3DUploadModal({
       onSaved(saved);
       onClose();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Unable to save 3D asset.');
+      if ((err as Error)?.name === 'AbortError') {
+        setErrorMsg('Download cancelled before saving.');
+      } else {
+        setErrorMsg(err instanceof Error ? err.message : 'Unable to save 3D asset.');
+      }
     } finally {
+      setAbortCtrl(null);
+      setFetchProgress(null);
       setSubmitting(false);
     }
   };
@@ -654,26 +689,34 @@ export default function Asset3DUploadModal({
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="min-h-[40px] px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="min-h-[40px] px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-2"
-            >
-              {submitting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Upload className="w-4 h-4" />
-              )}
-              <span>{submitting ? 'Saving 3D Asset...' : 'Save to 3D Asset Library'}</span>
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {fetchProgress || ''}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (abortCtrl) abortCtrl.abort();
+                  else onClose();
+                }}
+                className="min-h-[40px] px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-400"
+              >
+                {abortCtrl ? 'Cancel Download' : 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="min-h-[40px] px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-2"
+              >
+                {submitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+                <span>{submitting ? 'Saving 3D Asset...' : 'Save to 3D Asset Library'}</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
