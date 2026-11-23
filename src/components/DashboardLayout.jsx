@@ -7,6 +7,11 @@ import {
   Search,
   SlidersHorizontal
 } from 'lucide-react';
+import {
+  DEFAULT_TEXT_SIZE,
+  MAX_TEXT_SIZE,
+  MIN_TEXT_SIZE
+} from '../utils/studyWorkspace';
 import ThemeToggle from './ThemeToggle';
 import SubjectNavigation, { SUBJECT_NAV_ITEMS } from './SubjectNavigation';
 
@@ -22,6 +27,10 @@ export default function DashboardLayout({
   visitedModules,
   theme,
   onToggleTheme,
+  textSize = DEFAULT_TEXT_SIZE,
+  onIncreaseTextSize,
+  onDecreaseTextSize,
+  onResetTextSize,
   onOpenPalette,
   onOpenGlossary,
   onOpenSettings,
@@ -210,6 +219,42 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div
+              role="group"
+              aria-label="Text size controls"
+              className="inline-flex items-center h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-0.5 shrink-0"
+            >
+              <button
+                type="button"
+                onClick={onDecreaseTextSize}
+                disabled={textSize <= MIN_TEXT_SIZE}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-35 disabled:pointer-events-none transition-colors"
+                aria-label="Decrease text size"
+                title="Decrease text size"
+              >
+                A-
+              </button>
+              <button
+                type="button"
+                onClick={onResetTextSize}
+                className="hidden sm:inline-flex items-center justify-center px-1.5 h-8 rounded-lg text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                aria-label={`Current text size ${textSize} percent. Click to reset to default`}
+                title={`Text size ${textSize}% (click to reset to ${DEFAULT_TEXT_SIZE}%)`}
+              >
+                {textSize}%
+              </button>
+              <button
+                type="button"
+                onClick={onIncreaseTextSize}
+                disabled={textSize >= MAX_TEXT_SIZE}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-35 disabled:pointer-events-none transition-colors"
+                aria-label="Increase text size"
+                title="Increase text size"
+              >
+                A+
+              </button>
+            </div>
+
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
 
             <button

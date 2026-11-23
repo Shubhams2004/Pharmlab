@@ -73,6 +73,9 @@ interface LibraryNavigationContextValue {
   setWorkspaceSection: (sectionLabel: string | null, detailLabel?: string | null) => void;
   recordActivity: (item: Omit<RecentStudyItem, 'timestamp'>) => void;
   preferences: StudyPreferences;
+  increaseTextSize: () => void;
+  decreaseTextSize: () => void;
+  resetTextSize: () => void;
   openSettings: () => void;
 }
 
@@ -89,6 +92,9 @@ export const LibraryNavigationContext = createContext<LibraryNavigationContextVa
   setWorkspaceSection: noop,
   recordActivity: noop,
   preferences: DEFAULT_STUDY_PREFERENCES,
+  increaseTextSize: noop,
+  decreaseTextSize: noop,
+  resetTextSize: noop,
   openSettings: noop
 });
 

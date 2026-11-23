@@ -21,12 +21,14 @@ import SyllabusModule from './modules/syllabus/SyllabusModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
 import {
+  DEFAULT_TEXT_SIZE,
   applyStudyPreferencesToDom,
   clearRecentActivity,
   getRecentActivity,
   getStudyPreferences,
   recordRecentActivity,
-  saveStudyPreferences
+  saveStudyPreferences,
+  stepTextSize
 } from './utils/studyWorkspace';
 
 export default function App() {
@@ -123,6 +125,24 @@ export default function App() {
 
   const updatePreferences = useCallback((next) => {
     setPreferences(saveStudyPreferences(next));
+  }, []);
+
+  const increaseTextSize = useCallback(() => {
+    setPreferences((prev) =>
+      saveStudyPreferences({ ...prev, textSize: stepTextSize(prev.textSize, 1) })
+    );
+  }, []);
+
+  const decreaseTextSize = useCallback(() => {
+    setPreferences((prev) =>
+      saveStudyPreferences({ ...prev, textSize: stepTextSize(prev.textSize, -1) })
+    );
+  }, []);
+
+  const resetTextSize = useCallback(() => {
+    setPreferences((prev) =>
+      saveStudyPreferences({ ...prev, textSize: DEFAULT_TEXT_SIZE })
+    );
   }, []);
 
   const [visitedModules, setVisitedModules] = useState(() => {
@@ -373,6 +393,9 @@ export default function App() {
       setWorkspaceSection,
       recordActivity,
       preferences,
+      increaseTextSize,
+      decreaseTextSize,
+      resetTextSize,
       openSettings: () => setSettingsOpen(true)
     }),
     [
@@ -385,7 +408,10 @@ export default function App() {
       navigateTo,
       setWorkspaceSection,
       recordActivity,
-      preferences
+      preferences,
+      increaseTextSize,
+      decreaseTextSize,
+      resetTextSize
     ]
   );
 
@@ -421,6 +447,10 @@ export default function App() {
         visitedModules={visitedModules}
         theme={theme}
         onToggleTheme={toggleTheme}
+        textSize={preferences.textSize}
+        onIncreaseTextSize={increaseTextSize}
+        onDecreaseTextSize={decreaseTextSize}
+        onResetTextSize={resetTextSize}
         onOpenPalette={() => {
           setGlossaryOpen(false);
           setSettingsOpen(false);

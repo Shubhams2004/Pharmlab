@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
   Check,
   HardDrive,
+  Minus,
   Moon,
+  Plus,
   RotateCcw,
   SlidersHorizontal,
   Sun,
@@ -11,7 +13,13 @@ import {
 } from 'lucide-react';
 import { getAllBooks, getStorageSummary } from '../modules/knowledge-library/libraryDb';
 import { getAllVisuals } from '../modules/visual-library/visualDb';
-import { StudyPreferences } from '../utils/studyWorkspace';
+import {
+  DEFAULT_TEXT_SIZE,
+  MAX_TEXT_SIZE,
+  MIN_TEXT_SIZE,
+  StudyPreferences,
+  stepTextSize
+} from '../utils/studyWorkspace';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -140,6 +148,60 @@ export default function SettingsModal({
                   </>
                 )}
               </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+              <div>
+                <p className="font-semibold text-slate-900 dark:text-white">Text Size</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Increase or decrease text scale across the workspace ({Math.round((16 * preferences.textSize) / 10) / 10}px base).
+                </p>
+              </div>
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdatePreferences({
+                      ...preferences,
+                      textSize: stepTextSize(preferences.textSize, -1)
+                    })
+                  }
+                  disabled={preferences.textSize <= MIN_TEXT_SIZE}
+                  className="w-9 h-8 rounded-lg inline-flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-35 disabled:pointer-events-none transition-colors"
+                  aria-label="Decrease text size"
+                  title="Decrease text size"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdatePreferences({
+                      ...preferences,
+                      textSize: DEFAULT_TEXT_SIZE
+                    })
+                  }
+                  className="min-w-[52px] h-8 px-2 rounded-lg text-xs font-semibold tabular-nums text-emerald-700 dark:text-emerald-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  title={`Reset text size to ${DEFAULT_TEXT_SIZE}%`}
+                >
+                  {preferences.textSize}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdatePreferences({
+                      ...preferences,
+                      textSize: stepTextSize(preferences.textSize, 1)
+                    })
+                  }
+                  disabled={preferences.textSize >= MAX_TEXT_SIZE}
+                  className="w-9 h-8 rounded-lg inline-flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-35 disabled:pointer-events-none transition-colors"
+                  aria-label="Increase text size"
+                  title="Increase text size"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-4 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">

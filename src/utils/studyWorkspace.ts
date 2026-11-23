@@ -31,16 +31,34 @@ export interface StudyPreferences {
   density: 'comfortable' | 'compact';
   reducedMotion: boolean;
   defaultPdfFit: 'width' | 'page';
+  textSize: number;
 }
 
 const RECENT_STORAGE_KEY = 'pharmlab_recent_activity';
 const PREFS_STORAGE_KEY = 'pharmlab_preferences';
 const MAX_RECENT_ITEMS = 12;
 
+export const MIN_TEXT_SIZE = 90;
+export const MAX_TEXT_SIZE = 140;
+export const TEXT_SIZE_STEP = 5;
+export const DEFAULT_TEXT_SIZE = 110;
+
+export function clampTextSize(value: unknown): number {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_TEXT_SIZE;
+  const rounded = Math.round(num / TEXT_SIZE_STEP) * TEXT_SIZE_STEP;
+  return Math.max(MIN_TEXT_SIZE, Math.min(MAX_TEXT_SIZE, rounded));
+}
+
+export function stepTextSize(current: number, delta: -1 | 1): number {
+  return clampTextSize(current + delta * TEXT_SIZE_STEP);
+}
+
 export const DEFAULT_STUDY_PREFERENCES: StudyPreferences = {
   density: 'comfortable',
   reducedMotion: false,
-  defaultPdfFit: 'width'
+  defaultPdfFit: 'width',
+  textSize: DEFAULT_TEXT_SIZE
 };
 
 export function getRecentActivity(): RecentStudyItem[] {
@@ -92,7 +110,11 @@ export function getStudyPreferences(): StudyPreferences {
     return {
       density: parsed?.density === 'compact' ? 'compact' : 'comfortable',
       reducedMotion: Boolean(parsed?.reducedMotion),
-      defaultPdfFit: parsed?.defaultPdfFit === 'page' ? 'page' : 'width'
+      defaultPdfFit: parsed?.defaultPdfFit === 'page' ? 'page' : 'width',
+      textSize:
+        typeof parsed?.textSize === 'number'
+          ? clampTextSize(parsed.textSize)
+          : DEFAULT_TEXT_SIZE
     };
   } catch {
     return { ...DEFAULT_STUDY_PREFERENCES };
@@ -102,18 +124,25 @@ export function getStudyPreferences(): StudyPreferences {
 export function applyStudyPreferencesToDom(prefs: StudyPreferences): void {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
+  const textSize = clampTextSize(prefs.textSize);
   root.setAttribute('data-density', prefs.density);
   root.setAttribute('data-reduced-motion', prefs.reducedMotion ? 'true' : 'false');
+  root.setAttribute('data-text-size', String(textSize));
+  root.style.setProperty('--app-text-scale', String(textSize / 100));
 }
 
 export function saveStudyPreferences(prefs: StudyPreferences): StudyPreferences {
+  const normalized: StudyPreferences = {
+    ...prefs,
+    textSize: clampTextSize(prefs.textSize)
+  };
   try {
-    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs));
+    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(normalized));
   } catch {
     // ignore storage errors
   }
-  applyStudyPreferencesToDom(prefs);
-  return prefs;
+  applyStudyPreferencesToDom(normalized);
+  return normalized;
 }
 
 export function formatRelativeTime(timestamp: number): string {
