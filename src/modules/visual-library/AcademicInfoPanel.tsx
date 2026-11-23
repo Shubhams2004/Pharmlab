@@ -372,9 +372,9 @@ export default function AcademicInfoPanel({
   const StatusIcon = provenanceBadge.icon;
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {/* Top Academic Header & Action Strip */}
-      <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 space-y-3 shrink-0">
+    <div className="h-full min-h-0 overflow-y-auto lg:overflow-hidden lg:flex lg:flex-col">
+      {/* Top Academic Header & Action Strip (scrolls away on mobile for full reading height; docked on desktop) */}
+      <div className="px-4 py-3 sm:px-5 sm:py-4 border-b border-slate-200 dark:border-slate-800 space-y-2.5 lg:shrink-0">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -465,10 +465,12 @@ export default function AcademicInfoPanel({
             </div>
           </div>
         )}
+      </div>
 
-        {/* Context-Aware Tab Bar (only shown in view mode) */}
-        {mode === 'view' && (
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 -mx-1 px-1">
+      {/* Context-Aware Tab Bar (sticky top on mobile scroll; docked on desktop) */}
+      {mode === 'view' && (
+        <div className="sticky top-0 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 py-2 lg:static lg:shrink-0">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
             {context.availableTabs.map((tab) => {
               const active = activeTab === tab.id;
               return (
@@ -476,7 +478,7 @@ export default function AcademicInfoPanel({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                     active
                       ? 'bg-emerald-600 text-white'
                       : 'bg-slate-100 dark:bg-slate-950 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800'
@@ -490,11 +492,11 @@ export default function AcademicInfoPanel({
               );
             })}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Scrollable Body */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
+      <div className="lg:flex-1 lg:overflow-y-auto p-4 sm:p-5 space-y-5">
         {mode === 'edit-meta' ? (
           <form onSubmit={handleSaveMetadata} className="space-y-3 text-xs">
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -892,41 +894,41 @@ export default function AcademicInfoPanel({
                 )}
 
                 {/* Identification Card */}
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-                  <div className="flex justify-between gap-3">
-                    <span className="text-slate-500 dark:text-slate-400">Identification</span>
-                    <span className="font-semibold text-slate-900 dark:text-white text-right">
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5 text-[13px] sm:text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-3">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0">Identification</span>
+                    <span className="font-semibold text-slate-900 dark:text-white sm:text-right">
                       {context.identification.primaryName}
                     </span>
                   </div>
                   {context.identification.commonNames && context.identification.commonNames.length > 0 && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-slate-500 dark:text-slate-400">Common / Synonyms</span>
-                      <span className="text-slate-800 dark:text-slate-200 text-right">
+                    <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-3 pt-1.5 border-t border-slate-200/70 dark:border-slate-800/70 sm:border-t-0 sm:pt-0">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0">Common / Synonyms</span>
+                      <span className="text-slate-800 dark:text-slate-200 sm:text-right">
                         {context.identification.commonNames.join(', ')}
                       </span>
                     </div>
                   )}
                   {context.identification.formulaOrIupac && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-slate-500 dark:text-slate-400">Formula / IUPAC</span>
-                      <span className="font-mono text-slate-800 dark:text-slate-200 text-right">
+                    <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-3 pt-1.5 border-t border-slate-200/70 dark:border-slate-800/70 sm:border-t-0 sm:pt-0">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0">Formula / IUPAC</span>
+                      <span className="font-mono text-slate-800 dark:text-slate-200 sm:text-right break-words">
                         {context.identification.formulaOrIupac}
                       </span>
                     </div>
                   )}
                   {context.identification.classification && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-slate-500 dark:text-slate-400">Classification</span>
-                      <span className="text-slate-800 dark:text-slate-200 text-right">
+                    <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-3 pt-1.5 border-t border-slate-200/70 dark:border-slate-800/70 sm:border-t-0 sm:pt-0">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0">Classification</span>
+                      <span className="text-slate-800 dark:text-slate-200 sm:text-right">
                         {context.identification.classification}
                       </span>
                     </div>
                   )}
                   {context.identification.taxonomyOrCode && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-slate-500 dark:text-slate-400">Curriculum Code</span>
-                      <span className="font-mono text-emerald-700 dark:text-emerald-400 text-right">
+                    <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-3 pt-1.5 border-t border-slate-200/70 dark:border-slate-800/70 sm:border-t-0 sm:pt-0">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0">Curriculum Code</span>
+                      <span className="font-mono text-emerald-700 dark:text-emerald-400 sm:text-right">
                         {context.identification.taxonomyOrCode}
                       </span>
                     </div>
@@ -949,7 +951,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Introduction &amp; Context
                     </h4>
-                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <p className="text-[13.5px] sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
                       {context.introduction}
                     </p>
                   </section>
@@ -960,7 +962,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       {context.domain === 'anatomy' ? 'Anatomical Location' : 'Origin / Context'}
                     </h4>
-                    <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                    <p className="text-[13.5px] sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
                       {context.locationOrOrigin}
                     </p>
                   </section>
@@ -1272,7 +1274,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Key Functions
                     </h4>
-                    <ul className="space-y-2 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                    <ul className="space-y-2 text-[13.5px] sm:text-sm text-slate-700 dark:text-slate-300">
                       {context.functions.map((fn) => (
                         <li
                           key={fn}
@@ -1438,7 +1440,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Clinical Significance
                     </h4>
-                    <ul className="space-y-2 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                    <ul className="space-y-2 text-[13.5px] sm:text-sm text-slate-700 dark:text-slate-300">
                       {context.clinicalSignificance.map((cs) => (
                         <li
                           key={cs}
@@ -1456,7 +1458,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-rose-800 dark:text-rose-300">
                       Pathogenicity &amp; Endotoxin Virulence
                     </h4>
-                    <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed">
+                    <p className="text-[13.5px] sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
                       {context.microbiologyProfile.pathogenicity}
                     </p>
                   </section>
@@ -1467,7 +1469,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Adverse Effects
                     </h4>
-                    <ul className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                    <ul className="space-y-1.5 text-[13.5px] sm:text-sm text-slate-700 dark:text-slate-300">
                       {context.pharmacologyProfile.adverseEffects.map((ae) => (
                         <li
                           key={ae}
@@ -1485,7 +1487,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
                       Contraindications
                     </h4>
-                    <ul className="space-y-1.5 text-xs text-rose-900 dark:text-rose-200">
+                    <ul className="space-y-1.5 text-[13.5px] sm:text-sm text-rose-900 dark:text-rose-200">
                       {context.pharmacologyProfile.contraindications.map((ci) => (
                         <li
                           key={ci}
@@ -1507,7 +1509,7 @@ export default function AcademicInfoPanel({
                       {context.associatedDiseases.map((dis) => (
                         <div
                           key={dis.name}
-                          className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs space-y-1"
+                          className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[13.5px] sm:text-sm space-y-1"
                         >
                           <p className="font-bold text-slate-900 dark:text-white">{dis.name}</p>
                           <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
@@ -1529,7 +1531,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Therapeutic Uses
                     </h4>
-                    <ul className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                    <ul className="space-y-1.5 text-[13.5px] sm:text-sm text-slate-700 dark:text-slate-300">
                       {context.pharmacologyProfile.therapeuticUses.map((use) => (
                         <li
                           key={use}
@@ -1547,7 +1549,7 @@ export default function AcademicInfoPanel({
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Pharmaceutical Relevance
                     </h4>
-                    <ul className="space-y-2 text-xs sm:text-sm text-slate-700 dark:text-slate-300">
+                    <ul className="space-y-2 text-[13.5px] sm:text-sm text-slate-700 dark:text-slate-300">
                       {context.pharmaceuticalSignificance.map((ps) => (
                         <li
                           key={ps}
@@ -1654,7 +1656,7 @@ export default function AcademicInfoPanel({
                       <GraduationCap className="w-3.5 h-3.5" />
                       <span>High-Yield B.Pharm Exam Points</span>
                     </h4>
-                    <ul className="space-y-2 text-xs sm:text-sm text-slate-800 dark:text-slate-200">
+                    <ul className="space-y-2 text-[13.5px] sm:text-sm text-slate-800 dark:text-slate-200">
                       {context.examKeyPoints.map((pt) => (
                         <li
                           key={pt}

@@ -171,45 +171,46 @@ export default function ModelViewerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-slate-950/85 flex items-center justify-center p-0 sm:p-4 overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-label={`Inspect 3D model: ${liveAsset.name}`}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-6xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden my-auto"
+        className="w-full max-w-6xl h-[100dvh] sm:h-auto sm:max-h-[92dvh] bg-white dark:bg-slate-900 border-0 sm:border sm:border-slate-200 sm:dark:border-slate-800 rounded-none sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between gap-4">
-          <div className="min-w-0 space-y-1">
+        <div className="px-3.5 sm:px-5 py-3 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3 shrink-0">
+          <div className="min-w-0 space-y-0.5">
             <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
               {CATEGORY_3D_LABELS[liveAsset.category]} · {liveAsset.format.toUpperCase()} ·{' '}
               {IMPORT_STATUS_3D_LABELS[liveAsset.importStatus]}
               {liveAsset.byteSize ? ` · ${formatBytes(liveAsset.byteSize)}` : ''}
             </p>
-            <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white truncate">
+            <h2 className="text-base sm:text-xl font-extrabold text-slate-900 dark:text-white line-clamp-2 sm:truncate leading-snug">
               {liveAsset.name}
             </h2>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {safeSourceUrl && (
               <a
                 href={safeSourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+                className="min-h-[36px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
               >
                 <ExternalLink className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Original Source</span>
+                <span className="hidden sm:inline">Original Source</span>
+                <span className="sm:hidden">Source</span>
               </a>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+              className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
               aria-label="Close 3D inspector"
             >
               <X className="w-4 h-4" />
@@ -218,14 +219,14 @@ export default function ModelViewerModal({
         </div>
 
         {/* Viewer + Metadata Body */}
-        <div className="p-4 sm:p-5 space-y-5 max-h-[85vh] overflow-y-auto">
+        <div className="flex-1 min-h-0 p-3 sm:p-5 space-y-4 sm:space-y-5 overflow-y-auto">
           {resolvingUrl ? (
-            <div className="h-[460px] rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center gap-3 text-slate-300">
+            <div className="h-[54dvh] min-h-[320px] sm:h-[580px] rounded-xl sm:rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center gap-3 text-slate-300">
               <Loader2 className="w-6 h-6 animate-spin text-emerald-400" />
               <span className="text-sm font-medium">Loading 3D binary from IndexedDB...</span>
             </div>
           ) : resolveError ? (
-            <div className="h-[320px] rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center gap-3 text-center p-6 text-slate-300">
+            <div className="h-[320px] rounded-xl sm:rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center gap-3 text-center p-6 text-slate-300">
               <Box className="w-8 h-8 text-amber-400" />
               <p className="text-sm font-bold text-white">No Stored 3D Binary Available</p>
               <p className="text-xs max-w-md leading-relaxed">{resolveError}</p>
@@ -244,7 +245,7 @@ export default function ModelViewerModal({
           )}
 
           {/* Metadata, Attribution, Syllabus Associations & Saved Pins */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5">
             <div className="lg:col-span-7 space-y-4">
               {liveAsset.description && (
                 <section className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
@@ -252,13 +253,13 @@ export default function ModelViewerModal({
                     <Info className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>Scientific Description</span>
                   </h3>
-                  <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
                     {liveAsset.description}
                   </p>
                 </section>
               )}
 
-              <section className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+              <section className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs sm:text-sm">
                 <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                   <span>Provenance, Creator &amp; License</span>

@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
+  Columns2,
   Contrast,
+  Image as ImageIcon,
   ImageOff,
   Loader2,
   MapPin,
@@ -86,7 +86,7 @@ export default function ImageViewerModal({
   const [backdrop, setBackdrop] = useState<StageBackdrop>('auto');
 
   const [infoOpen, setInfoOpen] = useState<boolean>(true);
-  const [mobilePanelExpanded, setMobilePanelExpanded] = useState<boolean>(false);
+  const [mobileViewMode, setMobileViewMode] = useState<'diagram' | 'split' | 'guide'>('split');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(
@@ -599,7 +599,7 @@ export default function ImageViewerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-0 sm:p-3 lg:p-4"
+      className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-0 lg:p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -608,10 +608,10 @@ export default function ImageViewerModal({
       <div
         ref={viewerRootRef}
         onClick={(e) => e.stopPropagation()}
-        className={`w-full bg-white dark:bg-slate-900 border-0 sm:border sm:border-slate-200 sm:dark:border-slate-800 flex flex-col overflow-hidden shadow-2xl ${
+        className={`w-full bg-white dark:bg-slate-900 border-0 lg:border lg:border-slate-200 lg:dark:border-slate-800 flex flex-col overflow-hidden shadow-2xl ${
           isFullscreen
             ? 'h-[100dvh] max-w-none rounded-none'
-            : 'max-w-[1440px] h-[100dvh] sm:h-[94dvh] rounded-none sm:rounded-2xl'
+            : 'max-w-[1440px] h-[100dvh] lg:h-[94dvh] rounded-none lg:rounded-2xl'
         }`}
       >
         {/* Top Viewer Bar */}
@@ -705,7 +705,7 @@ export default function ImageViewerModal({
             <button
               type="button"
               onClick={() => setInfoOpen((prev) => !prev)}
-              className={`inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-semibold transition-colors shrink-0 ${
+              className={`hidden lg:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border text-xs font-semibold transition-colors shrink-0 ${
                 infoOpen
                   ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
                   : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
@@ -714,7 +714,7 @@ export default function ImageViewerModal({
               aria-expanded={infoOpen}
             >
               <BookOpen className="w-4 h-4" />
-              <span className="hidden xs:inline sm:inline">Academic Guide</span>
+              <span>Academic Guide</span>
             </button>
 
             <button
@@ -738,16 +738,56 @@ export default function ImageViewerModal({
           </div>
         </header>
 
+        {/* Mobile / Tablet Comfortable View Switcher (Diagram vs Split vs Full Reader) */}
+        <div className="lg:hidden px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 grid grid-cols-3 gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobileViewMode('diagram')}
+            className={`min-h-[34px] px-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors ${
+              mobileViewMode === 'diagram'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+            <span>Diagram</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileViewMode('split')}
+            className={`min-h-[34px] px-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors ${
+              mobileViewMode === 'split'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            <Columns2 className="w-3.5 h-3.5 shrink-0" />
+            <span>Split View</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileViewMode('guide')}
+            className={`min-h-[34px] px-2 rounded-lg text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors ${
+              mobileViewMode === 'guide'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5 shrink-0" />
+            <span>Full Guide</span>
+          </button>
+        </div>
+
         {/* Main Academic Split Viewport */}
         <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden relative">
           {/* Left/Top: Interactive Image Stage */}
           <div
-            className={`relative overflow-hidden transition-colors flex flex-col ${stageBgClass} ${
-              infoOpen
-                ? mobilePanelExpanded
-                  ? 'h-[26dvh] lg:h-auto lg:flex-1 shrink-0'
-                  : 'h-[43dvh] sm:h-[46dvh] lg:h-auto lg:flex-1 shrink-0'
-                : 'flex-1'
+            className={`relative overflow-hidden transition-colors flex-col ${stageBgClass} ${
+              mobileViewMode === 'guide'
+                ? 'hidden lg:flex lg:flex-1'
+                : mobileViewMode === 'diagram'
+                  ? 'flex flex-1'
+                  : 'flex h-[38dvh] sm:h-[42dvh] lg:h-auto lg:flex-1 shrink-0'
             }`}
           >
             {/* Pin Placement Mode Banner */}
@@ -1219,42 +1259,12 @@ export default function ImageViewerModal({
           </div>
 
           {/* Right (Desktop) / Below Image (Mobile): Structured Academic Information Panel */}
-          {infoOpen && (
-            <aside className="flex-1 lg:flex-initial lg:w-[440px] xl:w-[480px] min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col overflow-hidden shrink-0">
-              {/* Mobile Docked Bar to Expand / Collapse Reading Height */}
-              <div className="lg:hidden px-3 py-1.5 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
-                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 truncate">
-                  Academic Learning Information · {academicContext.completeness.completenessPercent}% Complete
-                </span>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setMobilePanelExpanded((e) => !e)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200"
-                  >
-                    {mobilePanelExpanded ? (
-                      <>
-                        <ChevronDown className="w-3.5 h-3.5" />
-                        <span>Show Image</span>
-                      </>
-                    ) : (
-                      <>
-                        <ChevronUp className="w-3.5 h-3.5" />
-                        <span>Expand</span>
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInfoOpen(false)}
-                    className="p-1 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                    aria-label="Hide academic panel"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
+          {(infoOpen || mobileViewMode !== 'diagram') && (
+            <aside
+              className={`min-h-0 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex-col overflow-hidden shrink-0 ${
+                mobileViewMode === 'diagram' ? 'hidden' : 'flex flex-1'
+              } ${infoOpen ? 'lg:flex lg:flex-initial lg:w-[440px] xl:w-[480px]' : 'lg:hidden'}`}
+            >
               <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                 <AcademicInfoPanel
                   item={item}
@@ -1264,7 +1274,13 @@ export default function ImageViewerModal({
                   onSelectAnnotation={handleSelectAnnotation}
                   pinPlacementMode={pinPlacementMode}
                   onTogglePinPlacement={() => {
-                    setPinPlacementMode((p) => !p);
+                    setPinPlacementMode((p) => {
+                      const next = !p;
+                      if (next && mobileViewMode === 'guide') {
+                        setMobileViewMode('diagram');
+                      }
+                      return next;
+                    });
                     setDraftPinCoords(null);
                   }}
                   onDeleteUserAnnotation={handleDeleteUserAnnotation}

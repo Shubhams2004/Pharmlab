@@ -130,7 +130,9 @@ export default function Universal3DViewer({
 
   const [settings, setSettings] = useState<ViewerRenderSettings>(DEFAULT_SETTINGS);
   const [showControlsDrawer, setShowControlsDrawer] = useState(false);
-  const [showComponentsDrawer, setShowComponentsDrawer] = useState(true);
+  const [showComponentsDrawer, setShowComponentsDrawer] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pinMode, setPinMode] = useState(false);
   const [pendingPinPos, setPendingPinPos] = useState<[number, number, number] | null>(null);
@@ -1078,13 +1080,13 @@ export default function Universal3DViewer({
   return (
     <div
       ref={wrapperRef}
-      className={`flex flex-col bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden ${
-        isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'h-[540px] sm:h-[600px]'
+      className={`flex flex-col bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl overflow-hidden ${
+        isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'h-[54dvh] min-h-[320px] sm:h-[580px]'
       }`}
     >
       {/* Top Viewer Toolbar */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 py-2 flex items-center justify-between gap-2 shrink-0 overflow-x-auto sm:overflow-visible sm:flex-wrap">
+        <div className="flex items-center gap-1.5 shrink-0 sm:flex-wrap">
           <button
             type="button"
             onClick={resetCamera}
@@ -1153,12 +1155,13 @@ export default function Universal3DViewer({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0 sm:flex-wrap">
           {onThumbnailCaptured && loadingState.status === 'ready' && (
             <button
               type="button"
               onClick={handleCaptureThumbnail}
-              className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+              className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0"
+              title="Capture thumbnail preview"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span className="hidden sm:inline">Capture Preview</span>
@@ -1167,8 +1170,16 @@ export default function Universal3DViewer({
 
           <button
             type="button"
-            onClick={() => setShowComponentsDrawer((v) => !v)}
-            className={`min-h-[36px] px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border ${
+            onClick={() => {
+              setShowComponentsDrawer((v) => {
+                const next = !v;
+                if (next && typeof window !== 'undefined' && window.innerWidth < 768) {
+                  setShowControlsDrawer(false);
+                }
+                return next;
+              });
+            }}
+            className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border shrink-0 ${
               showComponentsDrawer
                 ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
                 : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
@@ -1180,8 +1191,16 @@ export default function Universal3DViewer({
 
           <button
             type="button"
-            onClick={() => setShowControlsDrawer((v) => !v)}
-            className={`min-h-[36px] px-2.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border ${
+            onClick={() => {
+              setShowControlsDrawer((v) => {
+                const next = !v;
+                if (next && typeof window !== 'undefined' && window.innerWidth < 768) {
+                  setShowComponentsDrawer(false);
+                }
+                return next;
+              });
+            }}
+            className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border shrink-0 ${
               showControlsDrawer
                 ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
                 : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
@@ -1194,7 +1213,7 @@ export default function Universal3DViewer({
           <button
             type="button"
             onClick={handleToggleFullscreen}
-            className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1"
+            className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1 shrink-0"
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -1354,13 +1373,13 @@ export default function Universal3DViewer({
               )}
 
               {meshStats && (
-                <div className="px-2.5 py-1 rounded-lg bg-slate-900/85 border border-slate-800 text-[11px] text-slate-300 tabular-nums">
+                <div className="px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-200 tabular-nums whitespace-nowrap truncate max-w-[calc(100vw-48px)] sm:max-w-full">
                   {modelFormat.toUpperCase()} · {meshStats.components} mesh
                   {meshStats.components === 1 ? '' : 'es'} ·{' '}
                   {meshStats.triangles.toLocaleString()} tris ·{' '}
                   {meshStats.vertices.toLocaleString()} verts
-                  {isHeavyMesh ? ' · High-poly model (orbit simplified)' : ''}
-                  {softwareGlWarning ? ' · Software WebGL mode' : ''}
+                  {isHeavyMesh ? ' · High-poly' : ''}
+                  {softwareGlWarning ? ' · Software WebGL' : ''}
                 </div>
               )}
             </div>
@@ -1418,7 +1437,7 @@ export default function Universal3DViewer({
 
         {/* Lighting & Rendering Controls Drawer */}
         {showControlsDrawer && (
-          <aside className="w-64 sm:w-72 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 space-y-4 overflow-y-auto shrink-0">
+          <aside className="absolute inset-y-0 right-0 z-20 w-72 max-w-[85%] shadow-2xl md:shadow-none md:static md:w-72 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 space-y-4 overflow-y-auto shrink-0">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <Sun className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -1542,21 +1561,31 @@ export default function Universal3DViewer({
 
         {/* Component Hierarchy & Isolation Drawer */}
         {showComponentsDrawer && (
-          <aside className="w-60 sm:w-64 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-3.5 flex flex-col gap-3 overflow-hidden shrink-0">
-            <div className="flex items-center justify-between">
+          <aside className="absolute inset-y-0 right-0 z-20 w-72 max-w-[85%] shadow-2xl md:shadow-none md:static md:w-64 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-3.5 flex flex-col gap-3 overflow-hidden shrink-0">
+            <div className="flex items-center justify-between gap-2">
               <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span>Model Parts ({components.length})</span>
               </h4>
-              {isolatedComponentId && (
+              <div className="flex items-center gap-2">
+                {isolatedComponentId && (
+                  <button
+                    type="button"
+                    onClick={() => handleIsolateComponent(null)}
+                    className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                  >
+                    Show All
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => handleIsolateComponent(null)}
-                  className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                  onClick={() => setShowComponentsDrawer(false)}
+                  className="md:hidden text-slate-400 hover:text-slate-700 dark:hover:text-white p-0.5"
+                  aria-label="Close parts drawer"
                 >
-                  Show All
+                  <X className="w-4 h-4" />
                 </button>
-              )}
+              </div>
             </div>
 
             {components.length <= 1 ? (
