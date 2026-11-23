@@ -389,78 +389,6 @@ export default function Dashboard({
             </div>
           )}
         </div>
-
-        {/* Quick Access Bar */}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          {[
-            {
-              label: 'Study Mode',
-              icon: GraduationCap,
-              action: () => openStudyMode()
-            },
-            {
-              label: 'Anatomy Explorer (60)',
-              icon: Activity,
-              action: () => onSelectModule('anatomy', 'explorer')
-            },
-            { label: 'Departments', icon: Compass, action: scrollToDepartments },
-            { label: 'Experiments', icon: FlaskConical, action: onOpenPalette },
-            {
-              label: 'Equipment',
-              icon: Wrench,
-              action: () => openVisualLibrary({ category: 'equipment' })
-            },
-            {
-              label: 'Official Syllabus',
-              icon: FileText,
-              action: () => onSelectModule('syllabus')
-            },
-            {
-              label: 'Reference Center',
-              icon: Scale,
-              action: () => openReferenceCenter({ section: 'overview' })
-            },
-            {
-              label: 'PDF Library',
-              icon: Library,
-              action: () => openKnowledgeLibrary()
-            },
-            {
-              label: 'Visual Library',
-              icon: Images,
-              action: () => openVisualLibrary()
-            },
-            {
-              label: '3D Asset Engine',
-              icon: Box,
-              action: () => openAsset3DEngine()
-            },
-            {
-              label: 'Resource Hub',
-              icon: Globe,
-              action: () => openResourceHub()
-            },
-            {
-              label: 'Python Studio',
-              icon: Terminal,
-              action: () => openPythonStudio()
-            },
-            { label: 'Quick Glossary', icon: BookOpen, action: onOpenGlossary }
-          ].map((shortcut) => {
-            const Icon = shortcut.icon;
-            return (
-              <button
-                key={shortcut.label}
-                type="button"
-                onClick={shortcut.action}
-                className="min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-300 inline-flex items-center gap-2 transition-colors whitespace-nowrap"
-              >
-                <Icon className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                <span>{shortcut.label}</span>
-              </button>
-            );
-          })}
-        </div>
       </section>
 
       {/* Continue Learning & Recently Accessed (100% Real Local Data Only) */}
@@ -671,6 +599,127 @@ export default function Dashboard({
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{stat.sub}</p>
           </div>
         ))}
+      </section>
+
+      {/* Dedicated Workspace Tools & Libraries Launcher */}
+      <section aria-label="Workspace tools and reference libraries" className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
+              Tools, Studios &amp; Reference Libraries
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+              Quickly launch specialized study engines, scientific libraries, and interactive simulators.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={scrollToDepartments}
+            className="min-h-[36px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 transition-colors"
+          >
+            <Compass className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Browse Departments</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
+          {[
+            {
+              label: 'Study Mode',
+              sub: 'Syllabus & Exam Prep',
+              icon: GraduationCap,
+              action: () => openStudyMode()
+            },
+            {
+              label: 'Anatomy Explorer',
+              sub: '60 Validated Structures',
+              icon: Activity,
+              action: () => onSelectModule('anatomy', 'explorer')
+            },
+            {
+              label: 'Python Studio',
+              sub: 'Full-Screen IDE & Plots',
+              icon: Terminal,
+              action: () => openPythonStudio()
+            },
+            {
+              label: 'Resource Hub',
+              sub: 'Open-Access Research',
+              icon: Globe,
+              action: () => openResourceHub()
+            },
+            {
+              label: 'PDF Library',
+              sub: `${books.length} Local Books`,
+              icon: Library,
+              action: () => openKnowledgeLibrary()
+            },
+            {
+              label: 'Visual Library',
+              sub: `${visuals.length} Annotated Plates`,
+              icon: Images,
+              action: () => openVisualLibrary()
+            },
+            {
+              label: '3D Asset Engine',
+              sub: 'Interactive 3D Models',
+              icon: Box,
+              action: () => openAsset3DEngine()
+            },
+            {
+              label: 'Reference Center',
+              sub: 'Pharmacopoeias & Books',
+              icon: Scale,
+              action: () => openReferenceCenter({ section: 'overview' })
+            },
+            {
+              label: 'Equipment',
+              sub: 'Apparatus & Glassware',
+              icon: Wrench,
+              action: () => openVisualLibrary({ category: 'equipment' })
+            },
+            {
+              label: 'Official Syllabus',
+              sub: 'B.Pharm Sem I PDF',
+              icon: FileText,
+              action: () => onSelectModule('syllabus')
+            },
+            {
+              label: 'Experiments',
+              sub: 'Quick Practical Index',
+              icon: FlaskConical,
+              action: onOpenPalette
+            },
+            {
+              label: 'Quick Glossary',
+              sub: 'Pharmaceutical Terms',
+              icon: BookOpen,
+              action: onOpenGlossary
+            }
+          ].map((tool) => {
+            const Icon = tool.icon;
+            return (
+              <button
+                key={tool.label}
+                type="button"
+                onClick={tool.action}
+                className="group p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-left flex items-center gap-3 transition-colors shadow-sm dark:shadow-none min-w-0"
+              >
+                <span className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                  <Icon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xs sm:text-sm font-semibold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate transition-colors">
+                    {tool.label}
+                  </span>
+                  <span className="block text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
+                    {tool.sub}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       {/* Semester I Department Directory */}

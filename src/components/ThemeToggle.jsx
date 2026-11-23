@@ -12,7 +12,7 @@ export default function ThemeToggle({ theme, onToggle }) {
       onClick={onToggle}
       aria-label={isDark ? 'Dark mode enabled. Switch to light mode' : 'Light mode enabled. Switch to dark mode'}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      className="group inline-flex items-center gap-2.5 h-10 px-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 dark:hover:border-emerald-500/40 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap shrink-0"
+      className="group inline-flex items-center gap-2.5 h-9 sm:h-10 px-2 sm:px-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 dark:hover:border-emerald-500/40 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap shrink-0"
     >
       <span
         aria-hidden="true"

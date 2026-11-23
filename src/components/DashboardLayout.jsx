@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Menu,
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
-  SlidersHorizontal
+  SlidersHorizontal,
+  MoreVertical
 } from 'lucide-react';
 import {
   DEFAULT_TEXT_SIZE,
@@ -38,6 +39,8 @@ export default function DashboardLayout({
   children
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [textMenuOpen, setTextMenuOpen] = useState(false);
+  const textMenuRef = useRef(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem('pharmlab_sidebar_collapsed') === 'true';
@@ -62,6 +65,24 @@ export default function DashboardLayout({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [mobileNavOpen]);
+
+  useEffect(() => {
+    if (!textMenuOpen) return;
+    const onPointerDown = (e) => {
+      if (textMenuRef.current && !textMenuRef.current.contains(e.target)) {
+        setTextMenuOpen(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setTextMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [textMenuOpen]);
 
   const currentMeta =
     SUBJECT_NAV_ITEMS.find((item) => item.id === activeModule) || SUBJECT_NAV_ITEMS[0];
@@ -143,12 +164,12 @@ export default function DashboardLayout({
       {/* Main Viewport Shell */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Compact Sticky Utility Header (56px) */}
-        <header className="sticky top-0 z-30 h-14 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-3 sm:px-6 md:px-8 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
+        <header className="sticky top-0 z-30 h-14 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 px-3 sm:px-6 md:px-8 flex items-center justify-between gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-hidden">
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
-              className="md:hidden inline-flex items-center justify-center w-11 h-11 -ml-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+              className="md:hidden inline-flex items-center justify-center w-10 h-10 -ml-1 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
               aria-label="Open navigation menu"
               aria-expanded={mobileNavOpen}
             >
@@ -169,14 +190,14 @@ export default function DashboardLayout({
               )}
             </button>
 
-            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm min-w-0">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm min-w-0 overflow-hidden">
               <button
                 type="button"
                 onClick={() => handleSelectModule('dashboard')}
-                className={`font-medium transition-colors whitespace-nowrap shrink-0 ${
+                className={`font-medium transition-colors truncate ${
                   activeModule === 'dashboard'
                     ? 'text-slate-900 dark:text-white font-semibold'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 shrink-0'
                 }`}
               >
                 Semester I
@@ -190,7 +211,7 @@ export default function DashboardLayout({
                     onClick={() => handleSelectModule(activeModule)}
                     className={`truncate transition-colors ${
                       breadcrumbSection
-                        ? 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium max-w-[130px] sm:max-w-[200px]'
+                        ? 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium max-w-[120px] sm:max-w-[200px]'
                         : 'text-emerald-700 dark:text-emerald-400 font-semibold'
                     }`}
                   >
@@ -201,8 +222,8 @@ export default function DashboardLayout({
 
               {activeModule !== 'dashboard' && breadcrumbSection && (
                 <>
-                  <ChevronRight className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0 hidden xs:inline sm:inline" />
-                  <span className="hidden xs:inline sm:inline text-emerald-700 dark:text-emerald-400 font-semibold truncate max-w-[140px] sm:max-w-[220px]">
+                  <ChevronRight className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0 hidden sm:inline" />
+                  <span className="hidden sm:inline text-emerald-700 dark:text-emerald-400 font-semibold truncate max-w-[160px] md:max-w-[220px]">
                     {breadcrumbSection}
                   </span>
                 </>
@@ -220,42 +241,6 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <div
-              role="group"
-              aria-label="Text size controls"
-              className="inline-flex items-center h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-0.5 shrink-0"
-            >
-              <button
-                type="button"
-                onClick={onDecreaseTextSize}
-                disabled={textSize <= MIN_TEXT_SIZE}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-35 disabled:pointer-events-none transition-colors"
-                aria-label="Decrease text size"
-                title="Decrease text size"
-              >
-                A-
-              </button>
-              <button
-                type="button"
-                onClick={onResetTextSize}
-                className="hidden sm:inline-flex items-center justify-center px-1.5 h-8 rounded-lg text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                aria-label={`Current text size ${textSize} percent. Click to reset to default`}
-                title={`Text size ${textSize}% (click to reset to ${DEFAULT_TEXT_SIZE}%)`}
-              >
-                {textSize}%
-              </button>
-              <button
-                type="button"
-                onClick={onIncreaseTextSize}
-                disabled={textSize >= MAX_TEXT_SIZE}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-35 disabled:pointer-events-none transition-colors"
-                aria-label="Increase text size"
-                title="Increase text size"
-              >
-                A+
-              </button>
-            </div>
-
             <PWAInstallButton />
 
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
@@ -263,8 +248,9 @@ export default function DashboardLayout({
             <button
               type="button"
               onClick={onOpenPalette}
-              className="inline-flex items-center gap-2 h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center sm:justify-start gap-2 h-9 sm:h-10 w-9 sm:w-auto sm:px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors whitespace-nowrap shrink-0"
               aria-label="Open global search"
+              title="Search (⌘K)"
             >
               <Search className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span className="hidden sm:inline">Search</span>
@@ -274,12 +260,77 @@ export default function DashboardLayout({
             <button
               type="button"
               onClick={onOpenSettings}
-              className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+              className="inline-flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300 transition-colors shrink-0"
               aria-label="Open workspace settings"
               title="Settings"
             >
               <SlidersHorizontal className="w-4 h-4 text-slate-600 dark:text-slate-300" />
             </button>
+
+            {/* Three-dot Menu (Text Size Controls) */}
+            <div className="relative" ref={textMenuRef}>
+              <button
+                type="button"
+                onClick={() => setTextMenuOpen((v) => !v)}
+                className="inline-flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300 transition-colors shrink-0"
+                aria-label="More options and text size"
+                aria-expanded={textMenuOpen}
+                title="Text size & display options"
+              >
+                <MoreVertical className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+              </button>
+
+              {textMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="Text size options"
+                  className="absolute right-0 top-full mt-2 z-50 w-56 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-3 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      Text Size
+                    </span>
+                    <span className="text-xs font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {textSize}%
+                    </span>
+                  </div>
+
+                  <div
+                    role="group"
+                    aria-label="Adjust text size"
+                    className="grid grid-cols-3 gap-1.5"
+                  >
+                    <button
+                      type="button"
+                      onClick={onDecreaseTextSize}
+                      disabled={textSize <= MIN_TEXT_SIZE}
+                      className="min-h-[36px] rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs font-bold text-slate-700 dark:text-slate-200 disabled:opacity-35 disabled:pointer-events-none transition-colors"
+                      aria-label="Decrease text size"
+                    >
+                      A-
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onResetTextSize}
+                      disabled={textSize === DEFAULT_TEXT_SIZE}
+                      className="min-h-[36px] rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-xs font-medium text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                      aria-label="Reset text size to default"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onIncreaseTextSize}
+                      disabled={textSize >= MAX_TEXT_SIZE}
+                      className="min-h-[36px] rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-sm font-bold text-slate-700 dark:text-slate-200 disabled:opacity-35 disabled:pointer-events-none transition-colors"
+                      aria-label="Increase text size"
+                    >
+                      A+
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
