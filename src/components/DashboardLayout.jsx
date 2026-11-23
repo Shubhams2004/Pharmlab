@@ -14,6 +14,7 @@ import {
 } from '../utils/studyWorkspace';
 import ThemeToggle from './ThemeToggle';
 import SubjectNavigation, { SUBJECT_NAV_ITEMS } from './SubjectNavigation';
+import { PWAInstallButton } from './PWAControls';
 
 export default function DashboardLayout({
   activeModule,
@@ -254,6 +255,8 @@ export default function DashboardLayout({
                 A+
               </button>
             </div>
+
+            <PWAInstallButton />
 
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
 

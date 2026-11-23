@@ -111,6 +111,31 @@ export interface WorkspaceVariableInfo {
   shape?: string;
 }
 
+export interface VariableDetail {
+  name: string;
+  typeName: string;
+  shape?: string;
+  dtype?: string;
+  summary: string;
+  kind: 'table' | 'array' | 'json' | 'text';
+  table?: {
+    title?: string;
+    columns: string[];
+    rows: (string | number | boolean | null)[][];
+    shape: [number, number];
+    truncated?: boolean;
+  };
+  arrayStats?: {
+    min: number | null;
+    max: number | null;
+    mean: number | null;
+    std: number | null;
+    nanCount: number;
+  };
+  arrayPreview?: Array<string | number | boolean | null>;
+  rawText?: string;
+}
+
 export interface DiagnosticMarker {
   filePath: string;
   line: number;
@@ -127,6 +152,38 @@ export interface PackageStatusInfo {
   version: string;
   status: PackageLoadState;
   error?: string;
+}
+
+export interface CustomPackageInfo {
+  name: string;
+  status: PackageLoadState;
+  error?: string;
+  source: 'micropip' | 'pyodide';
+}
+
+export interface DebugStackFrame {
+  filePath: string;
+  functionName: string;
+  line: number;
+  locals: WorkspaceVariableInfo[];
+}
+
+export type DebugStepMode = 'into' | 'over' | 'out' | 'continue';
+
+export interface DebugWatchResult {
+  expr: string;
+  value?: string;
+  error?: string;
+}
+
+export interface DebugSnapshot {
+  paused: boolean;
+  filePath: string;
+  line: number;
+  stepCount: number;
+  callStack: DebugStackFrame[];
+  locals: WorkspaceVariableInfo[];
+  watches: DebugWatchResult[];
 }
 
 export interface CodeSymbolItem {

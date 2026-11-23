@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#064e3b" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="flask" x1="160" y1="100" x2="352" y2="410" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <rect x="18" y="18" width="476" height="476" rx="98" stroke="#10b981" stroke-opacity="0.35" stroke-width="6" />
+  <!-- Erlenmeyer Flask / Pharmacy Capsule Motif -->
+  <path
+    d="M214 108h84M228 108v92l-88 152c-12 21 3 48 28 48h176c25 0 40-27 28-48l-88-152v-92"
+    stroke="url(#flask)"
+    stroke-width="24"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M168 320h176l20 34c7 12-2 26-16 26H164c-14 0-23-14-16-26l20-34z"
+    fill="#10b981"
+    fill-opacity="0.28"
+  />
+  <!-- Rx / Code chevron accent inside flask -->
+  <path
+    d="M226 300l-24 22 24 22M286 300l24 22-24 22M264 294l-16 56"
+    stroke="#e2e8f0"
+    stroke-width="14"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

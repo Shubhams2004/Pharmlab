@@ -9,6 +9,7 @@ import {
   FolderOpen,
   FolderPlus,
   FilePlus,
+  FileDown,
   Pencil,
   Plus,
   Trash2,
@@ -38,6 +39,9 @@ interface ProjectExplorerPanelProps {
   }) => Promise<string | null>;
   onRenameNode: (nodeId: string, newName: string) => Promise<string | null>;
   onDeleteNode: (nodeId: string) => Promise<void>;
+  onExportProjectZip: () => void;
+  onImportZipArchive: (bytes: Uint8Array, archiveName: string) => Promise<void>;
+  onImportNotebook: (jsonText: string, fileName: string) => Promise<void>;
 }
 
 function FileIcon({ name }: { name: string }) {
@@ -63,7 +67,10 @@ export default function ProjectExplorerPanel({
   onOpenFile,
   onCreateNode,
   onRenameNode,
-  onDeleteNode
+  onDeleteNode,
+  onExportProjectZip,
+  onImportZipArchive,
+  onImportNotebook
 }: ProjectExplorerPanelProps) {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [creatingState, setCreatingState] = useState<{
@@ -167,6 +174,17 @@ export default function ProjectExplorerPanel({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith('.zip')) {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      await onImportZipArchive(buf, file.name);
+      return;
+    }
+    if (lower.endsWith('.ipynb')) {
+      const jsonText = await file.text();
+      await onImportNotebook(jsonText, file.name);
+      return;
+    }
     const content = await file.text();
     const siblingNames = getSiblingNames(null);
     let finalName = file.name;
@@ -502,15 +520,24 @@ export default function ProjectExplorerPanel({
             type="button"
             onClick={() => fileUploadRef.current?.click()}
             className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-            title="Import local .py / .csv file"
-            aria-label="Import local file"
+            title="Import .py, .csv, .ipynb, or .zip"
+            aria-label="Import file, notebook, or zip"
           >
             <Upload className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onExportProjectZip}
+            className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-emerald-300 transition-colors"
+            title="Export project as .zip"
+            aria-label="Export project as zip"
+          >
+            <FileDown className="w-3.5 h-3.5" />
           </button>
           <input
             ref={fileUploadRef}
             type="file"
-            accept=".py,.csv,.tsv,.json,.txt,.md"
+            accept=".py,.csv,.tsv,.json,.txt,.md,.zip,.ipynb"
             onChange={handleLocalFileUpload}
             className="hidden"
           />

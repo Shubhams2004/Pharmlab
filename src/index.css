@@ -142,3 +142,18 @@ html[data-density='compact'] main {
   box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.45);
 }
 
+/* Monaco Step Debugger Decorations */
+.pharmlab-breakpoint-glyph {
+  background: radial-gradient(circle, #f43f5e 0%, #e11d48 65%, transparent 72%);
+  margin-left: 3px;
+  margin-top: 3px;
+  width: 11px !important;
+  height: 11px !important;
+  cursor: pointer;
+}
+
+.pharmlab-debug-line {
+  background: rgba(245, 158, 11, 0.16);
+  border-left: 3px solid #f59e0b;
+}
+

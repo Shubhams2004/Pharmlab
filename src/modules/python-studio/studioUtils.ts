@@ -1,4 +1,11 @@
-import { CodeSymbolItem, StudioFileKind, StudioNode } from './types';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import {
+  CodeSymbolItem,
+  DiagnosticMarker,
+  ExecutionRecord,
+  StudioFileKind,
+  StudioNode
+} from './types';
 
 export interface TreeBranch {
   node: StudioNode;
@@ -141,4 +148,284 @@ export function extractPythonSymbols(code: string): CodeSymbolItem[] {
     }
   }
   return items;
+}
+
+export interface WorkspaceSymbolEntry extends CodeSymbolItem {
+  filePath: string;
+  moduleName: string;
+}
+
+export function extractWorkspaceSymbols(
+  files: Array<{ path: string; content: string }>
+): {
+  symbols: WorkspaceSymbolEntry[];
+  moduleToPath: Map<string, string>;
+  csvPaths: string[];
+} {
+  const symbols: WorkspaceSymbolEntry[] = [];
+  const moduleToPath = new Map<string, string>();
+  const csvPaths: string[] = [];
+
+  for (const f of files) {
+    const lower = f.path.toLowerCase();
+    if (lower.endsWith('.csv') || lower.endsWith('.tsv')) {
+      csvPaths.push(f.path);
+      continue;
+    }
+    if (!lower.endsWith('.py')) continue;
+    const modName = f.path.replace(/\.py$/i, '').replace(/\//g, '.');
+    moduleToPath.set(modName, f.path);
+    const shortName = modName.split('.').pop();
+    if (shortName && !moduleToPath.has(shortName)) {
+      moduleToPath.set(shortName, f.path);
+    }
+
+    for (const sym of extractPythonSymbols(f.content || '')) {
+      symbols.push({
+        ...sym,
+        filePath: f.path,
+        moduleName: modName
+      });
+    }
+  }
+
+  return { symbols, moduleToPath, csvPaths };
+}
+
+export function parseCsvData(
+  content: string,
+  isTsv = false
+): { headers: string[]; rows: string[][] } {
+  const delimiter = isTsv ? '\t' : ',';
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < content.length; i += 1) {
+    const ch = content[i];
+    const next = content[i + 1];
+
+    if (inQuotes) {
+      if (ch === '"' && next === '"') {
+        field += '"';
+        i += 1;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delimiter) {
+      row.push(field);
+      field = '';
+    } else if (ch === '\r' && next === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+      i += 1;
+    } else if (ch === '\n' || ch === '\r') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += ch;
+    }
+  }
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  const nonEmpty = rows.filter((r) => r.some((cell) => cell.trim() !== ''));
+  if (nonEmpty.length === 0) return { headers: [], rows: [] };
+  const headers = nonEmpty[0];
+  const body = nonEmpty.slice(1).map((r) => {
+    if (r.length >= headers.length) return r;
+    return [...r, ...Array(headers.length - r.length).fill('')];
+  });
+  return { headers, rows: body };
+}
+
+export function buildProjectZipBytes(
+  nodes: StudioNode[]
+): Uint8Array {
+  const { pathById } = buildProjectTree(nodes);
+  const zipEntries: Record<string, Uint8Array> = {};
+  for (const node of nodes) {
+    if (node.type !== 'file') continue;
+    const relPath = pathById.get(node.id) || node.name;
+    zipEntries[relPath] = strToU8(node.content ?? '');
+  }
+  return zipSync(zipEntries, { level: 6 });
+}
+
+export function parseZipToProjectFiles(
+  bytes: Uint8Array
+): Array<{ path: string; content: string }> {
+  const raw = unzipSync(bytes);
+  const entries = Object.entries(raw).filter(([name]) => {
+    if (name.endsWith('/')) return false;
+    if (name.includes('__MACOSX') || name.includes('__pycache__')) return false;
+    return /\.(py|csv|tsv|json|txt|md|markdown)$/i.test(name);
+  });
+
+  if (entries.length === 0) return [];
+
+  // Strip shared top-level wrapper folder if all entries sit under it
+  const splitPaths = entries.map(([p]) => p.replace(/^\/+/, '').split('/').filter(Boolean));
+  const firstDir = splitPaths[0]?.[0];
+  const hasCommonWrapper =
+    splitPaths.length > 1 &&
+    Boolean(firstDir) &&
+    splitPaths.every((parts) => parts.length > 1 && parts[0] === firstDir);
+
+  return entries.map(([name, data]) => {
+    const parts = name.replace(/^\/+/, '').split('/').filter(Boolean);
+    const normalized = (hasCommonWrapper ? parts.slice(1) : parts).join('/');
+    return {
+      path: normalized || name,
+      content: strFromU8(data)
+    };
+  });
+}
+
+export function pythonFileToIpynbJson(
+  fileName: string,
+  code: string,
+  latestRecord?: ExecutionRecord | null
+): string {
+  const rawChunks = code.split(/^# %%.*$/m).map((s) => s.trimEnd());
+  const codeCells = (rawChunks.length > 0 ? rawChunks : [code]).filter((c, idx) => idx === 0 || c.trim() !== '');
+
+  const cells = codeCells.map((cellCode, idx) => {
+    const isLast = idx === codeCells.length - 1;
+    const outputs: Array<Record<string, unknown>> = [];
+
+    if (isLast && latestRecord) {
+      for (const art of latestRecord.artifacts) {
+        if (art.kind === 'text') {
+          outputs.push({
+            output_type: 'stream',
+            name: art.stream === 'stderr' ? 'stderr' : 'stdout',
+            text: art.text.split('\n').map((l, i, arr) => (i < arr.length - 1 ? `${l}\n` : l))
+          });
+        } else if (art.kind === 'image') {
+          const base64 = art.dataUrl.replace(/^data:image\/png;base64,/, '');
+          outputs.push({
+            output_type: 'display_data',
+            data: {
+              'image/png': base64,
+              'text/plain': [`<Figure: ${art.caption || 'Plot'}>`]
+            },
+            metadata: {}
+          });
+        } else if (art.kind === 'traceback') {
+          outputs.push({
+            output_type: 'error',
+            ename: art.errorType,
+            evalue: art.message,
+            traceback: art.rawText.split('\n')
+          });
+        }
+      }
+    }
+
+    return {
+      cell_type: 'code',
+      execution_count: isLast && latestRecord ? 1 : null,
+      metadata: {},
+      outputs,
+      source: cellCode.split('\n').map((l, i, arr) => (i < arr.length - 1 ? `${l}\n` : l))
+    };
+  });
+
+  const notebook = {
+    nbformat: 4,
+    nbformat_minor: 5,
+    metadata: {
+      kernelspec: {
+        display_name: 'Python 3 (PharmLab Pyodide)',
+        language: 'python',
+        name: 'python3'
+      },
+      language_info: {
+        name: 'python',
+        version: '3.12.7'
+      },
+      pharmlab_source: fileName
+    },
+    cells
+  };
+
+  return JSON.stringify(notebook, null, 2);
+}
+
+export function ipynbJsonToPythonScript(
+  jsonText: string,
+  fallbackName: string
+): { fileName: string; content: string } | null {
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (!parsed || !Array.isArray(parsed.cells)) return null;
+
+    const blocks: string[] = [];
+    for (const cell of parsed.cells) {
+      const src = Array.isArray(cell.source)
+        ? cell.source.join('')
+        : typeof cell.source === 'string'
+        ? cell.source
+        : '';
+      if (!src.trim()) continue;
+      if (cell.cell_type === 'markdown') {
+        const commented = src
+          .split('\n')
+          .map((line: string) => `# ${line}`)
+          .join('\n');
+        blocks.push(`# %% [markdown]\n${commented}`);
+      } else if (cell.cell_type === 'code') {
+        blocks.push(`# %%\n${src.replace(/\s+$/, '')}`);
+      }
+    }
+
+    const base = fallbackName.replace(/\.ipynb$/i, '') || 'imported_notebook';
+    return {
+      fileName: `${base}.py`,
+      content: `${blocks.join('\n\n')}\n`
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function runFastJsPythonLint(code: string, filePath: string): DiagnosticMarker[] {
+  const markers: DiagnosticMarker[] = [];
+  const lines = code.split('\n');
+  let sawSpaceIndent = false;
+  let sawTabIndent = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\t+/.test(line)) sawTabIndent = true;
+    if (/^ +/.test(line)) sawSpaceIndent = true;
+    if (sawSpaceIndent && sawTabIndent && /^\t+ |^ +\t/.test(line)) {
+      markers.push({
+        filePath,
+        line: i + 1,
+        column: 1,
+        endColumn: line.length + 1,
+        message: 'TabError: Inconsistent mix of tabs and spaces in indentation.',
+        severity: 'error'
+      });
+    }
+  }
+
+  return markers;
 }

@@ -2,8 +2,33 @@ import { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import editorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import jsonWorker from 'monaco-editor/language/json/json.worker.js?worker';
+import { extractWorkspaceSymbols, WorkspaceSymbolEntry } from './studioUtils';
 
 let isConfigured = false;
+
+interface WorkspaceIntelliSenseState {
+  symbols: WorkspaceSymbolEntry[];
+  moduleToPath: Map<string, string>;
+  csvPaths: string[];
+  onOpenLocation?: (filePath: string, line: number) => void;
+}
+
+const workspaceIntelliSense: WorkspaceIntelliSenseState = {
+  symbols: [],
+  moduleToPath: new Map(),
+  csvPaths: []
+};
+
+export function updateMonacoWorkspaceContext(params: {
+  files: Array<{ path: string; content: string }>;
+  onOpenLocation?: (filePath: string, line: number) => void;
+}) {
+  const { symbols, moduleToPath, csvPaths } = extractWorkspaceSymbols(params.files);
+  workspaceIntelliSense.symbols = symbols;
+  workspaceIntelliSense.moduleToPath = moduleToPath;
+  workspaceIntelliSense.csvPaths = csvPaths;
+  workspaceIntelliSense.onOpenLocation = params.onOpenLocation;
+}
 
 const PYTHON_KEYWORDS = [
   'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue',
@@ -84,7 +109,8 @@ const SCIENTIFIC_COMPLETIONS: Array<{
   },
   {
     label: 'plt.subplots',
-    insertText: 'fig, ax = plt.subplots(figsize=(${1:7.5}, ${2:4.2}))\nax.plot(${3:x}, ${4:y})\nax.set_title("${5:Title}")\nax.grid(True, alpha=0.35)\nplt.tight_layout()\nplt.show()',
+    insertText:
+      'fig, ax = plt.subplots(figsize=(${1:7.5}, ${2:4.2}))\nax.plot(${3:x}, ${4:y})\nax.set_title("${5:Title}")\nax.grid(True, alpha=0.35)\nplt.tight_layout()\nplt.show()',
     detail: 'Matplotlib figure & inline plot scaffold',
     isSnippet: true
   },
@@ -149,9 +175,10 @@ export function configureMonacoStudio(): typeof monaco {
   });
 
   monaco.languages.registerCompletionItemProvider('python', {
-    triggerCharacters: ['.', ' '],
+    triggerCharacters: ['.', ' ', '"', "'"],
     provideCompletionItems(model, position) {
       const word = model.getWordUntilPosition(position);
+      const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
       const range = {
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
@@ -160,6 +187,46 @@ export function configureMonacoStudio(): typeof monaco {
       };
 
       const suggestions: monaco.languages.CompletionItem[] = [];
+
+      // CSV path autocomplete inside read_csv("...") or open("...")
+      if (/['"][^'"]*$/.test(linePrefix)) {
+        for (const csvPath of workspaceIntelliSense.csvPaths) {
+          suggestions.push({
+            label: csvPath,
+            kind: monaco.languages.CompletionItemKind.File,
+            detail: 'Workspace CSV/TSV dataset',
+            insertText: csvPath,
+            range
+          });
+        }
+      }
+
+      // Dot-completion on sibling Python module (e.g. pk_utils.)
+      const dotModMatch = linePrefix.match(/([A-Za-z_][A-Za-z0-9_]*)\.$/);
+      if (dotModMatch) {
+        const modName = dotModMatch[1];
+        const matchingModuleSyms = workspaceIntelliSense.symbols.filter(
+          (s) => s.moduleName === modName || s.moduleName.endsWith(`.${modName}`)
+        );
+        for (const sym of matchingModuleSyms) {
+          suggestions.push({
+            label: sym.name,
+            kind:
+              sym.kind === 'function'
+                ? monaco.languages.CompletionItemKind.Function
+                : sym.kind === 'class'
+                ? monaco.languages.CompletionItemKind.Class
+                : monaco.languages.CompletionItemKind.Constant,
+            detail: `${sym.filePath}:${sym.line}${sym.detail ? ` ${sym.detail}` : ''}`,
+            insertText: sym.kind === 'function' ? `${sym.name}($1)` : sym.name,
+            insertTextRules:
+              sym.kind === 'function'
+                ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                : undefined,
+            range
+          });
+        }
+      }
 
       for (const kw of PYTHON_KEYWORDS) {
         suggestions.push({
@@ -194,10 +261,42 @@ export function configureMonacoStudio(): typeof monaco {
         });
       }
 
-      // Extract local identifiers from current file for quick variable/function autocomplete
+      // Cross-file workspace symbols & local module names
+      for (const [modName, filePath] of workspaceIntelliSense.moduleToPath.entries()) {
+        suggestions.push({
+          label: modName,
+          kind: monaco.languages.CompletionItemKind.Module,
+          detail: `Workspace module (${filePath})`,
+          insertText: modName,
+          range
+        });
+      }
+
+      const seenWorkspaceSym = new Set<string>();
+      for (const sym of workspaceIntelliSense.symbols) {
+        const key = `${sym.filePath}:${sym.name}`;
+        if (seenWorkspaceSym.has(key)) continue;
+        seenWorkspaceSym.add(key);
+        suggestions.push({
+          label: sym.name,
+          kind:
+            sym.kind === 'function'
+              ? monaco.languages.CompletionItemKind.Function
+              : sym.kind === 'class'
+              ? monaco.languages.CompletionItemKind.Class
+              : monaco.languages.CompletionItemKind.Constant,
+          detail: `${sym.filePath}:${sym.line}`,
+          insertText: sym.name,
+          range
+        });
+      }
+
+      // Current file local identifiers
       const text = model.getValue();
       const seenLocal = new Set<string>();
-      const matches = text.matchAll(/(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)|^([A-Za-z_][A-Za-z0-9_]*)\s*=/gm);
+      const matches = text.matchAll(
+        /(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)|^([A-Za-z_][A-Za-z0-9_]*)\s*=/gm
+      );
       for (const m of matches) {
         const sym = m[1] || m[2];
         if (sym && !seenLocal.has(sym)) {
@@ -215,6 +314,56 @@ export function configureMonacoStudio(): typeof monaco {
       }
 
       return { suggestions };
+    }
+  });
+
+  // Cross-file Go-to-Definition (Ctrl+Click / F12)
+  monaco.languages.registerDefinitionProvider('python', {
+    provideDefinition(model, position) {
+      const word = model.getWordAtPosition(position);
+      if (!word) return null;
+      const ident = word.word;
+
+      // 1. Match cross-file module name
+      const modPath = workspaceIntelliSense.moduleToPath.get(ident);
+      if (modPath) {
+        return {
+          uri: monaco.Uri.parse(`file:///${modPath}`),
+          range: new monaco.Range(1, 1, 1, 1)
+        };
+      }
+
+      // 2. Match cross-file function / class / constant
+      const currentPath = model.uri.path.replace(/^\/+/, '');
+      const sym =
+        workspaceIntelliSense.symbols.find(
+          (s) => s.name === ident && s.filePath !== currentPath
+        ) || workspaceIntelliSense.symbols.find((s) => s.name === ident);
+
+      if (sym) {
+        return {
+          uri: monaco.Uri.parse(`file:///${sym.filePath}`),
+          range: new monaco.Range(sym.line, 1, sym.line, 1)
+        };
+      }
+      return null;
+    }
+  });
+
+  monaco.editor.registerEditorOpener({
+    openCodeEditor(_source, resource, selectionOrPosition) {
+      const targetPath = resource.path.replace(/^\/+/, '');
+      const line =
+        selectionOrPosition && 'startLineNumber' in selectionOrPosition
+          ? selectionOrPosition.startLineNumber
+          : selectionOrPosition && 'lineNumber' in selectionOrPosition
+          ? selectionOrPosition.lineNumber
+          : 1;
+      if (targetPath && workspaceIntelliSense.onOpenLocation) {
+        workspaceIntelliSense.onOpenLocation(targetPath, line);
+        return true;
+      }
+      return false;
     }
   });
 

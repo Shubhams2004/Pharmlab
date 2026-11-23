@@ -20,6 +20,7 @@ import StudyModeModule from './modules/study-mode/StudyModeModule';
 import SyllabusModule from './modules/syllabus/SyllabusModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 import PythonStudioWorkspace from './modules/python-studio/PythonStudioWorkspace';
+import { OfflineIndicator } from './components/PWAControls';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
 import {
   DEFAULT_TEXT_SIZE,
@@ -473,6 +474,7 @@ export default function App() {
           jumpTarget={pythonStudioJump}
           onExitStudio={() => setActiveModule(studioReturnModule || 'dashboard')}
         />
+        <OfflineIndicator />
       </LibraryNavigationContext.Provider>
     );
   }
@@ -617,6 +619,7 @@ export default function App() {
         onClearRecent={handleClearRecent}
         onResetExplored={handleResetExplored}
       />
+      <OfflineIndicator />
     </LibraryNavigationContext.Provider>
   );
 }

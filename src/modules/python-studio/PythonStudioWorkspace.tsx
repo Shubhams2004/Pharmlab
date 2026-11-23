@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Bug,
   Code2,
   FolderTree,
   PanelBottom,
@@ -18,7 +19,12 @@ import ContextInspectorPanel from './components/ContextInspectorPanel';
 import MonacoCodePanel from './components/MonacoCodePanel';
 import ProjectExplorerPanel from './components/ProjectExplorerPanel';
 import TerminalOutputPanel, { BottomWorkbenchTab } from './components/TerminalOutputPanel';
-import { getPyodideStudioRuntime, RuntimeSnapshot } from './pyodideRuntime';
+import { updateMonacoWorkspaceContext } from './monacoSetup';
+import {
+  DebugStepPlanAction,
+  getPyodideStudioRuntime,
+  RuntimeSnapshot
+} from './pyodideRuntime';
 import {
   appendExecutionHistory,
   clearProjectHistory,
@@ -36,11 +42,18 @@ import {
 } from './studioDb';
 import {
   buildProjectTree,
+  buildProjectZipBytes,
   collectDescendantIds,
   inferFileKind,
+  ipynbJsonToPythonScript,
+  parseZipToProjectFiles,
+  pythonFileToIpynbJson,
   validateNodeName
 } from './studioUtils';
 import {
+  DebugSnapshot,
+  DebugStepMode,
+  DiagnosticMarker,
   EditorPreferences,
   ExecutionRecord,
   PackageId,
@@ -88,6 +101,25 @@ export default function PythonStudioWorkspace({
     }
   ]);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [liveDiagnostics, setLiveDiagnostics] = useState<DiagnosticMarker[]>([]);
+  const [breakpointsByFile, setBreakpointsByFile] = useState<Record<string, number[]>>({});
+  const [watchExprs, setWatchExprs] = useState<string[]>([]);
+  const [pendingInputSession, setPendingInputSession] = useState<{
+    mode: 'file' | 'selection' | 'repl';
+    code: string;
+    filePath: string;
+    responses: string[];
+    prompt: string;
+    partialStdout: string;
+    debugPlan?: DebugStepPlanAction[];
+  } | null>(null);
+  const [debugSession, setDebugSession] = useState<{
+    filePath: string;
+    code: string;
+    stepPlan: DebugStepPlanAction[];
+    snapshot: DebugSnapshot | null;
+    stdinResponses: string[];
+  } | null>(null);
   const [editorJump, setEditorJump] = useState<{
     filePath: string;
     line: number;
@@ -571,6 +603,244 @@ export default function PythonStudioWorkspace({
     ]);
   }, []);
 
+  const handleJumpToLine = useCallback(
+    async (targetPath: string, line: number) => {
+      const normalized = targetPath.replace(/^\/workspace\//, '');
+      const nodeId = idByPath.get(normalized);
+      if (nodeId && activeProject?.activeFileId !== nodeId) {
+        await handleOpenFile(nodeId);
+      }
+      setEditorJump({ filePath: normalized, line, nonce: Date.now() });
+      setMobilePane('editor');
+    },
+    [activeProject?.activeFileId, handleOpenFile, idByPath]
+  );
+
+  // Sync cross-file IntelliSense symbols & Go-to-Definition handler whenever project files change
+  useEffect(() => {
+    updateMonacoWorkspaceContext({
+      files: collectWorkspaceFilesForRuntime(),
+      onOpenLocation: handleJumpToLine
+    });
+  }, [nodes, collectWorkspaceFilesForRuntime, handleJumpToLine]);
+
+  // Debounced live linting (JS fast checks + Python AST lint when runtime ready)
+  useEffect(() => {
+    if (!activeFile || !activeFilePath || inferFileKind(activeFile.name) !== 'python') {
+      setLiveDiagnostics([]);
+      return;
+    }
+    const content = activeFile.content ?? '';
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const markers = await runtimeManager.checkLiveDiagnostics(content, activeFilePath);
+      if (!cancelled) {
+        setLiveDiagnostics(markers);
+      }
+    }, 380);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeFile?.id, activeFile?.content, activeFile?.name, activeFilePath, runtime.status, runtimeManager]);
+
+  const combinedDiagnostics = useMemo(() => {
+    const merged = [...liveDiagnostics, ...runtime.diagnostics];
+    const seen = new Set<string>();
+    return merged.filter((d) => {
+      const key = `${d.filePath}:${d.line}:${d.message}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [liveDiagnostics, runtime.diagnostics]);
+
+  // Breakpoints & Watch expressions
+  const handleToggleBreakpoint = useCallback((filePath: string, line: number) => {
+    setBreakpointsByFile((prev) => {
+      const current = prev[filePath] || [];
+      const exists = current.includes(line);
+      const next = exists
+        ? current.filter((l) => l !== line)
+        : [...current, line].sort((a, b) => a - b);
+      if (next.length === 0) {
+        const copy = { ...prev };
+        delete copy[filePath];
+        return copy;
+      }
+      return { ...prev, [filePath]: next };
+    });
+  }, []);
+
+  const handleRemoveBreakpoint = useCallback((filePath: string, line: number) => {
+    setBreakpointsByFile((prev) => {
+      const next = (prev[filePath] || []).filter((l) => l !== line);
+      if (next.length === 0) {
+        const copy = { ...prev };
+        delete copy[filePath];
+        return copy;
+      }
+      return { ...prev, [filePath]: next };
+    });
+  }, []);
+
+  // Unified Execution + Interactive input() + Step Debugger Dispatcher
+  const executeWithOptions = useCallback(
+    async (params: {
+      mode: 'file' | 'selection' | 'repl';
+      code: string;
+      filePath: string;
+      stdinResponses?: string[];
+      debugPlan?: DebugStepPlanAction[];
+      watchOverride?: string[];
+    }) => {
+      const proj = activeProjectRef.current;
+      if (!proj) return;
+      const responses = params.stdinResponses || [];
+
+      const res = await runtimeManager.execute({
+        mode: params.mode,
+        code: params.code,
+        filePath: params.filePath,
+        files: collectWorkspaceFilesForRuntime(),
+        stdinResponses: responses,
+        debugConfig: params.debugPlan
+          ? {
+              breakpointsByFile,
+              stepPlan: params.debugPlan,
+              watchExprs: params.watchOverride ?? watchExprs
+            }
+          : undefined,
+        onStream:
+          params.debugPlan || responses.length > 0
+            ? undefined
+            : (stream, text) => {
+                appendTerminal({ kind: stream, text: text.replace(/\n$/, '') });
+              }
+      });
+
+      if (res.status === 'awaiting_input') {
+        setPendingInputSession({
+          mode: params.mode,
+          code: params.code,
+          filePath: params.filePath,
+          responses,
+          prompt: res.inputPrompt || '',
+          partialStdout: res.stdout || '',
+          debugPlan: params.debugPlan
+        });
+        setShowBottomPanel(true);
+        setBottomTab('output');
+        setMobilePane('output');
+        return;
+      }
+
+      setPendingInputSession(null);
+
+      if (res.status === 'paused' && res.debugSnapshot) {
+        setDebugSession({
+          filePath: params.filePath,
+          code: params.code,
+          stepPlan: params.debugPlan || ['entry'],
+          snapshot: res.debugSnapshot,
+          stdinResponses: responses
+        });
+        setShowBottomPanel(true);
+        setBottomTab('debug');
+        const targetNodeId = idByPath.get(res.debugSnapshot.filePath);
+        if (targetNodeId && activeProjectRef.current?.activeFileId !== targetNodeId) {
+          await updateActiveProjectMeta({
+            activeFileId: targetNodeId,
+            openTabIds: activeProjectRef.current?.openTabIds.includes(targetNodeId)
+              ? activeProjectRef.current.openTabIds
+              : [...(activeProjectRef.current?.openTabIds || []), targetNodeId]
+          });
+        }
+        return;
+      }
+
+      setDebugSession(null);
+      await syncModifiedFilesFromRuntime(res.modifiedFiles);
+
+      if (params.mode === 'repl') {
+        if (res.stdout && responses.length > 0) {
+          appendTerminal({ kind: 'stdout', text: res.stdout.replace(/\n$/, '') });
+        }
+        if (res.replResult !== null) {
+          appendTerminal({ kind: 'result', text: res.replResult });
+        }
+        if (res.status === 'error') {
+          const tbArt = res.artifacts.find((a) => a.kind === 'traceback');
+          if (tbArt && tbArt.kind === 'traceback') {
+            appendTerminal({ kind: 'error', text: tbArt.rawText.trim() });
+          } else if (res.stderr) {
+            appendTerminal({ kind: 'error', text: res.stderr.trim() });
+          }
+        }
+        const hasRichArtifacts = res.artifacts.some(
+          (a) => a.kind === 'image' || a.kind === 'table'
+        );
+        if (hasRichArtifacts) {
+          const record: ExecutionRecord = {
+            id: makeUiId('exec'),
+            projectId: proj.id,
+            timestamp: Date.now(),
+            mode: 'repl',
+            filePath: '<repl>',
+            codePreview: params.code.slice(0, 120),
+            durationMs: res.durationMs,
+            status: res.status === 'interrupted' ? 'interrupted' : res.status === 'error' ? 'error' : 'success',
+            artifacts: res.artifacts
+          };
+          const nextHist = await appendExecutionHistory(record);
+          setExecutionHistory(nextHist);
+          setSelectedExecutionId(record.id);
+          setBottomTab('output');
+        }
+        return;
+      }
+
+      if ((responses.length > 0 || params.debugPlan) && res.stdout.trim()) {
+        appendTerminal({ kind: 'stdout', text: res.stdout.replace(/\n$/, '') });
+      }
+
+      const record: ExecutionRecord = {
+        id: makeUiId('exec'),
+        projectId: proj.id,
+        timestamp: Date.now(),
+        mode: params.mode,
+        filePath: params.filePath,
+        codePreview: params.code.slice(0, 120),
+        durationMs: res.durationMs,
+        status: res.status === 'interrupted' ? 'interrupted' : res.status === 'error' ? 'error' : 'success',
+        artifacts: res.artifacts
+      };
+      const nextHist = await appendExecutionHistory(record);
+      setExecutionHistory(nextHist);
+      setSelectedExecutionId(record.id);
+      setShowBottomPanel(true);
+      setBottomTab('output');
+      setMobilePane('output');
+
+      if (res.status === 'error') {
+        const tbArt = res.artifacts.find((a) => a.kind === 'traceback');
+        if (tbArt && tbArt.kind === 'traceback') {
+          appendTerminal({ kind: 'error', text: tbArt.rawText.trim() });
+        }
+      }
+    },
+    [
+      appendTerminal,
+      breakpointsByFile,
+      collectWorkspaceFilesForRuntime,
+      idByPath,
+      runtimeManager,
+      syncModifiedFilesFromRuntime,
+      updateActiveProjectMeta,
+      watchExprs
+    ]
+  );
+
   // Execution Handlers
   const runCodeInWorkspace = useCallback(
     async (mode: 'file' | 'selection', codeOverride?: string) => {
@@ -587,6 +857,8 @@ export default function PythonStudioWorkspace({
         await handleSaveFile(file.id);
       }
 
+      setDebugSession(null);
+      setPendingInputSession(null);
       setShowBottomPanel(true);
       setBottomTab('output');
       setMobilePane('output');
@@ -596,114 +868,207 @@ export default function PythonStudioWorkspace({
         text: `$ python ${mode === 'selection' ? `<selection from ${filePath}>` : filePath}`
       });
 
-      const res = await runtimeManager.execute({
+      await executeWithOptions({
         mode,
         code: codeToRun,
-        filePath,
-        files: collectWorkspaceFilesForRuntime(),
-        onStream: (stream, text) => {
-          appendTerminal({ kind: stream, text: text.replace(/\n$/, '') });
-        }
+        filePath
       });
-
-      await syncModifiedFilesFromRuntime(res.modifiedFiles);
-
-      const record: ExecutionRecord = {
-        id: makeUiId('exec'),
-        projectId: proj.id,
-        timestamp: Date.now(),
-        mode,
-        filePath,
-        codePreview: codeToRun.slice(0, 120),
-        durationMs: res.durationMs,
-        status: res.status,
-        artifacts: res.artifacts
-      };
-      const nextHist = await appendExecutionHistory(record);
-      setExecutionHistory(nextHist);
-      setSelectedExecutionId(record.id);
-
-      if (res.status === 'error') {
-        const tbArt = res.artifacts.find((a) => a.kind === 'traceback');
-        if (tbArt && tbArt.kind === 'traceback') {
-          appendTerminal({ kind: 'error', text: tbArt.rawText.trim() });
-        }
-      }
     },
     [
       activeFile,
       appendTerminal,
-      collectWorkspaceFilesForRuntime,
       dirtyFileIds,
+      executeWithOptions,
       handleSaveFile,
-      pathById,
-      runtimeManager,
-      syncModifiedFilesFromRuntime
+      pathById
     ]
+  );
+
+  const handleStartDebug = useCallback(async () => {
+    const file = activeFile;
+    if (!file || inferFileKind(file.name) !== 'python') return;
+    const codeToRun = file.content || '';
+    if (!codeToRun.trim()) return;
+    const filePath = pathById.get(file.id) || file.name;
+    if (dirtyFileIds.has(file.id)) {
+      await handleSaveFile(file.id);
+    }
+
+    appendTerminal({
+      kind: 'system',
+      text: `$ python -m pdb ${filePath}`
+    });
+    setShowBottomPanel(true);
+    setBottomTab('debug');
+    setMobilePane('output');
+
+    await executeWithOptions({
+      mode: 'file',
+      code: codeToRun,
+      filePath,
+      debugPlan: ['entry']
+    });
+  }, [activeFile, appendTerminal, dirtyFileIds, executeWithOptions, handleSaveFile, pathById]);
+
+  const handleDebugStep = useCallback(
+    async (stepMode: DebugStepMode) => {
+      if (!debugSession) return;
+      const nextPlan: DebugStepPlanAction[] = [...debugSession.stepPlan, stepMode];
+      await executeWithOptions({
+        mode: 'file',
+        code: debugSession.code,
+        filePath: debugSession.filePath,
+        stdinResponses: debugSession.stdinResponses,
+        debugPlan: nextPlan
+      });
+    },
+    [debugSession, executeWithOptions]
+  );
+
+  const handleStopDebug = useCallback(() => {
+    setDebugSession(null);
+    setBottomTab('output');
+  }, []);
+
+  const handleAddWatchExpr = useCallback(
+    async (expr: string) => {
+      const nextWatches = watchExprs.includes(expr) ? watchExprs : [...watchExprs, expr];
+      setWatchExprs(nextWatches);
+      if (debugSession?.snapshot?.paused) {
+        await executeWithOptions({
+          mode: 'file',
+          code: debugSession.code,
+          filePath: debugSession.filePath,
+          stdinResponses: debugSession.stdinResponses,
+          debugPlan: debugSession.stepPlan,
+          watchOverride: nextWatches
+        });
+      }
+    },
+    [debugSession, executeWithOptions, watchExprs]
+  );
+
+  const handleRemoveWatchExpr = useCallback((expr: string) => {
+    setWatchExprs((prev) => prev.filter((w) => w !== expr));
+  }, []);
+
+  const handleSubmitInputResponse = useCallback(
+    async (value: string) => {
+      if (!pendingInputSession) return;
+      const nextResponses = [...pendingInputSession.responses, value];
+      await executeWithOptions({
+        mode: pendingInputSession.mode,
+        code: pendingInputSession.code,
+        filePath: pendingInputSession.filePath,
+        stdinResponses: nextResponses,
+        debugPlan: pendingInputSession.debugPlan
+      });
+    },
+    [executeWithOptions, pendingInputSession]
   );
 
   const handleRunReplCommand = useCallback(
     async (cmd: string) => {
       appendTerminal({ kind: 'input', text: `>>> ${cmd}` });
-      const res = await runtimeManager.execute({
+      await executeWithOptions({
         mode: 'repl',
         code: cmd,
-        filePath: '<repl>',
-        files: collectWorkspaceFilesForRuntime(),
-        onStream: (stream, text) => {
-          appendTerminal({ kind: stream, text: text.replace(/\n$/, '') });
-        }
+        filePath: '<repl>'
       });
+    },
+    [appendTerminal, executeWithOptions]
+  );
 
-      if (res.replResult !== null) {
-        appendTerminal({ kind: 'result', text: res.replResult });
-      }
-      if (res.status === 'error') {
-        const tbArt = res.artifacts.find((a) => a.kind === 'traceback');
-        if (tbArt && tbArt.kind === 'traceback') {
-          appendTerminal({ kind: 'error', text: tbArt.rawText.trim() });
-        } else if (res.stderr) {
-          appendTerminal({ kind: 'error', text: res.stderr.trim() });
+  // Project Archive (.zip) & Jupyter Notebook (.ipynb) Export / Import
+  const handleExportProjectZip = useCallback(() => {
+    if (!activeProject) return;
+    const bytes = buildProjectZipBytes(nodesRef.current);
+    const blob = new Blob([new Uint8Array(bytes)], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const slug =
+      activeProject.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'pharmlab_project';
+    a.download = `${slug}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [activeProject]);
+
+  const handleImportZipArchive = useCallback(
+    async (bytes: Uint8Array, archiveName: string) => {
+      try {
+        const extracted = parseZipToProjectFiles(bytes);
+        if (extracted.length === 0) {
+          appendTerminal({
+            kind: 'error',
+            text: `ZIP import "${archiveName}" contained no supported .py/.csv/.json/.md/.txt files.`
+          });
+          return;
         }
-      }
-
-      // If REPL created tables or plots, surface them in Output & Plots automatically!
-      const hasRichArtifacts = res.artifacts.some(
-        (a) => a.kind === 'image' || a.kind === 'table'
-      );
-      if (hasRichArtifacts && activeProjectRef.current) {
-        const record: ExecutionRecord = {
-          id: makeUiId('exec'),
-          projectId: activeProjectRef.current.id,
-          timestamp: Date.now(),
-          mode: 'repl',
-          filePath: '<repl>',
-          codePreview: cmd.slice(0, 120),
-          durationMs: res.durationMs,
-          status: res.status,
-          artifacts: res.artifacts
-        };
-        const nextHist = await appendExecutionHistory(record);
-        setExecutionHistory(nextHist);
-        setSelectedExecutionId(record.id);
-        setBottomTab('output');
+        await syncModifiedFilesFromRuntime(extracted);
+        appendTerminal({
+          kind: 'system',
+          text: `Imported ${extracted.length} file(s) from ${archiveName} into "${activeProjectRef.current?.name || 'Project'}".`
+        });
+      } catch (err: any) {
+        appendTerminal({
+          kind: 'error',
+          text: `Failed to read ZIP archive "${archiveName}": ${err?.message || String(err)}`
+        });
       }
     },
-    [appendTerminal, collectWorkspaceFilesForRuntime, runtimeManager]
+    [appendTerminal, syncModifiedFilesFromRuntime]
   );
 
-  const handleJumpToLine = useCallback(
-    async (targetPath: string, line: number) => {
-      const normalized = targetPath.replace(/^\/workspace\//, '');
-      const nodeId = idByPath.get(normalized);
-      if (nodeId && activeProject?.activeFileId !== nodeId) {
-        await handleOpenFile(nodeId);
+  const handleImportNotebook = useCallback(
+    async (jsonText: string, fileName: string) => {
+      const converted = ipynbJsonToPythonScript(jsonText, fileName);
+      if (!converted) {
+        appendTerminal({
+          kind: 'error',
+          text: `Could not parse Jupyter Notebook "${fileName}".`
+        });
+        return;
       }
-      setEditorJump({ filePath: normalized, line, nonce: Date.now() });
-      setMobilePane('editor');
+      const siblings = nodesRef.current
+        .filter((n) => (n.parentId ?? null) === null)
+        .map((n) => n.name);
+      let finalName = converted.fileName;
+      if (siblings.some((s) => s.toLowerCase() === finalName.toLowerCase())) {
+        const stem = finalName.replace(/\.py$/i, '');
+        finalName = `${stem}_${Date.now().toString().slice(-4)}.py`;
+      }
+      await handleCreateNode({
+        parentId: null,
+        name: finalName,
+        type: 'file',
+        content: converted.content
+      });
+      appendTerminal({
+        kind: 'system',
+        text: `Converted "${fileName}" into Python script "${finalName}".`
+      });
     },
-    [activeProject?.activeFileId, handleOpenFile, idByPath]
+    [appendTerminal, handleCreateNode]
   );
+
+  const handleExportNotebook = useCallback(() => {
+    if (!activeFile) return;
+    const latestRec =
+      executionHistory.find((r) => r.filePath === activeFilePath) || executionHistory[0] || null;
+    const ipynbText = pythonFileToIpynbJson(activeFile.name, activeFile.content ?? '', latestRec);
+    const blob = new Blob([ipynbText], { type: 'application/x-ipynb+json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const stem = activeFile.name.replace(/\.py$/i, '') || 'notebook';
+    a.download = `${stem}.ipynb`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [activeFile, activeFilePath, executionHistory]);
 
   const updateEditorPref = async <K extends keyof EditorPreferences>(
     key: K,
@@ -854,16 +1219,28 @@ export default function PythonStudioWorkspace({
               <span>Stop</span>
             </button>
           ) : (
-            <button
-              type="button"
-              disabled={!canRunActive}
-              onClick={() => runCodeInWorkspace('file')}
-              className="min-h-[34px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-semibold text-white inline-flex items-center gap-1.5 whitespace-nowrap transition-colors"
-              title="Run Active File (Ctrl+Enter)"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Run File</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={!canRunActive}
+                onClick={handleStartDebug}
+                className="md:hidden min-h-[34px] px-2.5 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 disabled:opacity-40 text-xs font-semibold text-amber-200 inline-flex items-center gap-1 whitespace-nowrap transition-colors"
+                title="Debug Active File"
+                aria-label="Debug Active File"
+              >
+                <Bug className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                disabled={!canRunActive}
+                onClick={() => runCodeInWorkspace('file')}
+                className="min-h-[34px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-semibold text-white inline-flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                title="Run Active File (Ctrl+Enter)"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Run File</span>
+              </button>
+            </div>
           )}
 
           {/* Desktop Panel Toggles */}
@@ -1078,6 +1455,9 @@ export default function PythonStudioWorkspace({
               onCreateNode={handleCreateNode}
               onRenameNode={handleRenameNode}
               onDeleteNode={handleDeleteNode}
+              onExportProjectZip={handleExportProjectZip}
+              onImportZipArchive={handleImportZipArchive}
+              onImportNotebook={handleImportNotebook}
             />
           </div>
         </div>
@@ -1114,7 +1494,14 @@ export default function PythonStudioWorkspace({
               activeFilePath={activeFilePath}
               dirtyFileIds={dirtyFileIds}
               editorPrefs={editorPrefs}
-              diagnostics={runtime.diagnostics}
+              diagnostics={combinedDiagnostics}
+              breakpoints={activeFilePath ? breakpointsByFile[activeFilePath] || [] : []}
+              activeDebugLine={
+                debugSession?.snapshot?.paused &&
+                debugSession.snapshot.filePath === activeFilePath
+                  ? debugSession.snapshot.line
+                  : null
+              }
               isExecuting={isBusy}
               isCompactViewport={!isDesktop}
               isCompactWidth={isCompactEditor}
@@ -1126,8 +1513,11 @@ export default function PythonStudioWorkspace({
               onToggleWordWrap={() =>
                 updateEditorPref('wordWrap', editorPrefs.wordWrap === 'on' ? 'off' : 'on')
               }
+              onToggleBreakpoint={handleToggleBreakpoint}
               onRunFile={() => runCodeInWorkspace('file')}
+              onDebugFile={handleStartDebug}
               onRunSelection={(sel) => runCodeInWorkspace('selection', sel)}
+              onExportNotebook={handleExportNotebook}
               onSelectionChange={setSelectedCode}
               onCreateMainPy={() =>
                 handleCreateNode({ parentId: null, name: 'main.py', type: 'file' })
@@ -1170,6 +1560,7 @@ export default function PythonStudioWorkspace({
                 setMobilePane('editor');
               }}
               runtime={runtime}
+              liveDiagnostics={combinedDiagnostics}
               terminalEntries={terminalEntries}
               executionHistory={executionHistory}
               selectedExecutionId={selectedExecutionId}
@@ -1185,6 +1576,30 @@ export default function PythonStudioWorkspace({
               onResetGlobals={() => runtimeManager.resetSession()}
               onInitRuntime={() => runtimeManager.ensureInitialized()}
               onLoadPackage={(pkg: PackageId) => runtimeManager.loadPackages([pkg])}
+              onInstallCustomPackage={(pkgName: string) =>
+                runtimeManager.installCustomPackages([pkgName])
+              }
+              onInspectVariable={(varName: string) =>
+                runtimeManager.inspectVariableDetail(varName)
+              }
+              pendingInputPrompt={
+                pendingInputSession
+                  ? {
+                      prompt: pendingInputSession.prompt,
+                      partialStdout: pendingInputSession.partialStdout
+                    }
+                  : null
+              }
+              onSubmitInputResponse={handleSubmitInputResponse}
+              onCancelInputPrompt={() => setPendingInputSession(null)}
+              debugSnapshot={debugSession?.snapshot ?? null}
+              breakpointsByFile={breakpointsByFile}
+              watchExprs={watchExprs}
+              onDebugStep={handleDebugStep}
+              onStopDebug={handleStopDebug}
+              onAddWatchExpr={handleAddWatchExpr}
+              onRemoveWatchExpr={handleRemoveWatchExpr}
+              onRemoveBreakpoint={handleRemoveBreakpoint}
               onJumpToLine={handleJumpToLine}
             />
           </div>

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Code, Play, Terminal, RefreshCw, BarChart3, Calculator, Database, ExternalLink } from 'lucide-react';
+import { Code, Play, Terminal, RefreshCw, BarChart3, Calculator, Database, ExternalLink, Download, Send, X } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
 import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
+import { ArtifactRenderer } from '../python-studio/components/TerminalOutputPanel';
 import { getPyodideStudioRuntime } from '../python-studio/pyodideRuntime';
 
 const PYTHON_TABS = [
@@ -32,6 +33,9 @@ export default function PythonModule({ initialTab, navNonce }) {
   const handleSelectUnit = (tabId) => {
     setActiveUnit(tabId);
     const label = PYTHON_TABS.find((t) => t.id === tabId)?.label;
+    setExecutionArtifacts([]);
+    setExecutionMeta(null);
+    setPendingInput(null);
     setConsoleOutput([`>>> Switched to ${label || tabId}. Click "Run in Browser".`]);
     if (label) {
       recordActivity({
@@ -135,17 +139,17 @@ adr_data = {
 }
 
 df = pd.DataFrame(adr_data)
-print("=== df.head(3) ===")
-print(df.head(3).to_string(index=False))
-print("\\n=== df.describe() ===")
+display(df, title="BP101T Clinical ADR Dataset")
+print("=== df.describe() ===")
 print(df.describe().round(2))
 print("\\n=== Grouped by Drug (Count) ===")
 print(df.groupby('Drug')['ID'].count())`);
 
-  const [codeUnit5, setCodeUnit5] = useState(`# BP101T Unit V: Matplotlib Pharmaceutical Data Profiles (Oral vs IV & Dissolution)
+  const [codeUnit5, setCodeUnit5] = useState(`# BP101T Unit V: Matplotlib Pharmaceutical Data Profiles (Oral vs IV)
 import numpy as np
+import matplotlib.pyplot as plt
 
-time_hrs = np.array([0, 0.5, 1, 2, 4, 6, 8, 12])
+time_hrs = np.linspace(0, 12, 121)
 dose, vd, ke, ka = 500.0, 25.0, 0.18, 1.1
 
 # IV Bolus: C(t) = (Dose/Vd) * exp(-ke * t)
@@ -154,12 +158,24 @@ conc_iv = (dose / vd) * np.exp(-ke * time_hrs)
 # Oral One-Compartment: C(t) = (Dose*ka / (Vd*(ka-ke))) * (exp(-ke*t) - exp(-ka*t))
 conc_oral = (dose * ka / (vd * (ka - ke))) * (np.exp(-ke * time_hrs) - np.exp(-ka * time_hrs))
 
-print("Time(h) | IV Conc (mg/L) | Oral Conc (mg/L)")
-for t, c_iv, c_or in zip(time_hrs, conc_iv, conc_oral):
-    print(f"{t:6.1f}  | {c_iv:14.2f} | {max(0, c_or):16.2f}")`);
+print("Sampled Time(h) | IV Conc (mg/L) | Oral Conc (mg/L)")
+for idx in [0, 10, 20, 40, 60, 80, 120]:
+    print(f"{time_hrs[idx]:14.1f}  | {conc_iv[idx]:14.2f} | {max(0, conc_oral[idx]):16.2f}")
+
+fig, ax = plt.subplots(figsize=(7.0, 4.0))
+ax.plot(time_hrs, conc_iv, label="IV Bolus", color="#0284c7", linewidth=2.2)
+ax.plot(time_hrs, conc_oral, label="Oral Tablet", color="#10b981", linewidth=2.2)
+ax.set_title("Oral vs IV Bolus Plasma Concentration-Time Profile")
+ax.set_xlabel("Time (hours)")
+ax.set_ylabel("Plasma Conc (mg/L)")
+ax.grid(True, linestyle="--", alpha=0.35)
+ax.legend()
+plt.tight_layout()
+plt.show()`);
 
   const [codePractical5, setCodePractical5] = useState(`# BP101T Practical 5: Accelerated Stability & Arrhenius Shelf-Life
 import numpy as np
+import matplotlib.pyplot as plt
 
 temps_c = np.array([40.0, 50.0, 60.0])
 temps_k = temps_c + 273.15
@@ -169,13 +185,28 @@ log_k = np.log(k_vals)
 
 slope, intercept = np.polyfit(inv_temp, log_k, 1)
 R = 1.987
-Ea_kcal = (-slope * R * 2.303 * 1000) / 1000.0
+Ea_kcal = (-slope * R) / 1000.0
 
-room_k = np.exp(slope * (1.0 / (25.0 + 273.15)) + intercept)
+inv_25 = 1.0 / (25.0 + 273.15)
+room_k = np.exp(slope * inv_25 + intercept)
 t90_years = (0.1053 / room_k) / 365.25
 
 print(f"Activation Energy (Ea): {Ea_kcal:.2f} kcal/mol")
-print(f"Shelf-Life at 25°C (t90): {t90_years:.2f} years")`);
+print(f"Predicted k at 25°C: {room_k:.6f} /day")
+print(f"Shelf-Life at 25°C (t90): {t90_years:.2f} years")
+
+x_fit = np.linspace(inv_temp.min(), inv_25, 60)
+fig, ax = plt.subplots(figsize=(6.8, 3.8))
+ax.scatter(inv_temp * 1000, log_k, color="#f59e0b", s=60, zorder=4, label="Accelerated (40–60°C)")
+ax.scatter([inv_25 * 1000], [np.log(room_k)], color="#10b981", s=70, zorder=5, label="Extrapolated 25°C")
+ax.plot(x_fit * 1000, slope * x_fit + intercept, color="#38bdf8", linewidth=2, label="Arrhenius Fit")
+ax.set_title("Arrhenius Plot: ln(k) vs 1000 / T(K)")
+ax.set_xlabel("1000 / T (K⁻¹)")
+ax.set_ylabel("ln(k)")
+ax.grid(True, linestyle="--", alpha=0.35)
+ax.legend()
+plt.tight_layout()
+plt.show()`);
 
   const [codeSandbox, setCodeSandbox] = useState(`# Custom Python Sandbox
 import numpy as np
@@ -186,6 +217,11 @@ print("Generated Array:", arr)`);
   const [consoleOutput, setConsoleOutput] = useState([
     '>>> PharmLab WebAssembly Python Environment Loading...'
   ]);
+  const [executionArtifacts, setExecutionArtifacts] = useState([]);
+  const [executionMeta, setExecutionMeta] = useState(null);
+  const [pendingInput, setPendingInput] = useState(null);
+  const [stdinDraft, setStdinDraft] = useState('');
+  const [lightboxImage, setLightboxImage] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -219,14 +255,39 @@ print("Generated Array:", arr)`);
     };
   }, [runtimeManager]);
 
-  const executeCode = async (codeToRun) => {
+  const executeCode = async (codeToRun, stdinResponses = []) => {
+    setPendingInput(null);
+    setExecutionMeta(null);
+    setExecutionArtifacts([]);
     setConsoleOutput([`>>> Executing script in browser...`, `----------------------------------------`]);
     const res = await runtimeManager.execute({
       mode: 'file',
       code: codeToRun,
       filePath: `${activeUnit}.py`,
-      files: [{ path: `${activeUnit}.py`, content: codeToRun }]
+      files: [{ path: `${activeUnit}.py`, content: codeToRun }],
+      stdinResponses
     });
+
+    if (res.status === 'awaiting_input') {
+      setPendingInput({
+        code: codeToRun,
+        prompt: res.inputPrompt || '',
+        partialStdout: res.stdout || '',
+        responses: stdinResponses
+      });
+      setConsoleOutput([
+        `>>> Script waiting for interactive input()...`,
+        ...(res.stdout ? [res.stdout] : [])
+      ]);
+      return;
+    }
+
+    const tracebacks = res.artifacts.filter((a) => a.kind === 'traceback');
+    const images = res.artifacts.filter((a) => a.kind === 'image');
+    const texts = res.artifacts.filter((a) => a.kind === 'text');
+    const tables = res.artifacts.filter((a) => a.kind === 'table');
+    setExecutionArtifacts([...tracebacks, ...images, ...texts, ...tables]);
+    setExecutionMeta({ status: res.status, durationMs: res.durationMs });
 
     if (res.status === 'error') {
       const tb = res.artifacts.find((a) => a.kind === 'traceback');
@@ -620,19 +681,143 @@ print("Generated Array:", arr)`);
           </div>
 
           <div className="lg:col-span-5 flex flex-col space-y-3">
-            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
-              Console Output
-            </span>
-            <div className="bg-slate-950 dark:bg-black border border-slate-200 dark:border-slate-800 rounded-xl p-4 font-code text-sm h-[360px] overflow-y-auto space-y-1">
-              {consoleOutput.map((line, i) => (
-                <div key={i} className={line.includes('Error') || line.includes('FAIL') ? 'text-rose-400 font-bold' : line.startsWith('>>>') ? 'text-slate-400' : 'text-emerald-300 whitespace-pre-wrap'}>
-                  {line}
-                </div>
-              ))}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                Console &amp; Plot Output
+              </span>
+              {executionMeta && (
+                <span
+                  className={`text-xs font-code font-semibold tabular-nums ${
+                    executionMeta.status === 'success' ? 'text-emerald-500' : 'text-rose-400'
+                  }`}
+                >
+                  {executionMeta.status.toUpperCase()} · {executionMeta.durationMs} ms
+                </span>
+              )}
+            </div>
+
+            {pendingInput && (
+              <div className="p-3 rounded-xl bg-sky-950/70 border border-sky-500/50 space-y-2">
+                <p className="text-xs font-bold text-sky-200">Python input() prompt</p>
+                {pendingInput.partialStdout && (
+                  <pre className="rounded bg-slate-950 px-2.5 py-1.5 text-xs font-code text-emerald-200 whitespace-pre-wrap">
+                    {pendingInput.partialStdout}
+                  </pre>
+                )}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const val = stdinDraft;
+                    setStdinDraft('');
+                    executeCode(pendingInput.code, [...pendingInput.responses, val]);
+                  }}
+                  className="flex flex-wrap sm:flex-nowrap items-center gap-2"
+                >
+                  {pendingInput.prompt && (
+                    <label className="text-xs font-code text-amber-200 shrink-0">
+                      {pendingInput.prompt}
+                    </label>
+                  )}
+                  <input
+                    autoFocus
+                    type="text"
+                    value={stdinDraft}
+                    onChange={(e) => setStdinDraft(e.target.value)}
+                    placeholder="Type input..."
+                    className="flex-1 min-w-[120px] bg-slate-950 border border-sky-500/60 rounded-lg px-2.5 py-1.5 text-xs font-code text-white focus:outline-none focus:border-emerald-400"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white inline-flex items-center gap-1 shrink-0"
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>Submit</span>
+                  </button>
+                </form>
+              </div>
+            )}
+
+            <div className="bg-slate-950 dark:bg-black border border-slate-200 dark:border-slate-800 rounded-xl p-4 font-code text-sm min-h-[360px] max-h-[560px] overflow-y-auto space-y-3">
+              {executionArtifacts.length > 0 ? (
+                executionArtifacts.map((art) => (
+                  <ArtifactRenderer
+                    key={art.id}
+                    artifact={art}
+                    onExpandImage={setLightboxImage}
+                  />
+                ))
+              ) : (
+                consoleOutput.map((line, i) => (
+                  <div
+                    key={i}
+                    className={
+                      line.includes('Error') || line.includes('FAIL')
+                        ? 'text-rose-400 font-bold'
+                        : line.startsWith('>>>')
+                        ? 'text-slate-400'
+                        : 'text-emerald-300 whitespace-pre-wrap'
+                    }
+                  >
+                    {line}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex flex-col p-3 sm:p-6"
+          onClick={() => setLightboxImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightboxImage.caption}
+        >
+          <div
+            className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-bold text-white truncate">{lightboxImage.caption}</h3>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = lightboxImage.dataUrl;
+                  link.download = `${lightboxImage.caption.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.png`;
+                  link.click();
+                }}
+                className="min-h-[40px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white inline-flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download PNG</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200"
+                aria-label="Close expanded plot"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div
+            className="flex-1 min-h-0 flex items-center justify-center overflow-auto py-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-white rounded-2xl p-2 sm:p-4 max-w-full max-h-full shadow-2xl">
+              <img
+                src={lightboxImage.dataUrl}
+                alt={lightboxImage.caption}
+                className="max-w-full max-h-[80dvh] object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <ResourceConnector
         department="python"

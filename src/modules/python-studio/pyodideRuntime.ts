@@ -1,10 +1,14 @@
+import { runFastJsPythonLint } from './studioUtils';
 import {
+  CustomPackageInfo,
+  DebugSnapshot,
   DiagnosticMarker,
   OutputArtifact,
   PackageId,
   PackageStatusInfo,
   PyodideRuntimeStatus,
   TracebackFrame,
+  VariableDetail,
   WorkspaceVariableInfo
 } from './types';
 
@@ -13,8 +17,16 @@ export interface StudioFileInput {
   content: string;
 }
 
+export type DebugStepPlanAction = 'entry' | 'into' | 'over' | 'out' | 'continue';
+
+export interface DebugConfigInput {
+  breakpointsByFile: Record<string, number[]>;
+  stepPlan: DebugStepPlanAction[];
+  watchExprs: string[];
+}
+
 export interface ExecutionResponse {
-  status: 'success' | 'error' | 'interrupted';
+  status: 'success' | 'error' | 'interrupted' | 'awaiting_input' | 'paused';
   durationMs: number;
   stdout: string;
   stderr: string;
@@ -23,6 +35,8 @@ export interface ExecutionResponse {
   variables: WorkspaceVariableInfo[];
   modifiedFiles: StudioFileInput[];
   diagnostics: DiagnosticMarker[];
+  inputPrompt?: string | null;
+  debugSnapshot?: DebugSnapshot | null;
   errorMessage?: string;
 }
 
@@ -34,6 +48,7 @@ export interface RuntimeSnapshot {
   lastError: string | null;
   supportsSoftInterrupt: boolean;
   packages: PackageStatusInfo[];
+  customPackages: CustomPackageInfo[];
   variables: WorkspaceVariableInfo[];
   diagnostics: DiagnosticMarker[];
 }
@@ -76,6 +91,14 @@ const INITIAL_PACKAGES: PackageStatusInfo[] = [
   }
 ];
 
+const INITIAL_CUSTOM_PACKAGES: CustomPackageInfo[] = [
+  { name: 'scikit-learn', status: 'not_loaded', source: 'micropip' },
+  { name: 'statsmodels', status: 'not_loaded', source: 'micropip' },
+  { name: 'seaborn', status: 'not_loaded', source: 'micropip' },
+  { name: 'openpyxl', status: 'not_loaded', source: 'micropip' },
+  { name: 'tabulate', status: 'not_loaded', source: 'micropip' }
+];
+
 function makeArtifactId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -109,6 +132,7 @@ class PyodideStudioRuntimeManager {
       typeof SharedArrayBuffer !== 'undefined' &&
       Boolean((globalThis as unknown as { crossOriginIsolated?: boolean }).crossOriginIsolated),
     packages: INITIAL_PACKAGES.map((p) => ({ ...p })),
+    customPackages: INITIAL_CUSTOM_PACKAGES.map((p) => ({ ...p })),
     variables: [],
     diagnostics: []
   };
@@ -154,6 +178,28 @@ class PyodideStudioRuntimeManager {
     });
   }
 
+  private updateCustomPackageState(
+    name: string,
+    status: CustomPackageInfo['status'],
+    error?: string
+  ) {
+    const exists = this.state.customPackages.some(
+      (p) => p.name.toLowerCase() === name.toLowerCase()
+    );
+    const nextCustom = exists
+      ? this.state.customPackages.map((p) =>
+          p.name.toLowerCase() === name.toLowerCase() ? { ...p, status, error } : p
+        )
+      : [...this.state.customPackages, { name, status, error, source: 'micropip' as const }];
+
+    this.emit({
+      customPackages: nextCustom,
+      status: status === 'loading' ? 'loading_package' : this.state.status,
+      statusDetail:
+        status === 'loading' ? `Installing ${name} via micropip...` : this.state.statusDetail
+    });
+  }
+
   private spawnWorker() {
     if (this.worker) {
       this.worker.terminate();
@@ -181,6 +227,11 @@ class PyodideStudioRuntimeManager {
 
       if (msg.type === 'package_status') {
         this.updatePackageState(msg.packageId, msg.status, msg.error);
+        return;
+      }
+
+      if (msg.type === 'custom_package_status') {
+        this.updateCustomPackageState(msg.name, msg.status, msg.error);
         return;
       }
 
@@ -306,11 +357,68 @@ class PyodideStudioRuntimeManager {
     }
   }
 
+  async installCustomPackages(packageNames: string[]): Promise<void> {
+    const clean = packageNames.map((p) => p.trim()).filter(Boolean);
+    if (clean.length === 0) return;
+    await this.ensureInitialized();
+    const prevDetail = this.state.statusDetail;
+    this.emit({
+      status: 'loading_package',
+      statusDetail: `micropip.install(${clean.join(', ')})...`
+    });
+    try {
+      await this.sendWorkerRequest({
+        type: 'install_custom_packages',
+        packages: clean
+      });
+      this.emit({
+        status: 'ready',
+        statusDetail: `Installed ${clean.join(', ')} via micropip`
+      });
+    } catch (err: any) {
+      this.emit({
+        status: 'ready',
+        statusDetail: prevDetail,
+        lastError: err?.message || String(err)
+      });
+      throw err;
+    }
+  }
+
+  async inspectVariableDetail(name: string): Promise<VariableDetail> {
+    await this.ensureInitialized();
+    const msg = await this.sendWorkerRequest({
+      type: 'inspect_variable_detail',
+      name
+    });
+    return msg.detail as VariableDetail;
+  }
+
+  async checkLiveDiagnostics(code: string, filePath: string): Promise<DiagnosticMarker[]> {
+    const jsMarkers = runFastJsPythonLint(code, filePath);
+    if (!this.worker || this.state.status !== 'ready') {
+      return jsMarkers;
+    }
+    try {
+      const res = await this.sendWorkerRequest({
+        type: 'check_diagnostics',
+        code,
+        filePath
+      });
+      const pyMarkers: DiagnosticMarker[] = Array.isArray(res.diagnostics) ? res.diagnostics : [];
+      return [...pyMarkers, ...jsMarkers];
+    } catch {
+      return jsMarkers;
+    }
+  }
+
   async execute(params: {
     mode: 'file' | 'selection' | 'repl';
     code: string;
     filePath?: string;
     files: StudioFileInput[];
+    stdinResponses?: string[];
+    debugConfig?: DebugConfigInput;
     onStream?: (stream: 'stdout' | 'stderr', text: string) => void;
   }): Promise<ExecutionResponse> {
     const startedAt = performance.now();
@@ -325,6 +433,8 @@ class PyodideStudioRuntimeManager {
       statusDetail:
         params.mode === 'repl'
           ? 'Evaluating interactive command...'
+          : params.debugConfig
+          ? `Debugging ${params.filePath || 'script'}...`
           : `Running ${params.filePath || 'selection'}...`,
       lastError: null
     });
@@ -336,7 +446,9 @@ class PyodideStudioRuntimeManager {
           mode: params.mode,
           code: params.code,
           filePath: params.filePath,
-          files: params.files
+          files: params.files,
+          stdinResponses: params.stdinResponses,
+          debugConfig: params.debugConfig
         },
         params.onStream
       );
@@ -434,19 +546,38 @@ class PyodideStudioRuntimeManager {
         status: loadedSet.has(p.id) ? ('loaded' as const) : p.status === 'error' ? 'error' : 'not_loaded'
       }));
 
+      const customSet = new Set<string>(raw.customPackages || []);
+      const nextCustom = this.state.customPackages.map((cp) =>
+        customSet.has(cp.name) ? { ...cp, status: 'loaded' as const } : cp
+      );
+
+      const finalStatus: ExecutionResponse['status'] =
+        raw.status === 'awaiting_input'
+          ? 'awaiting_input'
+          : raw.status === 'paused'
+          ? 'paused'
+          : raw.status === 'error'
+          ? 'error'
+          : 'success';
+
       this.emit({
         status: 'ready',
         statusDetail:
-          raw.status === 'error'
+          finalStatus === 'awaiting_input'
+            ? 'Waiting for Python input()...'
+            : finalStatus === 'paused'
+            ? `Paused at line ${raw.debugSnapshot?.line ?? '?'}`
+            : finalStatus === 'error'
             ? `Completed with ${raw.traceback?.errorType || 'error'} (${durationMs} ms)`
             : `Completed in ${durationMs} ms`,
         packages: nextPackages,
+        customPackages: nextCustom,
         variables: raw.variables || [],
         diagnostics
       });
 
       return {
-        status: raw.status === 'error' ? 'error' : 'success',
+        status: finalStatus,
         durationMs,
         stdout: raw.stdout || '',
         stderr: raw.stderr || '',
@@ -454,7 +585,9 @@ class PyodideStudioRuntimeManager {
         artifacts,
         variables: raw.variables || [],
         modifiedFiles: raw.modifiedFiles || [],
-        diagnostics
+        diagnostics,
+        inputPrompt: raw.inputPrompt ?? null,
+        debugSnapshot: raw.debugSnapshot ?? null
       };
     } catch (err: any) {
       const durationMs = Math.max(1, Math.round(performance.now() - startedAt));
@@ -514,7 +647,6 @@ class PyodideStudioRuntimeManager {
       return 'sigint';
     }
 
-    // Fallback when Cross-Origin Isolation / SharedArrayBuffer is unavailable (e.g. GitHub Pages)
     for (const [, pending] of this.pendingRequests) {
       pending.reject(new Error('__PHARMLAB_INTERRUPTED__'));
     }
@@ -527,6 +659,7 @@ class PyodideStudioRuntimeManager {
     this.emit({
       status: 'initializing',
       packages: INITIAL_PACKAGES.map((p) => ({ ...p })),
+      customPackages: INITIAL_CUSTOM_PACKAGES.map((p) => ({ ...p })),
       variables: [],
       diagnostics: [],
       statusDetail: 'Restarting Python WebAssembly runtime after stop...'
