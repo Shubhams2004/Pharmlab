@@ -28,6 +28,7 @@ export const QUICK_INDEX = [
   // Anatomy Explorer & Libraries
   { title: 'Anatomy Explorer (60 Cataloged Organs, Parts & Tissues)', sub: 'BP104T · Search, Filter 10 Body Systems, View Plates & Textbook Links', module: 'anatomy', tab: 'explorer', cat: 'Explorer', icon: Activity },
   { title: 'Anatomy Identification Practice', sub: 'BP104T · Structure & Function MCQs and Calibrated Visual Pin Quiz', module: 'anatomy', tab: 'practice', cat: 'Practice', icon: Compass },
+  { title: 'Official B.Pharm Semester I Syllabus (PDF Pages 38–65)', sub: 'Verbatim Scheme, Objectives, Outcomes, Units I–V, Practicals & References (BP101T–BP111P)', module: 'syllabus', tab: null, cat: 'Syllabus', icon: FileText },
   { title: 'Pharmaceutical Reference Center (Pharmacopoeias, Textbooks & Standards)', sub: 'IP, BP, USP–NF, Ph. Eur., WHO Ph. Int., Textbooks, Handbooks & Guidelines', referenceSection: 'overview', cat: 'Reference Center', icon: Scale },
   { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search, Notes & Diagram Crop', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
   { title: 'Scientific Resource Hub (PubMed, Europe PMC, OpenStax, Wikimedia)', sub: 'Discover Open-Access Papers, Textbooks, Reference Chapters & Scientific Visuals', module: 'resource_hub', tab: null, cat: 'Resource Hub', icon: Globe },

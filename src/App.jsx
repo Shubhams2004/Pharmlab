@@ -15,6 +15,7 @@ import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
 import ReferenceCenterModule from './modules/reference-center/ReferenceCenterModule';
 import ResourceHubModule from './modules/resource-hub/ResourceHubModule';
+import SyllabusModule from './modules/syllabus/SyllabusModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
 import {
@@ -153,6 +154,7 @@ export default function App() {
 
       if (
         moduleId !== 'dashboard' &&
+        moduleId !== 'syllabus' &&
         moduleId !== 'knowledge_library' &&
         moduleId !== 'visual_library' &&
         moduleId !== 'resource_hub' &&
@@ -447,6 +449,7 @@ export default function App() {
         {activeModule === 'reference_center' && (
           <ReferenceCenterModule jumpTarget={referenceJump} />
         )}
+        {activeModule === 'syllabus' && <SyllabusModule />}
       </DashboardLayout>
 
       <CommandPalette

@@ -394,6 +394,11 @@ export default function Dashboard({
               action: () => openVisualLibrary({ category: 'equipment' })
             },
             {
+              label: 'Official Syllabus',
+              icon: FileText,
+              action: () => onSelectModule('syllabus')
+            },
+            {
               label: 'Reference Center',
               icon: Scale,
               action: () => openReferenceCenter({ section: 'overview' })

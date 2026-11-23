@@ -17,11 +17,13 @@ import {
   Clock,
   Wrench,
   Globe,
-  Scale
+  Scale,
+  FileText
 } from 'lucide-react';
 
 export const SUBJECT_NAV_ITEMS = [
   { id: 'dashboard', label: 'Overview & Hub', group: 'Workspace', icon: LayoutGrid, code: 'Workspace' },
+  { id: 'syllabus', label: 'Official Syllabus', group: 'Workspace', icon: FileText, code: 'B.Pharm Sem I PDF' },
   { id: 'reference_center', label: 'Reference Center', group: 'Workspace', icon: Scale, code: 'Pharmacopoeias & Books' },
   { id: 'resource_hub', label: 'Scientific Resource Hub', group: 'Workspace', icon: Globe, code: 'Open Access Search' },
   { id: 'knowledge_library', label: 'Knowledge Library', group: 'Workspace', icon: Library, code: 'PDF Library' },
@@ -101,6 +103,22 @@ export default function SubjectNavigation({
             <span className="flex items-center gap-2.5 truncate">
               <LayoutGrid className="w-4 h-4 shrink-0" />
               <span className="truncate">Overview &amp; Hub</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSelectModule('syllabus')}
+            aria-current={activeModule === 'syllabus' ? 'page' : undefined}
+            className={`w-full min-h-[42px] flex items-center justify-between px-3 py-2 rounded-xl transition-colors whitespace-nowrap ${
+              activeModule === 'syllabus'
+                ? 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+            }`}
+          >
+            <span className="flex items-center gap-2.5 truncate">
+              <FileText className="w-4 h-4 shrink-0" />
+              <span className="truncate">Official Syllabus (PDF)</span>
             </span>
           </button>
 
