@@ -296,7 +296,7 @@ export default function ProjectExplorerPanel({
                   </button>
                 </div>
               ) : (
-                <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                <div className="flex md:hidden md:group-hover:flex items-center gap-0.5 shrink-0">
                   {isFolder && (
                     <>
                       <button
@@ -394,7 +394,7 @@ export default function ProjectExplorerPanel({
   };
 
   return (
-    <aside className="h-full flex flex-col bg-slate-900 border-r border-slate-800 text-slate-200 select-none">
+    <aside className="h-full w-full min-h-0 overflow-hidden flex flex-col bg-slate-900 border-r border-slate-800 text-slate-200 select-none">
       {/* Project Switcher Header */}
       <div className="p-3 border-b border-slate-800 space-y-2.5">
         <div className="flex items-center justify-between gap-2">
@@ -518,7 +518,7 @@ export default function ProjectExplorerPanel({
       </div>
 
       {/* File Tree */}
-      <div className="flex-1 overflow-y-auto py-1.5 space-y-0.5">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-1.5 space-y-0.5">
         {creatingState && creatingState.parentId === null && (
           <div className="mx-2 my-1 space-y-1">
             <div className="flex items-center gap-1">

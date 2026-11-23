@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Box,
@@ -6,14 +6,18 @@ import {
   ChevronDown,
   Download,
   History,
+  Image as ImageIcon,
   Maximize2,
   Minimize2,
   Package,
   RefreshCw,
   RotateCcw,
+  Table2,
   Terminal,
   Trash2,
-  XCircle
+  X,
+  XCircle,
+  ZoomIn
 } from 'lucide-react';
 import { RuntimeSnapshot } from '../pyodideRuntime';
 import {
@@ -26,6 +30,7 @@ import {
 } from '../types';
 
 export type BottomWorkbenchTab = 'output' | 'terminal' | 'packages' | 'variables';
+type OutputFilterMode = 'all' | 'plots' | 'tables' | 'console';
 
 interface TerminalOutputPanelProps {
   activeTab: BottomWorkbenchTab;
@@ -54,16 +59,17 @@ function downloadDataUrl(dataUrl: string, fileName: string) {
   link.click();
 }
 
-function downloadTableCsv(columns: string[], rows: (string | number | boolean | null)[][], title: string) {
+function downloadTableCsv(
+  columns: string[],
+  rows: (string | number | boolean | null)[][],
+  title: string
+) {
   const escape = (v: unknown) => {
     if (v === null || v === undefined) return '';
     const s = String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const lines = [
-    columns.map(escape).join(','),
-    ...rows.map((r) => r.map(escape).join(','))
-  ];
+  const lines = [columns.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))];
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -75,10 +81,12 @@ function downloadTableCsv(columns: string[], rows: (string | number | boolean | 
 
 function ArtifactRenderer({
   artifact,
-  onJumpToLine
+  onJumpToLine,
+  onExpandImage
 }: {
   artifact: OutputArtifact;
   onJumpToLine: (filePath: string, line: number) => void;
+  onExpandImage: (img: { dataUrl: string; caption: string }) => void;
 }) {
   const [showRawTb, setShowRawTb] = useState(false);
 
@@ -99,33 +107,50 @@ function ArtifactRenderer({
   }
 
   if (artifact.kind === 'image') {
+    const caption = artifact.caption || 'Matplotlib Figure';
     return (
-      <figure className="rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-2.5">
+      <figure className="rounded-xl border border-emerald-500/30 bg-slate-950 p-2.5 sm:p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <figcaption className="text-xs font-semibold text-slate-200 truncate">
-            {artifact.caption || 'Matplotlib Figure'}
+          <figcaption className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
+            <ImageIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">{caption}</span>
           </figcaption>
-          <button
-            type="button"
-            onClick={() =>
-              downloadDataUrl(
-                artifact.dataUrl,
-                `${(artifact.caption || 'figure').toLowerCase().replace(/[^a-z0-9]+/g, '_')}.png`
-              )
-            }
-            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-medium text-slate-200 inline-flex items-center gap-1 shrink-0"
-          >
-            <Download className="w-3 h-3 text-emerald-400" />
-            <span>PNG</span>
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => onExpandImage({ dataUrl: artifact.dataUrl, caption })}
+              className="min-h-[32px] px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-[11px] font-medium text-emerald-200 inline-flex items-center gap-1"
+            >
+              <ZoomIn className="w-3 h-3" />
+              <span>Expand</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadDataUrl(
+                  artifact.dataUrl,
+                  `${caption.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.png`
+                )
+              }
+              className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-medium text-slate-200 inline-flex items-center gap-1"
+            >
+              <Download className="w-3 h-3 text-emerald-400" />
+              <span>PNG</span>
+            </button>
+          </div>
         </div>
-        <div className="rounded-lg overflow-hidden bg-white p-2 flex justify-center">
+        <button
+          type="button"
+          onClick={() => onExpandImage({ dataUrl: artifact.dataUrl, caption })}
+          className="w-full rounded-lg overflow-hidden bg-white p-1.5 sm:p-2 flex justify-center cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          aria-label={`Expand ${caption}`}
+        >
           <img
             src={artifact.dataUrl}
-            alt={artifact.caption || 'Generated Matplotlib chart'}
-            className="max-w-full max-h-[420px] object-contain"
+            alt={caption}
+            className="w-full h-auto max-h-[300px] sm:max-h-[380px] object-contain"
           />
-        </div>
+        </button>
       </figure>
     );
   }
@@ -135,12 +160,13 @@ function ArtifactRenderer({
       <div className="rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
         <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between gap-2 bg-slate-900/70">
           <div className="flex items-center gap-2 min-w-0">
+            <Table2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
             <span className="text-xs font-semibold text-slate-200 truncate">
               {artifact.title || 'DataFrame Table'}
             </span>
-            <span className="text-[11px] text-slate-400 tabular-nums">
-              {artifact.shape[0]} rows × {artifact.shape[1]} cols
-              {artifact.truncated ? ' (showing first 120)' : ''}
+            <span className="text-[11px] text-slate-400 tabular-nums shrink-0">
+              {artifact.shape[0]}×{artifact.shape[1]}
+              {artifact.truncated ? ' (first 120)' : ''}
             </span>
           </div>
           <button
@@ -148,13 +174,13 @@ function ArtifactRenderer({
             onClick={() =>
               downloadTableCsv(artifact.columns, artifact.rows, artifact.title || 'dataframe')
             }
-            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 inline-flex items-center gap-1 shrink-0"
+            className="min-h-[30px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 inline-flex items-center gap-1 shrink-0"
           >
             <Download className="w-3 h-3 text-emerald-400" />
             <span>CSV</span>
           </button>
         </div>
-        <div className="overflow-x-auto max-h-72 overflow-y-auto">
+        <div className="overflow-x-auto max-h-56 overflow-y-auto">
           <table className="w-full text-left text-xs font-code tabular-nums">
             <thead className="bg-slate-900 text-slate-300 sticky top-0 border-b border-slate-800">
               <tr>
@@ -169,10 +195,7 @@ function ArtifactRenderer({
               {artifact.rows.map((row, rIdx) => (
                 <tr key={rIdx} className="hover:bg-slate-900/60">
                   {row.map((cell, cIdx) => (
-                    <td
-                      key={cIdx}
-                      className="px-3 py-1.5 text-slate-200 whitespace-nowrap"
-                    >
+                    <td key={cIdx} className="px-3 py-1.5 text-slate-200 whitespace-nowrap">
                       {cell === null ? (
                         <span className="text-slate-500 italic">NaN</span>
                       ) : typeof cell === 'number' ? (
@@ -191,7 +214,6 @@ function ArtifactRenderer({
     );
   }
 
-  // traceback
   return (
     <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 space-y-2.5">
       <div className="flex items-start justify-between gap-3">
@@ -232,7 +254,10 @@ function ArtifactRenderer({
             const cleanFile = fr.filename.replace(/^\/workspace\//, '');
             const isWorkspace = fr.filename.startsWith('/workspace/');
             return (
-              <div key={idx} className="text-[11px] font-code text-rose-200/90 flex flex-wrap items-center gap-1.5">
+              <div
+                key={idx}
+                className="text-[11px] font-code text-rose-200/90 flex flex-wrap items-center gap-1.5"
+              >
                 {isWorkspace ? (
                   <button
                     type="button"
@@ -247,7 +272,9 @@ function ArtifactRenderer({
                   </span>
                 )}
                 <span className="text-slate-400">in {fr.functionName}</span>
-                {fr.codeLine && <code className="text-rose-100 bg-rose-950/60 px-1 rounded">{fr.codeLine}</code>}
+                {fr.codeLine && (
+                  <code className="text-rose-100 bg-rose-950/60 px-1 rounded">{fr.codeLine}</code>
+                )}
               </div>
             );
           })}
@@ -285,6 +312,11 @@ export default function TerminalOutputPanel({
   const [replInput, setReplInput] = useState('');
   const [cmdHistory, setCmdHistory] = useState<string[]>([]);
   const [historyCursor, setHistoryCursor] = useState(-1);
+  const [outputFilter, setOutputFilter] = useState<OutputFilterMode>('all');
+  const [lightboxImage, setLightboxImage] = useState<{
+    dataUrl: string;
+    caption: string;
+  } | null>(null);
   const terminalEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -295,6 +327,35 @@ export default function TerminalOutputPanel({
 
   const activeExecution =
     executionHistory.find((e) => e.id === selectedExecutionId) || executionHistory[0] || null;
+
+  // Reset filter to 'all' whenever switching to a different run
+  useEffect(() => {
+    setOutputFilter('all');
+  }, [activeExecution?.id]);
+
+  const artifactCounts = useMemo(() => {
+    const arts = activeExecution?.artifacts || [];
+    const plots = arts.filter((a) => a.kind === 'image').length;
+    const tables = arts.filter((a) => a.kind === 'table').length;
+    const logs = arts.filter((a) => a.kind === 'text' || a.kind === 'traceback').length;
+    return { plots, tables, logs, total: arts.length };
+  }, [activeExecution]);
+
+  // Prioritize Errors + Plots + Console before tall DataFrame tables in 'all' view
+  const orderedArtifacts = useMemo(() => {
+    const arts = activeExecution?.artifacts || [];
+    if (outputFilter === 'plots') return arts.filter((a) => a.kind === 'image');
+    if (outputFilter === 'tables') return arts.filter((a) => a.kind === 'table');
+    if (outputFilter === 'console') {
+      return arts.filter((a) => a.kind === 'text' || a.kind === 'traceback');
+    }
+
+    const tracebacks = arts.filter((a) => a.kind === 'traceback');
+    const images = arts.filter((a) => a.kind === 'image');
+    const texts = arts.filter((a) => a.kind === 'text');
+    const tables = arts.filter((a) => a.kind === 'table');
+    return [...tracebacks, ...images, ...texts, ...tables];
+  }, [activeExecution, outputFilter]);
 
   const submitRepl = async () => {
     const cmd = replInput.trim();
@@ -333,30 +394,26 @@ export default function TerminalOutputPanel({
   const problemsCount = runtime.diagnostics.length;
 
   return (
-    <section className="h-full flex flex-col bg-slate-900 border-t border-slate-800 min-h-0">
+    <section className="h-full w-full min-h-0 flex flex-col bg-slate-900 border-t border-slate-800 overflow-hidden">
       {/* Workbench Tab Header */}
-      <div className="px-3 border-b border-slate-800 flex items-center justify-between gap-2 bg-slate-950/60 shrink-0 overflow-x-auto">
-        <div className="flex items-center gap-1">
+      <div className="px-2 sm:px-3 border-b border-slate-800 flex items-center justify-between gap-2 bg-slate-950/70 shrink-0">
+        <div className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto min-w-0 no-scrollbar">
           {[
             {
               id: 'output' as const,
-              label: 'Output & Plots',
-              count: activeExecution?.artifacts.length || 0
+              label: `Output & Plots${artifactCounts.plots > 0 ? ` (${artifactCounts.plots})` : ''}`
             },
             {
               id: 'terminal' as const,
-              label: 'Terminal (REPL)',
-              count: null
+              label: 'REPL'
             },
             {
               id: 'packages' as const,
-              label: `Packages (${loadedCount}/${runtime.packages.length})`,
-              count: null
+              label: `Packages (${loadedCount}/${runtime.packages.length})`
             },
             {
               id: 'variables' as const,
-              label: `Variables (${runtime.variables.length})${problemsCount > 0 ? ` · ${problemsCount} Err` : ''}`,
-              count: null
+              label: `Vars (${runtime.variables.length})${problemsCount > 0 ? ` · ${problemsCount} Err` : ''}`
             }
           ].map((tab) => {
             const active = activeTab === tab.id;
@@ -365,7 +422,7 @@ export default function TerminalOutputPanel({
                 key={tab.id}
                 type="button"
                 onClick={() => onChangeTab(tab.id)}
-                className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`min-h-[38px] px-2.5 sm:px-3 py-2 text-xs font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                   active
                     ? 'border-emerald-500 text-white'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -398,7 +455,7 @@ export default function TerminalOutputPanel({
                 title="Clear Python __main__ globals"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span className="hidden sm:inline">Reset Session</span>
+                <span className="hidden sm:inline">Reset</span>
               </button>
               <button
                 type="button"
@@ -414,16 +471,17 @@ export default function TerminalOutputPanel({
           <button
             type="button"
             onClick={onToggleExpand}
-            className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
-            title={isExpanded ? 'Restore panel height' : 'Maximize workbench'}
+            className="hidden md:inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-800 text-[11px] text-slate-300 hover:text-white"
+            title={isExpanded ? 'Restore split height' : 'Expand workbench full height'}
             aria-label={isExpanded ? 'Restore panel height' : 'Maximize workbench'}
           >
             {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <span>{isExpanded ? 'Split' : 'Expand'}</span>
           </button>
           <button
             type="button"
             onClick={onCollapse}
-            className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
+            className="hidden md:inline-flex p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
             title="Hide panel"
             aria-label="Hide panel"
           >
@@ -432,62 +490,100 @@ export default function TerminalOutputPanel({
         </div>
       </div>
 
-      {/* Tab Body */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+      {/* Tab Body (strictly bounded min-h-0 so scrolling works cleanly on mobile & desktop) */}
+      <div
+        className={`flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 ${
+          activeTab === 'terminal' ? 'pb-3' : 'pb-8'
+        }`}
+      >
         {activeTab === 'output' && (
           <div className="space-y-3">
             {executionHistory.length > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
-                <div className="flex items-center gap-1.5 overflow-x-auto max-w-full">
-                  <History className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  {executionHistory.slice(0, 8).map((rec, idx) => {
-                    const isSelected = activeExecution?.id === rec.id;
-                    return (
+              <div className="space-y-2 pb-2 border-b border-slate-800/80">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-0.5">
+                    <History className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    {executionHistory.slice(0, 8).map((rec, idx) => {
+                      const isSelected = activeExecution?.id === rec.id;
+                      return (
+                        <button
+                          key={rec.id}
+                          type="button"
+                          onClick={() => onSelectExecution(rec.id)}
+                          className={`min-h-[30px] px-2.5 py-1 rounded-md text-[11px] font-code border transition-colors whitespace-nowrap tabular-nums shrink-0 ${
+                            isSelected
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          #{executionHistory.length - idx} · {rec.filePath || rec.mode} ({rec.durationMs}ms)
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {activeExecution && (
+                    <span
+                      className={`text-[11px] font-medium tabular-nums shrink-0 ${
+                        activeExecution.status === 'success'
+                          ? 'text-emerald-400'
+                          : activeExecution.status === 'interrupted'
+                          ? 'text-amber-400'
+                          : 'text-rose-400'
+                      }`}
+                    >
+                      {activeExecution.status.toUpperCase()} · {activeExecution.durationMs} ms
+                    </span>
+                  )}
+                </div>
+
+                {/* Output Filter Bar when multiple artifact types are present */}
+                {(artifactCounts.plots > 0 || artifactCounts.tables > 0) && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    {[
+                      { id: 'all' as const, label: `All (${artifactCounts.total})` },
+                      ...(artifactCounts.plots > 0
+                        ? [{ id: 'plots' as const, label: `Plots (${artifactCounts.plots})` }]
+                        : []),
+                      ...(artifactCounts.tables > 0
+                        ? [{ id: 'tables' as const, label: `Tables (${artifactCounts.tables})` }]
+                        : []),
+                      ...(artifactCounts.logs > 0
+                        ? [{ id: 'console' as const, label: `Console (${artifactCounts.logs})` }]
+                        : [])
+                    ].map((f) => (
                       <button
-                        key={rec.id}
+                        key={f.id}
                         type="button"
-                        onClick={() => onSelectExecution(rec.id)}
-                        className={`px-2 py-1 rounded-md text-[11px] font-code border transition-colors whitespace-nowrap tabular-nums ${
-                          isSelected
-                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                        onClick={() => setOutputFilter(f.id)}
+                        className={`min-h-[30px] px-2.5 py-1 rounded-lg text-[11px] font-medium border whitespace-nowrap shrink-0 transition-colors ${
+                          outputFilter === f.id
+                            ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-200'
                             : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                         }`}
                       >
-                        #{executionHistory.length - idx} · {rec.filePath || rec.mode} ({rec.durationMs}ms)
+                        {f.label}
                       </button>
-                    );
-                  })}
-                </div>
-                {activeExecution && (
-                  <span
-                    className={`text-[11px] font-medium tabular-nums ${
-                      activeExecution.status === 'success'
-                        ? 'text-emerald-400'
-                        : activeExecution.status === 'interrupted'
-                        ? 'text-amber-400'
-                        : 'text-rose-400'
-                    }`}
-                  >
-                    {activeExecution.status.toUpperCase()} · {activeExecution.durationMs} ms
-                  </span>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
 
             {activeExecution ? (
-              activeExecution.artifacts.length > 0 ? (
+              orderedArtifacts.length > 0 ? (
                 <div className="space-y-3">
-                  {activeExecution.artifacts.map((art) => (
+                  {orderedArtifacts.map((art) => (
                     <ArtifactRenderer
                       key={art.id}
                       artifact={art}
                       onJumpToLine={onJumpToLine}
+                      onExpandImage={setLightboxImage}
                     />
                   ))}
                 </div>
               ) : (
                 <div className="py-6 text-center text-xs text-slate-400">
-                  Execution completed in {activeExecution.durationMs} ms with no printed output or figures.
+                  Execution completed in {activeExecution.durationMs} ms with no printed output or figures in this view.
                 </div>
               )
             ) : (
@@ -495,8 +591,8 @@ export default function TerminalOutputPanel({
                 <p className="text-xs font-medium text-slate-300">
                   No script runs yet in this project
                 </p>
-                <p className="text-xs text-slate-500">
-                  Press <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-code">Ctrl+Enter</kbd> or click Run to execute your Python script and view stdout, DataFrames, and Matplotlib plots.
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Tap Run File to execute your Python script and view console output, DataFrames, and Matplotlib plots.
                 </p>
               </div>
             )}
@@ -504,8 +600,8 @@ export default function TerminalOutputPanel({
         )}
 
         {activeTab === 'terminal' && (
-          <div className="h-full flex flex-col justify-between gap-2 min-h-[160px]">
-            <div className="flex-1 overflow-y-auto space-y-1.5 font-code text-xs pr-1">
+          <div className="h-full min-h-[180px] flex flex-col justify-between gap-2">
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 font-code text-xs pr-1">
               {terminalEntries.map((entry) => {
                 const cls =
                   entry.kind === 'input'
@@ -527,20 +623,20 @@ export default function TerminalOutputPanel({
             </div>
 
             <div className="flex items-start gap-2 pt-2 border-t border-slate-800 shrink-0">
-              <span className="font-code text-xs text-emerald-400 pt-1.5 select-none">&gt;&gt;&gt;</span>
+              <span className="font-code text-xs text-emerald-400 pt-2 select-none">&gt;&gt;&gt;</span>
               <textarea
                 rows={1}
                 value={replInput}
                 onChange={(e) => setReplInput(e.target.value)}
                 onKeyDown={handleReplKeyDown}
-                placeholder="Evaluate Python expression or statement in persistent session (Enter to run, Shift+Enter newline)..."
-                className="flex-1 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-lg px-2.5 py-1.5 text-xs font-code text-slate-100 placeholder-slate-500 focus:outline-none resize-none"
+                placeholder="Evaluate Python command in persistent session..."
+                className="flex-1 min-h-[38px] bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-lg px-2.5 py-2 text-xs font-code text-slate-100 placeholder-slate-500 focus:outline-none resize-none"
               />
               <button
                 type="button"
                 disabled={!replInput.trim() || runtime.status === 'executing'}
                 onClick={submitRepl}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-semibold text-white shrink-0 inline-flex items-center gap-1"
+                className="min-h-[38px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-semibold text-white shrink-0 inline-flex items-center gap-1"
               >
                 <Terminal className="w-3.5 h-3.5" />
                 <span>Eval</span>
@@ -559,7 +655,7 @@ export default function TerminalOutputPanel({
                 <p className="text-[11px] text-slate-400">
                   {runtime.supportsSoftInterrupt
                     ? 'Cross-origin isolated: soft SIGINT interrupt preserves variables.'
-                    : 'Standard browser/GitHub Pages mode: Stop restarts the Web Worker cleanly to abort loops.'}
+                    : 'Standard browser/GitHub Pages mode: packages load lazily when you run a script or tap Load below.'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -567,7 +663,7 @@ export default function TerminalOutputPanel({
                   <button
                     type="button"
                     onClick={onInitRuntime}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white"
+                    className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white"
                   >
                     Initialize Python
                   </button>
@@ -575,7 +671,7 @@ export default function TerminalOutputPanel({
                   <button
                     type="button"
                     onClick={onResetGlobals}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200"
+                    className="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200"
                   >
                     Clear Globals
                   </button>
@@ -614,9 +710,7 @@ export default function TerminalOutputPanel({
                         <span className="text-[11px] text-rose-400">Failed</span>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      {pkg.description}
-                    </p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">{pkg.description}</p>
                     {pkg.error && (
                       <p className="text-[11px] text-rose-400 break-words">{pkg.error}</p>
                     )}
@@ -626,7 +720,7 @@ export default function TerminalOutputPanel({
                     type="button"
                     disabled={pkg.status === 'loaded' || pkg.status === 'loading'}
                     onClick={() => onLoadPackage(pkg.id)}
-                    className={`w-full py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+                    className={`min-h-[34px] w-full py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
                       pkg.status === 'loaded'
                         ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 cursor-default'
                         : 'bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200'
@@ -646,7 +740,6 @@ export default function TerminalOutputPanel({
 
         {activeTab === 'variables' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {/* Active Variables */}
             <div className="rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
               <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
                 <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
@@ -674,12 +767,11 @@ export default function TerminalOutputPanel({
                 </div>
               ) : (
                 <p className="p-4 text-xs text-slate-500">
-                  Run a script or evaluate variables in the Terminal to inspect live objects in memory.
+                  Run a script or evaluate variables in the REPL to inspect live objects in memory.
                 </p>
               )}
             </div>
 
-            {/* Active Diagnostics */}
             <div className="rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
               <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
                 <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
@@ -712,6 +804,60 @@ export default function TerminalOutputPanel({
           </div>
         )}
       </div>
+
+      {/* Full-Screen Chart Lightbox Modal */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex flex-col p-3 sm:p-6"
+          onClick={() => setLightboxImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightboxImage.caption}
+        >
+          <div
+            className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-bold text-white truncate">{lightboxImage.caption}</h3>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() =>
+                  downloadDataUrl(
+                    lightboxImage.dataUrl,
+                    `${lightboxImage.caption.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.png`
+                  )
+                }
+                className="min-h-[40px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white inline-flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download PNG</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200"
+                aria-label="Close expanded plot"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="flex-1 min-h-0 flex items-center justify-center overflow-auto py-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-white rounded-2xl p-2 sm:p-4 max-w-full max-h-full shadow-2xl">
+              <img
+                src={lightboxImage.dataUrl}
+                alt={lightboxImage.caption}
+                className="max-w-full max-h-[80dvh] object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

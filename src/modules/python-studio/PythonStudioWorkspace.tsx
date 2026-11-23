@@ -95,7 +95,16 @@ export default function PythonStudioWorkspace({
   } | null>(null);
 
   // Layout & Resizing State
-  const [showExplorer, setShowExplorer] = useState(true);
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800
+  }));
+  const isDesktop = viewport.width >= 768;
+  const isCompactEditor = viewport.width < 1024;
+
+  const [showExplorer, setShowExplorer] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 900 : true
+  );
   const [showBottomPanel, setShowBottomPanel] = useState(true);
   const [bottomTab, setBottomTab] = useState<BottomWorkbenchTab>('output');
   const [bottomExpanded, setBottomExpanded] = useState(false);
@@ -103,8 +112,21 @@ export default function PythonStudioWorkspace({
   const [showSettingsPopover, setShowSettingsPopover] = useState(false);
   const [mobilePane, setMobilePane] = useState<'explorer' | 'editor' | 'output' | 'terminal'>('editor');
 
-  const [explorerWidth, setExplorerWidth] = useState(250);
-  const [bottomHeight, setBottomHeight] = useState(270);
+  const [explorerWidth, setExplorerWidth] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 1100 ? 200 : 250
+  );
+  const [bottomHeight, setBottomHeight] = useState(() => {
+    if (typeof window === 'undefined') return 340;
+    return Math.min(440, Math.max(300, Math.round(window.innerHeight * 0.44)));
+  });
+
+  useEffect(() => {
+    const onResize = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const dragStateRef = useRef<{
     kind: 'explorer' | 'bottom' | null;
@@ -768,20 +790,23 @@ export default function PythonStudioWorkspace({
 
   const isBusy = runtime.status === 'executing' || runtime.status === 'loading_package';
   const canRunActive = Boolean(activeFile && inferFileKind(activeFile.name) === 'python');
+  const latestPlotCount =
+    executionHistory[0]?.artifacts.filter((a) => a.kind === 'image').length || 0;
 
   return (
-    <div className="h-[100dvh] w-screen overflow-hidden flex flex-col bg-slate-950 text-slate-100">
+    <div className="h-[100dvh] w-full overflow-hidden flex flex-col bg-slate-950 text-slate-100">
       {/* Top IDE Workspace Header */}
-      <header className="h-12 px-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+      <header className="h-12 px-2.5 sm:px-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 sm:gap-3 shrink-0">
         {/* Left: Exit + Brand + Project Name */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           <button
             type="button"
             onClick={onExitStudio}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-100 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+            className="min-h-[34px] px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-100 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Exit to PharmaLab</span>
+            <span className="hidden sm:inline">Exit to PharmaLab</span>
+            <span className="sm:hidden">Exit</span>
           </button>
 
           <div className="hidden sm:flex items-center gap-2 min-w-0 pl-1 border-l border-slate-800">
@@ -798,7 +823,7 @@ export default function PythonStudioWorkspace({
         </div>
 
         {/* Center/Right: Runtime Status & Execution Controls */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300 max-w-xs truncate">
             {(runtime.status === 'initializing' || isBusy) && (
               <RefreshCw className="w-3 h-3 text-sky-400 animate-spin shrink-0" />
@@ -810,7 +835,7 @@ export default function PythonStudioWorkspace({
             <button
               type="button"
               onClick={() => handleSaveFile(activeFile.id)}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-sky-300 inline-flex items-center gap-1 whitespace-nowrap"
+              className="min-h-[34px] px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-sky-300 inline-flex items-center gap-1 whitespace-nowrap"
               title="Save active file (Ctrl+S)"
             >
               <Save className="w-3.5 h-3.5" />
@@ -822,7 +847,7 @@ export default function PythonStudioWorkspace({
             <button
               type="button"
               onClick={() => runtimeManager.interruptExecution()}
-              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white inline-flex items-center gap-1.5 whitespace-nowrap"
+              className="min-h-[34px] px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-xs font-semibold text-white inline-flex items-center gap-1.5 whitespace-nowrap"
               title="Stop execution"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
@@ -833,7 +858,7 @@ export default function PythonStudioWorkspace({
               type="button"
               disabled={!canRunActive}
               onClick={() => runCodeInWorkspace('file')}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-semibold text-white inline-flex items-center gap-1.5 whitespace-nowrap transition-colors"
+              className="min-h-[34px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-semibold text-white inline-flex items-center gap-1.5 whitespace-nowrap transition-colors"
               title="Run Active File (Ctrl+Enter)"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
@@ -889,7 +914,7 @@ export default function PythonStudioWorkspace({
             <button
               type="button"
               onClick={() => setShowSettingsPopover((v) => !v)}
-              className={`p-1.5 rounded-lg border transition-colors ${
+              className={`min-h-[34px] min-w-[34px] inline-flex items-center justify-center p-1.5 rounded-lg border transition-colors ${
                 showSettingsPopover
                   ? 'bg-slate-800 border-slate-700 text-white'
                   : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-800'
@@ -999,7 +1024,11 @@ export default function PythonStudioWorkspace({
         {[
           { id: 'explorer' as const, label: 'Files', icon: FolderTree },
           { id: 'editor' as const, label: 'Editor', icon: Code2 },
-          { id: 'output' as const, label: 'Output', icon: PanelBottom },
+          {
+            id: 'output' as const,
+            label: latestPlotCount > 0 ? `Output (${latestPlotCount})` : 'Output',
+            icon: PanelBottom
+          },
           { id: 'terminal' as const, label: 'REPL', icon: TerminalIcon }
         ].map((pane) => {
           const Icon = pane.icon;
@@ -1013,14 +1042,14 @@ export default function PythonStudioWorkspace({
                 if (pane.id === 'output') setBottomTab('output');
                 if (pane.id === 'terminal') setBottomTab('terminal');
               }}
-              className={`py-2 flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+              className={`min-h-[42px] py-2 px-1 flex items-center justify-center gap-1.5 border-b-2 transition-colors whitespace-nowrap ${
                 active
                   ? 'border-emerald-500 text-emerald-300 font-semibold'
                   : 'border-transparent text-slate-400'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{pane.label}</span>
+              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{pane.label}</span>
             </button>
           );
         })}
@@ -1032,10 +1061,10 @@ export default function PythonStudioWorkspace({
         <div
           className={`${
             mobilePane === 'explorer' ? 'flex w-full md:w-auto' : 'hidden'
-          } ${showExplorer ? 'md:flex' : 'md:hidden'} shrink-0 h-full`}
-          style={{ width: showExplorer && typeof window !== 'undefined' && window.innerWidth >= 768 ? explorerWidth : undefined }}
+          } ${showExplorer ? 'md:flex' : 'md:hidden'} shrink-0 h-full min-h-0 overflow-hidden`}
+          style={{ width: isDesktop && showExplorer ? explorerWidth : undefined }}
         >
-          <div className="w-full h-full">
+          <div className="w-full h-full min-h-0 overflow-hidden">
             <ProjectExplorerPanel
               projects={projects}
               activeProject={activeProject}
@@ -1065,13 +1094,13 @@ export default function PythonStudioWorkspace({
 
         {/* Center: Editor + Bottom Terminal/Output */}
         <div
-          className={`flex-1 min-w-0 min-h-0 flex flex-col ${
+          className={`flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col ${
             mobilePane === 'explorer' ? 'hidden md:flex' : 'flex'
           }`}
         >
           {/* Monaco Code Editor Region */}
           <div
-            className={`min-h-0 flex-1 ${
+            className={`min-h-0 min-w-0 overflow-hidden flex-1 ${
               mobilePane === 'output' || mobilePane === 'terminal'
                 ? 'hidden md:block'
                 : bottomExpanded && showBottomPanel
@@ -1087,11 +1116,16 @@ export default function PythonStudioWorkspace({
               editorPrefs={editorPrefs}
               diagnostics={runtime.diagnostics}
               isExecuting={isBusy}
+              isCompactViewport={!isDesktop}
+              isCompactWidth={isCompactEditor}
               jumpTarget={editorJump}
               onSelectTab={(fileId) => handleOpenFile(fileId)}
               onCloseTab={handleCloseTab}
               onChangeContent={handleChangeContent}
               onSaveFile={handleSaveFile}
+              onToggleWordWrap={() =>
+                updateEditorPref('wordWrap', editorPrefs.wordWrap === 'on' ? 'off' : 'on')
+              }
               onRunFile={() => runCodeInWorkspace('file')}
               onRunSelection={(sel) => runCodeInWorkspace('selection', sel)}
               onSelectionChange={setSelectedCode}
@@ -1107,27 +1141,22 @@ export default function PythonStudioWorkspace({
               role="separator"
               aria-orientation="horizontal"
               onPointerDown={(e) => startDrag('bottom', e)}
-              className="hidden md:block h-1 bg-slate-800/80 hover:bg-emerald-500/70 cursor-row-resize transition-colors shrink-0"
+              className="hidden md:block h-1.5 bg-slate-800/80 hover:bg-emerald-500/70 cursor-row-resize transition-colors shrink-0"
             />
           )}
 
           {/* Bottom Output & Terminal Workbench */}
           <div
             className={`${
-              mobilePane === 'output' || mobilePane === 'terminal'
-                ? 'flex-1 md:flex-none'
-                : 'hidden md:block'
-            } ${showBottomPanel ? '' : 'md:hidden'} ${
-              bottomExpanded ? 'flex-1 min-h-0' : 'shrink-0'
-            }`}
+              bottomExpanded
+                ? 'flex flex-col flex-1 min-h-0 overflow-hidden'
+                : mobilePane === 'output' || mobilePane === 'terminal'
+                ? 'flex flex-col flex-1 min-h-0 overflow-hidden md:block md:flex-none md:shrink-0 md:overflow-hidden'
+                : 'hidden md:block md:shrink-0 md:overflow-hidden'
+            } ${showBottomPanel ? '' : 'md:hidden'}`}
             style={{
               height:
-                !bottomExpanded &&
-                showBottomPanel &&
-                typeof window !== 'undefined' &&
-                window.innerWidth >= 768
-                  ? bottomHeight
-                  : undefined
+                isDesktop && !bottomExpanded && showBottomPanel ? bottomHeight : undefined
             }}
           >
             <TerminalOutputPanel
