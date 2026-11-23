@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Bookmark,
   BookOpen,
+  Box,
   CheckCircle2,
   Compass,
   Download,
@@ -115,6 +116,7 @@ export default function ResourceHubModule({
   const {
     openKnowledgeLibrary,
     openVisualLibrary,
+    openAsset3DEngine,
     navigateToModule,
     setWorkspaceSection
   } = useLibraryNavigation();
@@ -430,6 +432,19 @@ export default function ResourceHubModule({
             >
               <Library className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>PDF Library ({books.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                openAsset3DEngine({
+                  tab: 'discover',
+                  query: query.trim() || undefined
+                })
+              }
+              className="min-h-[40px] px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <Box className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>3D Discovery</span>
             </button>
           </div>
         </div>

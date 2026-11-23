@@ -15,9 +15,12 @@ import {
   FileText,
   MapPin,
   Globe,
-  Scale
+  Scale,
+  GraduationCap,
+  Box
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
+import { getAll3DAssets } from '../modules/assets-3d/asset3dDb';
 import { getAllBooks } from '../modules/knowledge-library/libraryDb';
 import { getAllReferences } from '../modules/reference-center/referenceDb';
 import { getAllVisuals } from '../modules/visual-library/visualDb';
@@ -25,7 +28,9 @@ import { searchAcademicEngine } from '../utils/academicEngineUtils';
 import { ENGINE_DEPARTMENTS } from '../data/academicEngineRegistry';
 
 export const QUICK_INDEX = [
-  // Anatomy Explorer & Libraries
+  // Study Mode & Anatomy Explorer & Libraries
+  { title: 'Study Mode & Academic Content Engine', sub: 'Syllabus-Driven Learning, Auto-Sourced References, Personal Notes & Bookmarks', module: 'study_mode', studyView: 'study', cat: 'Study Mode', icon: GraduationCap },
+  { title: 'Exam Prep & Previous-Year Question Paper Intelligence', sub: '9 Question Formats, Paper PDF Importer & Evidence-Based Unit Analysis', module: 'study_mode', studyView: 'exam', cat: 'Exam Prep', icon: GraduationCap },
   { title: 'Anatomy Explorer (60 Cataloged Organs, Parts & Tissues)', sub: 'BP104T · Search, Filter 10 Body Systems, View Plates & Textbook Links', module: 'anatomy', tab: 'explorer', cat: 'Explorer', icon: Activity },
   { title: 'Anatomy Identification Practice', sub: 'BP104T · Structure & Function MCQs and Calibrated Visual Pin Quiz', module: 'anatomy', tab: 'practice', cat: 'Practice', icon: Compass },
   { title: 'Official B.Pharm Semester I Syllabus (PDF Pages 38–65)', sub: 'Verbatim Scheme, Objectives, Outcomes, Units I–V, Practicals & References (BP101T–BP111P)', module: 'syllabus', tab: null, cat: 'Syllabus', icon: FileText },
@@ -33,6 +38,7 @@ export const QUICK_INDEX = [
   { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search, Notes & Diagram Crop', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
   { title: 'Scientific Resource Hub (PubMed, Europe PMC, OpenStax, Wikimedia)', sub: 'Discover Open-Access Papers, Textbooks, Reference Chapters & Scientific Visuals', module: 'resource_hub', tab: null, cat: 'Resource Hub', icon: Globe },
   { title: 'Academic Visual Learning Library & Atlas', sub: 'Interactive Diagrams, Structure Labels, Mechanisms, MCQs & Open-Access Search', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
+  { title: 'Universal Scientific 3D Asset Engine', sub: 'Interactive GLB / glTF / STL Viewer, Part Isolation & Scientific 3D Repository Discovery', asset3dTab: 'library', cat: '3D Engine', icon: Box },
   { title: 'Equipment & Apparatus Directory', sub: 'Compound Microscope, Gutzeit Apparatus, Nessler Cylinders & Lab Glassware', module: 'visual_library', category: 'equipment', tab: null, cat: 'Equipment', icon: Microscope },
   { title: 'Human Nephron & Glomerular Filtration (Visual Plate)', sub: 'Interactive Pins: Glomerulus, PCT, Loop of Henle, DCT & Collecting Duct', module: 'visual_library', visualId: 'builtin_nephron_anatomy', tab: null, cat: 'Anatomy', icon: Activity },
   { title: 'Diuretic Sites of Action Along the Nephron (Visual Plate)', sub: 'Pharmacology · Loop Diuretics, Thiazides, Acetazolamide & Spironolactone', module: 'visual_library', visualId: 'builtin_diuretic_pharmacology', tab: null, cat: 'Pharmacology', icon: FlaskConical },
@@ -79,13 +85,20 @@ export const QUICK_INDEX = [
 ];
 
 export default function CommandPalette({ isOpen, onClose, onNavigate }) {
-  const { openVisualLibrary, openKnowledgeLibrary, openResourceHub, openReferenceCenter } =
-    useLibraryNavigation();
+  const {
+    openVisualLibrary,
+    openKnowledgeLibrary,
+    openResourceHub,
+    openReferenceCenter,
+    openStudyMode,
+    openAsset3DEngine
+  } = useLibraryNavigation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [books, setBooks] = useState([]);
   const [visuals, setVisuals] = useState([]);
   const [references, setReferences] = useState([]);
+  const [assets3d, setAssets3d] = useState([]);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -95,12 +108,13 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     setTimeout(() => inputRef.current?.focus(), 20);
 
     let cancelled = false;
-    Promise.all([getAllBooks(), getAllVisuals(), getAllReferences()])
-      .then(([loadedBooks, loadedVisuals, loadedRefs]) => {
+    Promise.all([getAllBooks(), getAllVisuals(), getAllReferences(), getAll3DAssets()])
+      .then(([loadedBooks, loadedVisuals, loadedRefs, loaded3d]) => {
         if (cancelled) return;
         setBooks(loadedBooks);
         setVisuals(loadedVisuals);
         setReferences(loadedRefs);
+        setAssets3d(loaded3d);
       })
       .catch(() => {
         // ignore IndexedDB error inside palette
@@ -194,6 +208,20 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
         icon: Scale
       }));
 
+    const model3dHits = assets3d
+      .filter((m) => {
+        const hay = `${m.name} ${m.description} ${m.creator} ${m.tags.join(' ')}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 4)
+      .map((m) => ({
+        title: m.name,
+        sub: `${m.format.toUpperCase()} · ${m.creator}`,
+        asset3dId: m.id,
+        cat: '3D Model',
+        icon: Box
+      }));
+
     const externalAction = {
       title: `Search Scientific Resource Hub for "${query.trim()}"`,
       sub: 'Live Open-Access Search · PubMed, Europe PMC, PMC, NCBI Bookshelf, OpenStax & Wikimedia',
@@ -203,6 +231,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     };
 
     return [
+      ...model3dHits,
       ...refHits,
       ...structureResults,
       ...subtopicResults,
@@ -213,10 +242,16 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
       ...bookResults,
       externalAction
     ];
-  }, [query, books, visuals, references]);
+  }, [query, books, visuals, references, assets3d]);
 
   const launchPick = (pick) => {
-    if (pick.referenceId) {
+    if (pick.asset3dId) {
+      openAsset3DEngine({ assetId: pick.asset3dId });
+    } else if (pick.asset3dTab) {
+      openAsset3DEngine({ tab: pick.asset3dTab });
+    } else if (pick.studyView) {
+      openStudyMode({ view: pick.studyView });
+    } else if (pick.referenceId) {
       openReferenceCenter({ referenceId: pick.referenceId });
     } else if (pick.referenceSection) {
       openReferenceCenter({ section: pick.referenceSection });

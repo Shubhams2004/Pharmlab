@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   BookOpen,
+  Box,
   ChevronRight,
   ExternalLink,
   Eye,
@@ -33,6 +34,7 @@ import {
   DepartmentId,
   VisualMediaItem
 } from '../modules/visual-library/types';
+import Asset3DConnector from '../modules/assets-3d/Asset3DConnector';
 import {
   deleteVisual,
   getAllVisuals,
@@ -56,8 +58,13 @@ export default function ResourceConnector({
   defaultSearchQuery = '',
   title = 'Linked Visuals & Textbook References'
 }: ResourceConnectorProps) {
-  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub, openReferenceCenter } =
-    useLibraryNavigation();
+  const {
+    openKnowledgeLibrary,
+    openVisualLibrary,
+    openResourceHub,
+    openReferenceCenter,
+    openAsset3DEngine
+  } = useLibraryNavigation();
 
   const [visuals, setVisuals] = useState<VisualMediaItem[]>([]);
   const [allVisuals, setAllVisuals] = useState<VisualMediaItem[]>([]);
@@ -236,6 +243,18 @@ export default function ResourceConnector({
           >
             <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Resource Hub</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              openAsset3DEngine({
+                query: defaultSearchQuery || equipment || topic || experiment || undefined
+              })
+            }
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+          >
+            <Box className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>3D Asset Engine</span>
           </button>
         </div>
       </div>
@@ -509,6 +528,22 @@ export default function ResourceConnector({
           </div>
         </div>
       )}
+
+      <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+        <Asset3DConnector
+          workspaceDepartment={department}
+          topicTitle={topic}
+          experimentTitle={experiment}
+          defaultSearchQuery={defaultSearchQuery || equipment || topic}
+          defaultCategory={equipment ? 'apparatus' : 'other'}
+          title="Linked 3D Models & Apparatus Foundation"
+          subtitle={
+            equipment
+              ? `Inspect or attach real GLB/glTF/STL apparatus models for ${equipment}`
+              : undefined
+          }
+        />
+      </div>
 
       <ImageViewerModal
         item={viewerItem}

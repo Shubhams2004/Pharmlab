@@ -1,4 +1,5 @@
 import React, { createContext, useContext } from 'react';
+import { BPharmDepartmentId } from '../modules/assets-3d/types';
 import { ReferenceNavSection } from '../modules/reference-center/types';
 import { AcademicContextRef, ResourceHubTab, ResourceType } from '../modules/resource-hub/types';
 import {
@@ -40,11 +41,30 @@ export interface ReferenceJumpTarget {
   nonce: number;
 }
 
+export interface StudyModeJumpTarget {
+  syllabusId?: string | null;
+  subjectCode?: string | null;
+  topicId?: string | null;
+  view?: 'study' | 'exam' | null;
+  nonce: number;
+}
+
+export interface Asset3DJumpTarget {
+  tab?: 'library' | 'discover' | 'mapping' | null;
+  query?: string | null;
+  department?: BPharmDepartmentId | null;
+  assetId?: string | null;
+  openUpload?: boolean;
+  nonce: number;
+}
+
 interface LibraryNavigationContextValue {
   openKnowledgeLibrary: (opts?: Omit<KnowledgeJumpTarget, 'nonce'>) => void;
   openVisualLibrary: (opts?: Omit<VisualJumpTarget, 'nonce'>) => void;
   openResourceHub: (opts?: Omit<ResourceJumpTarget, 'nonce'>) => void;
   openReferenceCenter: (opts?: Omit<ReferenceJumpTarget, 'nonce'>) => void;
+  openStudyMode: (opts?: Omit<StudyModeJumpTarget, 'nonce'>) => void;
+  openAsset3DEngine: (opts?: Omit<Asset3DJumpTarget, 'nonce'>) => void;
   navigateToModule: (
     moduleId: string,
     tab?: string | null,
@@ -63,6 +83,8 @@ export const LibraryNavigationContext = createContext<LibraryNavigationContextVa
   openVisualLibrary: noop,
   openResourceHub: noop,
   openReferenceCenter: noop,
+  openStudyMode: noop,
+  openAsset3DEngine: noop,
   navigateToModule: noop,
   setWorkspaceSection: noop,
   recordActivity: noop,

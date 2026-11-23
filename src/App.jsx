@@ -13,8 +13,10 @@ import AnatomyModule from './modules/bp104t-anatomy/AnatomyModule';
 import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyModule';
 import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
+import Assets3DModule from './modules/assets-3d/Assets3DModule';
 import ReferenceCenterModule from './modules/reference-center/ReferenceCenterModule';
 import ResourceHubModule from './modules/resource-hub/ResourceHubModule';
+import StudyModeModule from './modules/study-mode/StudyModeModule';
 import SyllabusModule from './modules/syllabus/SyllabusModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
@@ -66,6 +68,21 @@ export default function App() {
     section: null,
     referenceId: null,
     query: null,
+    nonce: 0
+  });
+  const [studyJump, setStudyJump] = useState({
+    syllabusId: null,
+    subjectCode: null,
+    topicId: null,
+    view: null,
+    nonce: 0
+  });
+  const [asset3dJump, setAsset3dJump] = useState({
+    tab: null,
+    query: null,
+    department: null,
+    assetId: null,
+    openUpload: false,
     nonce: 0
   });
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -154,9 +171,11 @@ export default function App() {
 
       if (
         moduleId !== 'dashboard' &&
+        moduleId !== 'study_mode' &&
         moduleId !== 'syllabus' &&
         moduleId !== 'knowledge_library' &&
         moduleId !== 'visual_library' &&
+        moduleId !== 'assets_3d' &&
         moduleId !== 'resource_hub' &&
         moduleId !== 'reference_center'
       ) {
@@ -265,8 +284,49 @@ export default function App() {
     [navigateTo]
   );
 
+  const openStudyMode = useCallback(
+    (opts = {}) => {
+      setStudyJump((prev) => ({
+        syllabusId: opts.syllabusId ?? null,
+        subjectCode: opts.subjectCode ?? null,
+        topicId: opts.topicId ?? null,
+        view: opts.view ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('study_mode');
+    },
+    [navigateTo]
+  );
+
+  const openAsset3DEngine = useCallback(
+    (opts = {}) => {
+      setAsset3dJump((prev) => ({
+        tab: opts.tab ?? null,
+        query: opts.query ?? null,
+        department: opts.department ?? null,
+        assetId: opts.assetId ?? null,
+        openUpload: Boolean(opts.openUpload),
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('assets_3d');
+    },
+    [navigateTo]
+  );
+
   const handleOpenRecentItem = useCallback(
     (item) => {
+      if (item.kind === 'model_3d' && item.asset3dId) {
+        openAsset3DEngine({ assetId: item.asset3dId });
+        return;
+      }
+      if (item.kind === 'study_topic' && item.topicId) {
+        openStudyMode({
+          syllabusId: item.syllabusId ?? null,
+          subjectCode: item.subjectCode ?? null,
+          topicId: item.topicId
+        });
+        return;
+      }
       if (item.kind === 'book' && item.bookId) {
         openKnowledgeLibrary({ bookId: item.bookId, pageNumber: item.pageNumber ?? 1 });
         return;
@@ -285,7 +345,7 @@ export default function App() {
       }
       navigateTo(item.moduleId, item.tab ?? null);
     },
-    [navigateTo, openKnowledgeLibrary, openVisualLibrary]
+    [navigateTo, openKnowledgeLibrary, openVisualLibrary, openStudyMode, openAsset3DEngine]
   );
 
   const handleClearRecent = useCallback(() => {
@@ -307,6 +367,8 @@ export default function App() {
       openVisualLibrary,
       openResourceHub,
       openReferenceCenter,
+      openStudyMode,
+      openAsset3DEngine,
       navigateToModule: navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -318,6 +380,8 @@ export default function App() {
       openVisualLibrary,
       openResourceHub,
       openReferenceCenter,
+      openStudyMode,
+      openAsset3DEngine,
       navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -449,6 +513,8 @@ export default function App() {
         {activeModule === 'reference_center' && (
           <ReferenceCenterModule jumpTarget={referenceJump} />
         )}
+        {activeModule === 'study_mode' && <StudyModeModule jumpTarget={studyJump} />}
+        {activeModule === 'assets_3d' && <Assets3DModule jumpTarget={asset3dJump} />}
         {activeModule === 'syllabus' && <SyllabusModule />}
       </DashboardLayout>
 

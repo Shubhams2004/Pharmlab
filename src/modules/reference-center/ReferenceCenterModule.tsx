@@ -5,6 +5,7 @@ import {
   Bookmark,
   BookmarkCheck,
   BookOpen,
+  Box,
   Check,
   Clock,
   Download,
@@ -136,7 +137,7 @@ function mapReferenceToBookDept(ref: ReferenceItem): BookDepartmentTag {
 }
 
 export default function ReferenceCenterModule({ jumpTarget }: ReferenceCenterModuleProps) {
-  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
+  const { setWorkspaceSection, recordActivity, openAsset3DEngine } = useLibraryNavigation();
 
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [collections, setCollections] = useState<CustomCollection[]>([]);
@@ -923,6 +924,14 @@ export default function ReferenceCenterModule({ jumpTarget }: ReferenceCenterMod
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => openAsset3DEngine({ query: unifiedQuery.trim() || undefined })}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold whitespace-nowrap"
+            >
+              <Box className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>3D Asset Engine</span>
+            </button>
             <button
               type="button"
               onClick={() =>

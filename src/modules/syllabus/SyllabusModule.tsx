@@ -5,6 +5,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  GraduationCap,
   Loader2,
   Search,
   Table2,
@@ -81,7 +82,7 @@ function courseMatchesQuery(course: SyllabusCourse, query: string): boolean {
 }
 
 export default function SyllabusModule() {
-  const { setWorkspaceSection } = useLibraryNavigation();
+  const { setWorkspaceSection, openStudyMode } = useLibraryNavigation();
 
   const [viewMode, setViewMode] = useState<'structured' | 'pdf'>('structured');
   const [selectedCode, setSelectedCode] = useState<string>('ALL');
@@ -458,16 +459,26 @@ export default function SyllabusModule() {
                   </h2>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => openOriginalPdfAtPage(course.pdfStartPage)}
-                  className="min-h-[36px] px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 text-xs font-semibold text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>
-                    PDF Pages {course.docPageStart}–{course.docPageEnd}
-                  </span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openStudyMode({ subjectCode: course.courseCode })}
+                    className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                  >
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    <span>Study in Study Mode</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openOriginalPdfAtPage(course.pdfStartPage)}
+                    className="min-h-[36px] px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 text-xs font-semibold text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>
+                      PDF Pages {course.docPageStart}–{course.docPageEnd}
+                    </span>
+                  </button>
+                </div>
               </div>
 
               <div className="p-5 sm:p-6 space-y-6">

@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileText,
   Globe,
+  GraduationCap,
   Images,
   Layers,
   Library,
@@ -26,6 +27,7 @@ import { BookRecord, BookSearchResult } from '../knowledge-library/types';
 import ImageViewerModal from '../visual-library/ImageViewerModal';
 import VisualThumbnail from '../visual-library/VisualThumbnail';
 import { VisualMediaItem } from '../visual-library/types';
+import Asset3DConnector from '../assets-3d/Asset3DConnector';
 import { getAllVisuals } from '../visual-library/visualDb';
 import {
   AnatomicalCategoryId,
@@ -62,7 +64,8 @@ export default function AnatomyStructureDetail({
   onOpenDiagramSchematic,
   onStartPracticeForCategory
 }: AnatomyStructureDetailProps) {
-  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub } = useLibraryNavigation();
+  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub, openStudyMode } =
+    useLibraryNavigation();
 
   const [allVisuals, setAllVisuals] = useState<VisualMediaItem[]>([]);
   const [viewerItem, setViewerItem] = useState<VisualMediaItem | null>(null);
@@ -271,6 +274,23 @@ export default function AnatomyStructureDetail({
           >
             <Globe className="w-4 h-4" />
             <span>Find Scientific Resources</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              openStudyMode({
+                subjectCode: 'BP104T',
+                topicId:
+                  structure.primaryCategory === 'urinary'
+                    ? 'syllabus_official_bpharm_sem1_BP104T_engine_urinary_nephron'
+                    : undefined
+              })
+            }
+            className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <GraduationCap className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span>Study Topic</span>
           </button>
 
           {onStartPracticeForCategory && (
@@ -625,6 +645,17 @@ export default function AnatomyStructureDetail({
               </button>
             )}
           </section>
+
+          <Asset3DConnector
+            departmentId="anatomy"
+            subjectCode="BP104T"
+            structureId={structure.id}
+            structureName={structure.name}
+            defaultSearchQuery={structure.name}
+            defaultCategory="anatomy"
+            title="3D Anatomical Models"
+            subtitle={`Attach or inspect GLB / glTF / STL models for ${structure.name}`}
+          />
 
           {/* Textbook References & Live IndexedDB PDF Knowledge Library */}
           <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">

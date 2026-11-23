@@ -4,7 +4,9 @@ export type StudyActivityKind =
   | 'book'
   | 'visual'
   | 'equipment'
-  | 'structure';
+  | 'structure'
+  | 'study_topic'
+  | 'model_3d';
 
 export interface RecentStudyItem {
   key: string;
@@ -16,8 +18,12 @@ export interface RecentStudyItem {
   bookId?: string | null;
   pageNumber?: number | null;
   visualId?: string | null;
+  asset3dId?: string | null;
   structureId?: string | null;
   category?: string | null;
+  syllabusId?: string | null;
+  subjectCode?: string | null;
+  topicId?: string | null;
   timestamp: number;
 }
 

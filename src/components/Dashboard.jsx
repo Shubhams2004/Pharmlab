@@ -3,12 +3,14 @@ import {
   Activity,
   ArrowRight,
   BookOpen,
+  Box,
   Clock,
   Code,
   Compass,
   FileText,
   FlaskConical,
   Globe,
+  GraduationCap,
   Images,
   Library,
   MapPin,
@@ -23,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 import { getAllBooks, searchAllBooks } from '../modules/knowledge-library/libraryDb';
+import { getLastStudiedTopicSummary } from '../modules/study-mode/studyDb';
 import { getAllVisuals } from '../modules/visual-library/visualDb';
 import { CORE_DEPARTMENT_CARDS, DEPARTMENT_WORKSPACES } from '../types/academicArchitecture';
 import { searchAcademicEngine } from '../utils/academicEngineUtils';
@@ -47,10 +50,17 @@ export default function Dashboard({
   visitedModules = [],
   lastModule = 'anatomy'
 }) {
-  const { openKnowledgeLibrary, openVisualLibrary, openResourceHub, openReferenceCenter } =
-    useLibraryNavigation();
+  const {
+    openKnowledgeLibrary,
+    openVisualLibrary,
+    openResourceHub,
+    openReferenceCenter,
+    openStudyMode,
+    openAsset3DEngine
+  } = useLibraryNavigation();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const lastStudyTopic = useMemo(() => getLastStudiedTopicSummary(), []);
 
   const [books, setBooks] = useState([]);
   const [visuals, setVisuals] = useState([]);
@@ -382,6 +392,11 @@ export default function Dashboard({
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {[
             {
+              label: 'Study Mode',
+              icon: GraduationCap,
+              action: () => openStudyMode()
+            },
+            {
               label: 'Anatomy Explorer (60)',
               icon: Activity,
               action: () => onSelectModule('anatomy', 'explorer')
@@ -412,6 +427,11 @@ export default function Dashboard({
               label: 'Visual Library',
               icon: Images,
               action: () => openVisualLibrary()
+            },
+            {
+              label: '3D Asset Engine',
+              icon: Box,
+              action: () => openAsset3DEngine()
             },
             {
               label: 'Resource Hub',
@@ -450,6 +470,31 @@ export default function Dashboard({
           </div>
 
           <div className="space-y-3">
+            {lastStudyTopic && (
+              <button
+                type="button"
+                onClick={() =>
+                  openStudyMode({
+                    syllabusId: lastStudyTopic.syllabusId,
+                    subjectCode: lastStudyTopic.subjectCode,
+                    topicId: lastStudyTopic.topicId
+                  })
+                }
+                className="w-full p-3.5 rounded-xl bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/30 hover:border-emerald-500/60 flex items-center justify-between gap-3 text-left transition-colors group"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                    Resume Study Mode · {lastStudyTopic.subjectCode || 'Syllabus'} ·{' '}
+                    {lastStudyTopic.readingProgressPct}% read
+                  </p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
+                    {lastStudyTopic.topicTitle}
+                  </p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-emerald-600 shrink-0" />
+              </button>
+            )}
+
             {/* Active Lab Module */}
             <button
               type="button"
