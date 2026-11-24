@@ -17,7 +17,7 @@ import { getAllSyllabi } from '../study-mode/studyDb';
 import { SyllabusProfile } from '../study-mode/types';
 import { Asset3DInitialContext } from './Asset3DUploadModal';
 import Universal3DViewer from './Universal3DViewer';
-import { save3DAssetWithFile } from './asset3dDb';
+import { save3DAssetWithFile, getCustom3DCategories, getMerged3DCategoryOptions } from './asset3dDb';
 import {
   Fetched3DBinary,
   fetchRemote3DBinary,
@@ -26,13 +26,11 @@ import {
   SAFE_AUTO_PREVIEW_BYTES
 } from './discoveryProviders';
 import {
-  ALL_3D_CATEGORIES,
   ALL_BPHARM_DEPARTMENTS,
   Asset3DCategory,
   Asset3DItem,
   BPHARM_DEPARTMENT_LABELS,
   BPharmDepartmentId,
-  CATEGORY_3D_LABELS,
   Discovered3DCandidate,
   formatBytes,
   SyllabusAssociation
@@ -698,9 +696,10 @@ export default function Asset3DImportModal({
                   onChange={(e) => setCategory(e.target.value as Asset3DCategory)}
                   className="w-full min-h-[38px] px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
                 >
-                  {ALL_3D_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {CATEGORY_3D_LABELS[c]}
+                  {getMerged3DCategoryOptions(existingAssets, getCustom3DCategories()).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                      {c.isCustom ? ' (Custom)' : ''}
                     </option>
                   ))}
                 </select>

@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Box, ChevronRight, Globe, Upload } from 'lucide-react';
+import { Box, ChevronRight, Globe, Link2, Upload } from 'lucide-react';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import Asset3DLibraryPickerModal from './Asset3DLibraryPickerModal';
 import Asset3DUploadModal, { Asset3DInitialContext } from './Asset3DUploadModal';
 import ModelViewerModal from './ModelViewerModal';
-import { get3DAssetsForContext } from './asset3dDb';
+import { get3DAssetsForContext, getCustom3DCategories } from './asset3dDb';
 import {
   Asset3DCategory,
   Asset3DItem,
   BPharmDepartmentId,
-  CATEGORY_3D_LABELS,
+  Custom3DCategory,
+  get3DCategoryLabel,
   mapWorkspaceDeptToBPharmDept
 } from './types';
 
@@ -53,12 +55,15 @@ export default function Asset3DConnector({
     departmentId || mapWorkspaceDeptToBPharmDept(workspaceDepartment);
 
   const [assets, setAssets] = useState<Asset3DItem[]>([]);
+  const [customCategories, setCustomCategories] = useState<Custom3DCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewerAsset, setViewerAsset] = useState<Asset3DItem | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const loadMatches = useCallback(async () => {
     setLoading(true);
+    setCustomCategories(getCustom3DCategories());
     try {
       const hits = await get3DAssetsForContext({
         departmentId: resolvedDept,
@@ -130,6 +135,15 @@ export default function Asset3DConnector({
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
+            onClick={() => setPickerOpen(true)}
+            className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1"
+          >
+            <Link2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Link from Library</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() =>
               openAsset3DEngine({
                 tab: 'discover',
@@ -163,7 +177,7 @@ export default function Asset3DConnector({
             <strong className="text-slate-800 dark:text-slate-200">
               {structureName || topicTitle || experimentTitle || 'this subject'}
             </strong>{' '}
-            yet. Import an open-source model or upload a local GLB/glTF/STL file.
+            yet. Link an existing model from your 3D Library, import an open-source asset, or upload a local file.
           </span>
           <button
             type="button"
@@ -204,7 +218,7 @@ export default function Asset3DConnector({
                   {item.name}
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                  {item.format.toUpperCase()} · {CATEGORY_3D_LABELS[item.category]}
+                  {item.format.toUpperCase()} · {get3DCategoryLabel(item.category, customCategories)}
                 </p>
               </div>
             </button>
@@ -221,6 +235,24 @@ export default function Asset3DConnector({
         onAssetDeleted={(id) => {
           setAssets((prev) => prev.filter((a) => a.id !== id));
         }}
+      />
+
+      <Asset3DLibraryPickerModal
+        isOpen={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onLinked={() => void loadMatches()}
+        departmentId={resolvedDept}
+        course="B.Pharm"
+        subjectCode={subjectCode}
+        subjectTitle={subjectTitle}
+        unitNo={unitNo}
+        topicId={topicId}
+        topicTitle={topicTitle}
+        experimentId={experimentId}
+        experimentTitle={experimentTitle}
+        structureId={structureId}
+        structureName={structureName}
+        linkedAssetIds={assets.map((a) => a.id)}
       />
 
       <Asset3DUploadModal

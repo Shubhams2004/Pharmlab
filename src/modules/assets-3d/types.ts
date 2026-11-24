@@ -9,17 +9,30 @@ export type ModelFormat =
   | 'sdf'
   | 'mol';
 
-export type Asset3DCategory =
+export type Predefined3DCategory =
   | 'anatomy'
   | 'organ'
-  | 'molecule'
-  | 'apparatus'
-  | 'medicinal_plant'
   | 'microorganism'
+  | 'molecule'
+  | 'chemistry'
+  | 'pharma_equipment'
+  | 'apparatus'
   | 'instrument'
+  | 'pharma_manufacturing'
   | 'industrial_machinery'
+  | 'biotechnology'
+  | 'medical_device'
+  | 'medicinal_plant'
   | 'formulation'
   | 'other';
+
+export type Asset3DCategory = Predefined3DCategory | (string & {});
+
+export interface Custom3DCategory {
+  id: string;
+  label: string;
+  createdAt: number;
+}
 
 export type BPharmDepartmentId =
   | 'anatomy'
@@ -40,6 +53,28 @@ export type Asset3DImportStatus =
   | 'user_uploaded'
   | 'linked_url'
   | 'external_reference';
+
+export type Asset3DAvailabilityStatus =
+  | 'offline_ready'
+  | 'shared_binary'
+  | 'remote_url'
+  | 'metadata_only';
+
+export type Asset3DLibrarySort =
+  | 'import_desc'
+  | 'import_asc'
+  | 'name_asc'
+  | 'name_desc'
+  | 'category_asc'
+  | 'size_desc'
+  | 'size_asc'
+  | 'recent_viewed';
+
+export type Asset3DLibraryCollection =
+  | 'all'
+  | 'favorites'
+  | 'recent_imported'
+  | 'recent_viewed';
 
 export interface SyllabusAssociation {
   id: string;
@@ -89,6 +124,9 @@ export interface Asset3DItem {
   usageRestrictions: string;
   importStatus: Asset3DImportStatus;
   hasBinaryBlob: boolean;
+  /** References another asset's binary key in IndexedDB so duplicated metadata shares the large 3D file without copying bytes */
+  binaryRefAssetId?: string;
+  isFavorite?: boolean;
   componentCount?: number;
   vertexCount?: number;
   triangleCount?: number;
@@ -106,6 +144,31 @@ export interface Asset3DBinaryRecord {
   byteSize: number;
   buffer: ArrayBuffer;
   savedAt: number;
+}
+
+export interface Asset3DStorageReport {
+  totalAssets: number;
+  storedBinaryCount: number;
+  sharedReferenceCount: number;
+  actualBinaryBytes: number;
+  logicalBinaryBytes: number;
+  metadataBytesEstimate: number;
+  quotaBytes?: number;
+  usageBytes?: number;
+  maxSingleAssetBytes: number;
+}
+
+export interface Asset3DDeleteImpact {
+  asset: Asset3DItem;
+  syllabusLinks: SyllabusAssociation[];
+  affectedSubjects: string[];
+  affectedTopics: string[];
+  affectedExperiments: string[];
+  affectedStructures: string[];
+  annotationCount: number;
+  dependentAssetNames: string[];
+  binaryBytesFreed: number;
+  willTransferBinaryOwnership: boolean;
 }
 
 export type Provider3DId =
@@ -188,17 +251,22 @@ export interface ViewerRenderSettings {
   backgroundMode: 'slate_dark' | 'clinical_light';
 }
 
-export const CATEGORY_3D_LABELS: Record<Asset3DCategory, string> = {
-  anatomy: 'Anatomical Structure',
-  organ: 'Organ & System',
-  molecule: 'Molecule & Chemical Structure',
-  apparatus: 'Laboratory Apparatus',
-  medicinal_plant: 'Medicinal Plant & Botanical',
-  microorganism: 'Microorganism & Cell',
-  instrument: 'Analytical Instrument',
-  industrial_machinery: 'Industrial Pharma Machinery',
-  formulation: 'Dosage Form & Formulation',
-  other: 'Other Scientific Model'
+export const CATEGORY_3D_LABELS: Record<Predefined3DCategory, string> = {
+  anatomy: 'Human Anatomy',
+  organ: 'Organs & Tissues',
+  microorganism: 'Cells & Microorganisms',
+  molecule: 'Molecular Structures',
+  chemistry: 'Chemistry',
+  pharma_equipment: 'Pharmaceutical Equipment',
+  apparatus: 'Lab Glassware & Apparatus',
+  instrument: 'Laboratory Instruments',
+  pharma_manufacturing: 'Pharmaceutical Manufacturing',
+  industrial_machinery: 'Industrial Machinery',
+  biotechnology: 'Biotechnology',
+  medical_device: 'Medical Devices',
+  medicinal_plant: 'Medicinal Plants & Botanicals',
+  formulation: 'Dosage Forms & Formulations',
+  other: 'Other Scientific Assets'
 };
 
 export const BPHARM_DEPARTMENT_LABELS: Record<BPharmDepartmentId, string> = {
@@ -220,9 +288,9 @@ export const ALL_BPHARM_DEPARTMENTS: BPharmDepartmentId[] = Object.keys(
   BPHARM_DEPARTMENT_LABELS
 ) as BPharmDepartmentId[];
 
-export const ALL_3D_CATEGORIES: Asset3DCategory[] = Object.keys(
+export const ALL_3D_CATEGORIES: Predefined3DCategory[] = Object.keys(
   CATEGORY_3D_LABELS
-) as Asset3DCategory[];
+) as Predefined3DCategory[];
 
 export const IMPORT_STATUS_3D_LABELS: Record<Asset3DImportStatus, string> = {
   imported_binary: 'Imported (Offline Binary)',
@@ -230,6 +298,63 @@ export const IMPORT_STATUS_3D_LABELS: Record<Asset3DImportStatus, string> = {
   linked_url: 'External Model URL',
   external_reference: 'External Repository Record'
 };
+
+export function normalizeCustomCategoryId(label: string): string {
+  const clean = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return clean ? `custom_${clean}` : `custom_${Date.now()}`;
+}
+
+export function get3DCategoryLabel(
+  category: Asset3DCategory,
+  customCategories: Custom3DCategory[] = []
+): string {
+  if (category in CATEGORY_3D_LABELS) {
+    return CATEGORY_3D_LABELS[category as Predefined3DCategory];
+  }
+  const customHit = customCategories.find((c) => c.id === category || c.label === category);
+  if (customHit) return customHit.label;
+  return category
+    .replace(/^custom_/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+export function getAsset3DAvailability(asset: Asset3DItem): {
+  status: Asset3DAvailabilityStatus;
+  label: string;
+  canOpenViewer: boolean;
+} {
+  if (asset.hasBinaryBlob && asset.binaryRefAssetId) {
+    return {
+      status: 'shared_binary',
+      label: 'Offline Ready (Shared 3D File)',
+      canOpenViewer: true
+    };
+  }
+  if (asset.hasBinaryBlob) {
+    return {
+      status: 'offline_ready',
+      label: 'Offline Ready (IndexedDB)',
+      canOpenViewer: true
+    };
+  }
+  if (asset.externalFileUrl && /^https?:\/\//i.test(asset.externalFileUrl)) {
+    return {
+      status: 'remote_url',
+      label: 'Remote 3D URL (Online)',
+      canOpenViewer: true
+    };
+  }
+  return {
+    status: 'metadata_only',
+    label: 'Metadata Only (No 3D Binary)',
+    canOpenViewer: false
+  };
+}
 
 export function mapWorkspaceDeptToBPharmDept(dept?: string | null): BPharmDepartmentId {
   switch (dept) {

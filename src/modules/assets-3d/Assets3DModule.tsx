@@ -3,17 +3,27 @@ import {
   AlertTriangle,
   Box,
   CheckCircle2,
+  Clock,
+  Copy,
   Download,
+  Edit3,
   ExternalLink,
   Filter,
+  FolderPlus,
   Globe,
   GraduationCap,
+  HardDrive,
+  Info,
   Layers,
+  LayoutGrid,
   Link2,
+  List,
   Loader2,
   Plus,
+  RotateCcw,
   Search,
   ShieldCheck,
+  Star,
   Trash2,
   Upload,
   WifiOff,
@@ -24,13 +34,21 @@ import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 import { getAllSyllabi } from '../study-mode/studyDb';
 import { SyllabusProfile } from '../study-mode/types';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
+import Asset3DDeleteModal from './Asset3DDeleteModal';
+import Asset3DDetailsModal from './Asset3DDetailsModal';
+import Asset3DEditModal from './Asset3DEditModal';
 import Asset3DUploadModal, { Asset3DInitialContext } from './Asset3DUploadModal';
 import ModelViewerModal from './ModelViewerModal';
 import {
   addSyllabusAssociation,
-  delete3DAsset,
+  duplicate3DAssetReference,
+  get3DStorageReport,
   getAll3DAssets,
-  removeSyllabusAssociation
+  getCustom3DCategories,
+  getMerged3DCategoryOptions,
+  removeSyllabusAssociation,
+  saveCustom3DCategory,
+  toggle3DAssetFavorite
 } from './asset3dDb';
 import Asset3DImportModal from './Asset3DImportModal';
 import {
@@ -39,17 +57,21 @@ import {
   sortAndFilterDiscovered3D
 } from './discoveryProviders';
 import {
-  ALL_3D_CATEGORIES,
   ALL_BPHARM_DEPARTMENTS,
   Asset3DAvailabilityFilter,
   Asset3DCategory,
   Asset3DDiscoverySort,
   Asset3DItem,
+  Asset3DLibraryCollection,
+  Asset3DLibrarySort,
+  Asset3DStorageReport,
   BPHARM_DEPARTMENT_LABELS,
   BPharmDepartmentId,
-  CATEGORY_3D_LABELS,
+  Custom3DCategory,
   Discovered3DCandidate,
   formatBytes,
+  get3DCategoryLabel,
+  getAsset3DAvailability,
   IMPORT_STATUS_3D_LABELS,
   Provider3DId,
   SyllabusAssociation
@@ -97,10 +119,21 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
 
-  // Library filters
+  // Library filters, view & P3.3 management state
   const [libSearch, setLibSearch] = useState('');
   const [libCategory, setLibCategory] = useState<'all' | Asset3DCategory>('all');
   const [libDept, setLibDept] = useState<'all' | BPharmDepartmentId>('all');
+  const [libSubject, setLibSubject] = useState<string>('all');
+  const [libTag, setLibTag] = useState<string>('all');
+  const [libSource, setLibSource] = useState<string>('all');
+  const [libSort, setLibSort] = useState<Asset3DLibrarySort>('import_desc');
+  const [libCollection, setLibCollection] = useState<Asset3DLibraryCollection>('all');
+  const [libViewMode, setLibViewMode] = useState<'grid' | 'list'>('grid');
+  const [customCategories, setCustomCategories] = useState<Custom3DCategory[]>([]);
+  const [showNewCatBar, setShowNewCatBar] = useState(false);
+  const [newCatInput, setNewCatInput] = useState('');
+  const [storageReport, setStorageReport] = useState<Asset3DStorageReport | null>(null);
+  const [showStorageDetails, setShowStorageDetails] = useState(false);
 
   // Discovery state
   const [discoverQuery, setDiscoverQuery] = useState('');
@@ -124,8 +157,11 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
   const [linkSubtopic, setLinkSubtopic] = useState('');
   const [linkExperiment, setLinkExperiment] = useState('');
 
-  // Viewer & Upload modals + Feedback notice
+  // Viewer, Details, Edit, Delete, Upload modals + Feedback notice
   const [viewerAsset, setViewerAsset] = useState<Asset3DItem | null>(null);
+  const [detailsAsset, setDetailsAsset] = useState<Asset3DItem | null>(null);
+  const [editAsset, setEditAsset] = useState<Asset3DItem | null>(null);
+  const [deleteTargetAsset, setDeleteTargetAsset] = useState<Asset3DItem | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadInitCtx, setUploadInitCtx] = useState<Asset3DInitialContext | undefined>(undefined);
   const [toast, setToast] = useState<{ type: 'info' | 'warning' | 'error'; msg: string } | null>(
@@ -133,12 +169,27 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
   );
   const handledNonceRef = useRef<number>(-1);
 
+  const refreshStorageReport = useCallback(async () => {
+    try {
+      const report = await get3DStorageReport();
+      setStorageReport(report);
+    } catch {
+      // ignore report failure
+    }
+  }, []);
+
   const loadLibrary = useCallback(async () => {
     setLoadingAssets(true);
+    setCustomCategories(getCustom3DCategories());
     try {
-      const [list, syls] = await Promise.all([getAll3DAssets(), getAllSyllabi()]);
+      const [list, syls, report] = await Promise.all([
+        getAll3DAssets(),
+        getAllSyllabi(),
+        get3DStorageReport()
+      ]);
       setAssets(list);
       setSyllabi(syls);
+      setStorageReport(report);
     } finally {
       setLoadingAssets(false);
     }
@@ -250,14 +301,69 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
   }, [jumpTarget, assets, loadingAssets, executeSearch]);
 
   const handleOpenViewer = (item: Asset3DItem) => {
+    const availability = getAsset3DAvailability(item);
+    if (!availability.canOpenViewer) {
+      setDetailsAsset(item);
+      setToast({
+        type: 'warning',
+        msg: `"${item.name}" has no stored 3D binary or direct file URL. Opened details view instead.`
+      });
+      return;
+    }
     recordActivity({
       key: `3d:${item.id}`,
       kind: 'model_3d',
       title: item.name,
-      subtitle: `${item.format.toUpperCase()} · ${CATEGORY_3D_LABELS[item.category]}`,
+      subtitle: `${item.format.toUpperCase()} · ${get3DCategoryLabel(
+        item.category,
+        customCategories
+      )}`,
       moduleId: 'assets_3d'
     });
     setViewerAsset(item);
+  };
+
+  const handleToggleFavorite = async (item: Asset3DItem) => {
+    const updated = await toggle3DAssetFavorite(item.id);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      if (detailsAsset?.id === updated.id) setDetailsAsset(updated);
+      if (viewerAsset?.id === updated.id) setViewerAsset(updated);
+    }
+  };
+
+  const handleDuplicateReference = async (item: Asset3DItem) => {
+    const clone = await duplicate3DAssetReference(item.id);
+    if (clone) {
+      setAssets((prev) => [clone, ...prev]);
+      void refreshStorageReport();
+      setToast({
+        type: 'info',
+        msg: `Created metadata reference "${clone.name}" sharing the stored ${clone.format.toUpperCase()} binary (0 extra binary bytes used).`
+      });
+    }
+  };
+
+  const handleCreateCustomCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCatInput.trim()) return;
+    try {
+      const created = saveCustom3DCategory(newCatInput);
+      const refreshed = getCustom3DCategories();
+      setCustomCategories(refreshed);
+      setLibCategory(created.id);
+      setNewCatInput('');
+      setShowNewCatBar(false);
+      setToast({
+        type: 'info',
+        msg: `Category "${created.label}" added to your extensible 3D Asset Library.`
+      });
+    } catch (err) {
+      setToast({
+        type: 'error',
+        msg: err instanceof Error ? err.message : 'Unable to create custom category.'
+      });
+    }
   };
 
   const findExistingAssetForCandidate = useCallback(
@@ -278,18 +384,154 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
     [assets]
   );
 
+  const categoryOptions = useMemo(
+    () => getMerged3DCategoryOptions(assets, customCategories),
+    [assets, customCategories]
+  );
+
+  const availableSubjects = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of assets) {
+      for (const l of a.syllabusLinks) {
+        if (l.subjectCode) {
+          map.set(
+            l.subjectCode,
+            l.subjectTitle ? `${l.subjectCode} · ${l.subjectTitle}` : l.subjectCode
+          );
+        }
+      }
+    }
+    return Array.from(map.entries())
+      .map(([code, label]) => ({ code, label }))
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }, [assets]);
+
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of assets) {
+      for (const t of a.tags) {
+        if (t.trim()) set.add(t.trim());
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [assets]);
+
+  const availableSources = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of assets) {
+      if (a.sourceName?.trim()) set.add(a.sourceName.trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [assets]);
+
+  const collectionCounts = useMemo(() => {
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    return {
+      all: assets.length,
+      favorites: assets.filter((a) => Boolean(a.isFavorite)).length,
+      recent_imported: assets.filter((a) => a.createdAt >= thirtyDaysAgo).length,
+      recent_viewed: assets.filter((a) => Boolean(a.lastOpenedAt)).length
+    };
+  }, [assets]);
+
   const filteredAssets = useMemo(() => {
     const q = libSearch.trim().toLowerCase();
-    return assets.filter((a) => {
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    const matching = assets.filter((a) => {
+      if (libCollection === 'favorites' && !a.isFavorite) return false;
+      if (libCollection === 'recent_imported' && a.createdAt < thirtyDaysAgo) return false;
+      if (libCollection === 'recent_viewed' && !a.lastOpenedAt) return false;
+
       if (libCategory !== 'all' && a.category !== libCategory) return false;
       if (libDept !== 'all' && !a.departments.includes(libDept)) return false;
+      if (
+        libSubject !== 'all' &&
+        !a.syllabusLinks.some((l) => l.subjectCode?.toLowerCase() === libSubject.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        libTag !== 'all' &&
+        !a.tags.some((t) => t.trim().toLowerCase() === libTag.toLowerCase())
+      ) {
+        return false;
+      }
+      if (libSource !== 'all' && a.sourceName?.trim() !== libSource) return false;
+
       if (!q) return true;
-      const hay = `${a.name} ${a.description} ${a.creator} ${a.tags.join(' ')} ${a.syllabusLinks
-        .map((l) => `${l.subjectCode || ''} ${l.topicTitle || ''} ${l.experimentTitle || ''}`)
+      const catLabel = get3DCategoryLabel(a.category, customCategories);
+      const hay = `${a.name} ${a.description} ${a.creator} ${a.sourceName} ${a.fileName} ${catLabel} ${a.tags.join(
+        ' '
+      )} ${a.syllabusLinks
+        .map(
+          (l) =>
+            `${l.subjectCode || ''} ${l.subjectTitle || ''} ${l.unitNo || ''} ${
+              l.topicTitle || ''
+            } ${l.subtopicTitle || ''} ${l.experimentTitle || ''} ${l.structureName || ''}`
+        )
         .join(' ')}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [assets, libCategory, libDept, libSearch]);
+
+    const sorted = [...matching];
+    sorted.sort((a, b) => {
+      switch (libSort) {
+        case 'import_asc':
+          return (a.createdAt || 0) - (b.createdAt || 0);
+        case 'name_asc':
+          return a.name.localeCompare(b.name);
+        case 'name_desc':
+          return b.name.localeCompare(a.name);
+        case 'category_asc':
+          return get3DCategoryLabel(a.category, customCategories).localeCompare(
+            get3DCategoryLabel(b.category, customCategories)
+          );
+        case 'size_desc':
+          return (b.byteSize || 0) - (a.byteSize || 0);
+        case 'size_asc':
+          return (a.byteSize || 0) - (b.byteSize || 0);
+        case 'recent_viewed':
+          return (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0);
+        case 'import_desc':
+        default:
+          return (b.createdAt || 0) - (a.createdAt || 0);
+      }
+    });
+
+    return sorted;
+  }, [
+    assets,
+    customCategories,
+    libCategory,
+    libCollection,
+    libDept,
+    libSearch,
+    libSort,
+    libSource,
+    libSubject,
+    libTag
+  ]);
+
+  const hasActiveLibraryFilters = Boolean(
+    libSearch.trim() ||
+      libCategory !== 'all' ||
+      libDept !== 'all' ||
+      libSubject !== 'all' ||
+      libTag !== 'all' ||
+      libSource !== 'all' ||
+      libCollection !== 'all'
+  );
+
+  const resetLibraryFilters = () => {
+    setLibSearch('');
+    setLibCategory('all');
+    setLibDept('all');
+    setLibSubject('all');
+    setLibTag('all');
+    setLibSource('all');
+    setLibCollection('all');
+  };
 
   const allSyllabusSubjects = useMemo(
     () =>
@@ -348,17 +590,17 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5 shadow-sm dark:shadow-none">
+      <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1.5 max-w-3xl">
             <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-              PharmaLab P3.1 &amp; P3.2 · WebGL PBR Viewer &amp; Scientific 3D Asset Discovery
+              PharmaLab P3.1 – P3.3 · Universal 3D Viewer, Asset Discovery &amp; Central 3D Library
             </p>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Universal Scientific 3D Asset Engine
+              Universal Scientific 3D Asset Engine &amp; Library
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Discover, preview, license-verify, and safely import GLB, glTF, ZIP bundles, STL, OBJ, PLY, PDB macromolecules, and SDF molecules across all 12 B.Pharm departments from NIH Human Reference Atlas, PubChem 3D, RCSB PDB, Wikimedia Commons, Smithsonian, and Sketchfab.
+              Manage, categorize, search, favorite, and reuse authentic GLB, glTF, ZIP, STL, OBJ, PLY, PDB, and SDF models across all B.Pharm departments, subjects, topics, anatomy structures, and practical experiments without duplicating stored 3D binaries.
             </p>
           </div>
 
@@ -440,57 +682,312 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
       {/* ==================== TAB 1: 3D ASSET LIBRARY ==================== */}
       {activeTab === 'library' && (
         <div className="space-y-5">
-          {/* Search & Filters */}
-          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-              <div className="md:col-span-6 relative">
+          {/* Library Collection Switcher, Search, Filters, View Mode & Storage Telemetry */}
+          <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+            {/* Top Row: Quick Collections + Grid/List View Toggle */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label="Asset library collections"
+              >
+                {[
+                  { id: 'all', label: `All (${collectionCounts.all})` },
+                  { id: 'favorites', label: `Favorites (${collectionCounts.favorites})`, icon: Star },
+                  {
+                    id: 'recent_imported',
+                    label: `Recently Imported (${collectionCounts.recent_imported})`,
+                    icon: Clock
+                  },
+                  {
+                    id: 'recent_viewed',
+                    label: `Recently Viewed (${collectionCounts.recent_viewed})`,
+                    icon: Box
+                  }
+                ].map((col) => {
+                  const active = libCollection === col.id;
+                  const Icon = col.icon;
+                  return (
+                    <button
+                      key={col.id}
+                      type="button"
+                      onClick={() => {
+                        const next = col.id as Asset3DLibraryCollection;
+                        setLibCollection(next);
+                        if (next === 'recent_viewed') setLibSort('recent_viewed');
+                        else if (next === 'recent_imported') setLibSort('import_desc');
+                      }}
+                      className={`min-h-[34px] px-3 py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 border transition-colors tabular-nums ${
+                        active
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500/40'
+                      }`}
+                    >
+                      {Icon && <Icon className="w-3.5 h-3.5" />}
+                      <span>{col.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNewCatBar((v) => !v)}
+                  className="min-h-[34px] px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>New Category</span>
+                </button>
+
+                <div
+                  className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5"
+                  role="group"
+                  aria-label="Library layout mode"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setLibViewMode('grid')}
+                    className={`min-h-[30px] px-2.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 ${
+                      libViewMode === 'grid'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                    aria-label="Grid view"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Grid</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLibViewMode('list')}
+                    className={`min-h-[30px] px-2.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1 ${
+                      libViewMode === 'list'
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                    aria-label="List view"
+                  >
+                    <List className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">List</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {showNewCatBar && (
+              <form
+                onSubmit={handleCreateCustomCategory}
+                className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-emerald-500/40 flex flex-wrap items-center gap-2"
+              >
+                <input
+                  type="text"
+                  value={newCatInput}
+                  onChange={(e) => setNewCatInput(e.target.value)}
+                  placeholder="Create custom scientific category (e.g. Tablet Coating Equipment, Excipient Crystals)..."
+                  className="flex-1 min-w-[220px] min-h-[36px] px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                />
+                <button
+                  type="submit"
+                  className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Category</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowNewCatBar(false)}
+                  className="min-h-[36px] px-2.5 text-xs text-slate-500"
+                >
+                  Cancel
+                </button>
+              </form>
+            )}
+
+            {/* Search & Sort Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5">
+              <div className="lg:col-span-6 relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={libSearch}
                   onChange={(e) => setLibSearch(e.target.value)}
-                  placeholder="Search stored 3D models by name, tag, creator, or syllabus topic..."
-                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-3 text-sm text-slate-900 dark:text-white"
+                  placeholder="Search stored 3D assets by name, tag, creator, source, or syllabus topic..."
+                  className="w-full min-h-[40px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-10 pr-3 text-sm text-slate-900 dark:text-white"
                 />
               </div>
 
-              <div className="md:col-span-3">
+              <div className="lg:col-span-3">
                 <select
                   aria-label="Filter by 3D category"
                   value={libCategory}
                   onChange={(e) => setLibCategory(e.target.value as 'all' | Asset3DCategory)}
-                  className="w-full min-h-[42px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white"
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
                 >
-                  <option value="all">All Categories</option>
-                  {ALL_3D_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {CATEGORY_3D_LABELS[c]}
+                  <option value="all">All Scientific Categories ({categoryOptions.length})</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                      {c.isCustom ? ' (Custom)' : ''}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="md:col-span-3">
+              <div className="lg:col-span-3">
                 <select
-                  aria-label="Filter by B.Pharm department"
-                  value={libDept}
-                  onChange={(e) => setLibDept(e.target.value as 'all' | BPharmDepartmentId)}
-                  className="w-full min-h-[42px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white"
+                  aria-label="Sort 3D assets"
+                  value={libSort}
+                  onChange={(e) => setLibSort(e.target.value as Asset3DLibrarySort)}
+                  className="w-full min-h-[40px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
                 >
-                  <option value="all">All 12 B.Pharm Departments</option>
-                  {ALL_BPHARM_DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>
-                      {BPHARM_DEPARTMENT_LABELS[d]}
-                    </option>
-                  ))}
+                  <option value="import_desc">Sort: Import Date (Newest)</option>
+                  <option value="import_asc">Sort: Import Date (Oldest)</option>
+                  <option value="name_asc">Sort: Name (A → Z)</option>
+                  <option value="name_desc">Sort: Name (Z → A)</option>
+                  <option value="category_asc">Sort: Category (A → Z)</option>
+                  <option value="size_desc">Sort: File Size (Largest)</option>
+                  <option value="size_asc">Sort: File Size (Smallest)</option>
+                  <option value="recent_viewed">Sort: Recently Viewed</option>
                 </select>
               </div>
             </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-              Showing {filteredAssets.length} of {assets.length} stored 3D assets · Offline storage used:{' '}
-              {formatBytes(totalBytes)}
-            </p>
+            {/* Secondary Filter Row: Department, Subject, Tag, Source */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <select
+                aria-label="Filter by B.Pharm department"
+                value={libDept}
+                onChange={(e) => setLibDept(e.target.value as 'all' | BPharmDepartmentId)}
+                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+              >
+                <option value="all">All 12 Departments</option>
+                {ALL_BPHARM_DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>
+                    {BPHARM_DEPARTMENT_LABELS[d]}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by associated subject"
+                value={libSubject}
+                onChange={(e) => setLibSubject(e.target.value)}
+                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+              >
+                <option value="all">
+                  All Linked Subjects ({availableSubjects.length})
+                </option>
+                {availableSubjects.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by asset tag"
+                value={libTag}
+                onChange={(e) => setLibTag(e.target.value)}
+                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+              >
+                <option value="all">All Tags ({availableTags.length})</option>
+                {availableTags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    #{tag}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by source or provider"
+                value={libSource}
+                onChange={(e) => setLibSource(e.target.value)}
+                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+              >
+                <option value="all">All Sources ({availableSources.length})</option>
+                {availableSources.map((src) => (
+                  <option key={src} value={src}>
+                    {src}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Summary & Storage Telemetry Footer */}
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+              <div className="flex flex-wrap items-center gap-3">
+                <span>
+                  Showing <strong className="text-slate-800 dark:text-slate-200">{filteredAssets.length}</strong> of{' '}
+                  {assets.length} assets
+                </span>
+                {hasActiveLibraryFilters && (
+                  <button
+                    type="button"
+                    onClick={resetLibraryFilters}
+                    className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline inline-flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset Filters</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowStorageDetails((v) => !v)}
+                className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium"
+              >
+                <HardDrive className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  IndexedDB Binaries: {formatBytes(storageReport?.actualBinaryBytes ?? totalBytes)}
+                  {storageReport
+                    ? ` (${storageReport.storedBinaryCount} file${
+                        storageReport.storedBinaryCount === 1 ? '' : 's'
+                      }${
+                        storageReport.sharedReferenceCount > 0
+                          ? `, ${storageReport.sharedReferenceCount} shared ref${
+                              storageReport.sharedReferenceCount === 1 ? '' : 's'
+                            }`
+                          : ''
+                      })`
+                    : ''}
+                </span>
+              </button>
+            </div>
+
+            {showStorageDetails && storageReport && (
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs tabular-nums">
+                <div>
+                  <span className="block text-[11px] text-slate-400">Binary Store (Deduplicated)</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {formatBytes(storageReport.actualBinaryBytes)} ({storageReport.storedBinaryCount} blobs)
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[11px] text-slate-400">Metadata Store</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {formatBytes(storageReport.metadataBytesEstimate)} ({storageReport.totalAssets} records)
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[11px] text-slate-400">Shared Binary References</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {storageReport.sharedReferenceCount} lightweight links
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[11px] text-slate-400">Browser Quota</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {storageReport.quotaBytes
+                      ? `${formatBytes(storageReport.usageBytes)} / ${formatBytes(
+                          storageReport.quotaBytes
+                        )}`
+                      : `Max ${formatBytes(storageReport.maxSingleAssetBytes)}/model`}
+                  </span>
+                </div>
+              </div>
+            )}
           </section>
 
           {loadingAssets ? (
@@ -505,17 +1002,41 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                   {assets.length === 0
                     ? 'Your Scientific 3D Asset Library is Empty'
+                    : libCollection === 'favorites' && !libSearch && libCategory === 'all'
+                    ? 'No Favorite 3D Models Yet'
+                    : libCollection === 'recent_viewed' && !libSearch
+                    ? 'No Recently Viewed 3D Models Yet'
                     : 'No 3D Models Matched Your Current Filters'}
                 </h2>
                 <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-                  PharmaLab renders only authentic 3D assets (never synthetic placeholder geometry). Discover open-access models from Wikimedia Commons, Sketchfab, or Smithsonian, or upload your own .glb / .gltf / .stl / .obj / .ply file.
+                  {assets.length === 0
+                    ? 'PharmaLab stores only authentic 3D assets (never synthetic placeholder geometry). Discover open-access models from Wikimedia Commons, Sketchfab, Smithsonian, RCSB PDB, or PubChem, or upload your own .glb / .gltf / .zip / .stl / .pdb file.'
+                    : libCollection === 'favorites'
+                    ? 'Click the star icon on any 3D model card or inside the Universal 3D Viewer to pin quick-access favorites.'
+                    : libCollection === 'recent_viewed'
+                    ? 'Open any asset in the Universal 3D Viewer to track your recently inspected models here.'
+                    : 'Try clearing search terms or switching category, department, subject, tag, or source filters.'}
                 </p>
               </div>
               <div className="flex flex-wrap items-center justify-center gap-2.5">
+                {assets.length > 0 && hasActiveLibraryFilters && (
+                  <button
+                    type="button"
+                    onClick={resetLibraryFilters}
+                    className="min-h-[42px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold inline-flex items-center gap-2"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Show All {assets.length} Assets</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setActiveTab('discover')}
-                  className="min-h-[42px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold inline-flex items-center gap-2"
+                  className={`min-h-[42px] px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 ${
+                    assets.length === 0
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100'
+                  }`}
                 >
                   <Globe className="w-4 h-4" />
                   <span>Discover Open 3D Sources</span>
@@ -530,104 +1051,300 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                 </button>
               </div>
             </div>
-          ) : (
+          ) : libViewMode === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-              {filteredAssets.map((item) => (
-                <article
-                  key={item.id}
-                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col justify-between shadow-sm dark:shadow-none"
-                >
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenViewer(item)}
-                      className="w-full aspect-[16/10] bg-slate-950 border-b border-slate-200 dark:border-slate-800 relative group overflow-hidden flex items-center justify-center"
-                    >
-                      {item.thumbnailDataUrl || item.thumbnailUrl ? (
-                        <img
-                          src={item.thumbnailDataUrl || item.thumbnailUrl}
-                          alt={item.name}
-                          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform"
-                        />
-                      ) : (
-                        <div className="text-center space-y-1.5 text-slate-400">
-                          <Box className="w-9 h-9 text-emerald-400 mx-auto" />
-                          <p className="text-xs font-semibold text-slate-300">
-                            {item.format.toUpperCase()} · Click to Inspect 3D
+              {filteredAssets.map((item) => {
+                const availability = getAsset3DAvailability(item);
+                const catLabel = get3DCategoryLabel(item.category, customCategories);
+                const importDateLabel = new Date(item.createdAt).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric'
+                });
+                return (
+                  <article
+                    key={item.id}
+                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenViewer(item)}
+                          className="w-full aspect-[16/10] bg-slate-950 border-b border-slate-200 dark:border-slate-800 group overflow-hidden flex items-center justify-center"
+                        >
+                          {item.thumbnailDataUrl || item.thumbnailUrl ? (
+                            <img
+                              src={item.thumbnailDataUrl || item.thumbnailUrl}
+                              alt={item.name}
+                              className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform"
+                            />
+                          ) : (
+                            <div className="text-center space-y-1.5 text-slate-400 px-3">
+                              <Box className="w-9 h-9 text-emerald-400 mx-auto" />
+                              <p className="text-xs font-semibold text-slate-300">
+                                {item.format.toUpperCase()} ·{' '}
+                                {availability.canOpenViewer
+                                  ? 'Click to Inspect 3D'
+                                  : 'Metadata Only'}
+                              </p>
+                            </div>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleFavorite(item)}
+                          className={`absolute top-2.5 right-2.5 w-8 h-8 rounded-lg flex items-center justify-center border transition-colors ${
+                            item.isFavorite
+                              ? 'bg-slate-950/80 border-amber-400/60 text-amber-400'
+                              : 'bg-slate-950/65 border-slate-700/80 text-slate-300 hover:text-amber-400'
+                          }`}
+                          aria-label={
+                            item.isFavorite
+                              ? `Remove ${item.name} from favorites`
+                              : `Favorite ${item.name}`
+                          }
+                        >
+                          <Star className={`w-4 h-4 ${item.isFavorite ? 'fill-current' : ''}`} />
+                        </button>
+                      </div>
+
+                      <div className="p-4 space-y-2">
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate tabular-nums">
+                          <span className="text-emerald-700 dark:text-emerald-400">{catLabel}</span>
+                          <span> · {item.format.toUpperCase()}</span>
+                          {item.byteSize ? ` · ${formatBytes(item.byteSize)}` : ''}
+                          <span> · {importDateLabel}</span>
+                        </p>
+
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white leading-snug line-clamp-2">
+                          {item.name}
+                        </h3>
+
+                        <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                          {item.description}
+                        </p>
+
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                          {item.sourceName} · {item.creator} · {item.license}
+                        </p>
+
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate tabular-nums">
+                          {item.departments.map((d) => BPHARM_DEPARTMENT_LABELS[d]).join(' · ')}
+                          {item.syllabusLinks.length > 0
+                            ? ` · ${item.syllabusLinks.length} syllabus link${
+                                item.syllabusLinks.length === 1 ? '' : 's'
+                              }`
+                            : ''}
+                          {!availability.canOpenViewer ? ' · Binary unavailable' : ''}
+                        </p>
+
+                        {item.tags.length > 0 && (
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                            Tags: {item.tags.join(' · ')}
                           </p>
-                        </div>
-                      )}
-                    </button>
-
-                    <div className="p-4 space-y-2">
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 truncate">
-                        <span className="text-emerald-700 dark:text-emerald-400">
-                          {CATEGORY_3D_LABELS[item.category]}
-                        </span>
-                        <span> · </span>
-                        <span>{item.format.toUpperCase()}</span>
-                        {item.byteSize ? ` · ${formatBytes(item.byteSize)}` : ''}
-                      </p>
-
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white leading-snug">
-                        {item.name}
-                      </h3>
-
-                      <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                        {item.description}
-                      </p>
-
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {item.creator} · {item.license}
-                      </p>
-
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {item.departments.map((d) => BPHARM_DEPARTMENT_LABELS[d]).join(' · ')}
-                        {item.syllabusLinks.length > 0
-                          ? ` · ${item.syllabusLinks.length} syllabus link${
-                              item.syllabusLinks.length === 1 ? '' : 's'
-                            }`
-                          : ''}
-                      </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLinkModalAsset(item);
-                        setMapDept(item.departments[0] || 'anatomy');
-                      }}
-                      className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1"
-                    >
-                      <Link2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>Link Topic</span>
-                    </button>
+                    <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setDetailsAsset(item)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400"
+                          title="View asset details"
+                          aria-label={`Details for ${item.name}`}
+                        >
+                          <Info className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditAsset(item)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400"
+                          title="Rename or edit metadata"
+                          aria-label={`Edit ${item.name}`}
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLinkModalAsset(item);
+                            setMapDept(item.departments[0] || 'anatomy');
+                          }}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400"
+                          title="Link to syllabus topic or lab"
+                          aria-label={`Link ${item.name} to syllabus`}
+                        >
+                          <Link2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDuplicateReference(item)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400"
+                          title="Duplicate metadata reference (shares binary)"
+                          aria-label={`Duplicate reference for ${item.name}`}
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTargetAsset(item)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600"
+                          title="Delete asset"
+                          aria-label={`Delete ${item.name}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await delete3DAsset(item.id);
-                          setAssets((prev) => prev.filter((a) => a.id !== item.id));
-                        }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600"
-                        aria-label={`Delete ${item.name}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                       <button
                         type="button"
                         onClick={() => handleOpenViewer(item)}
                         className="min-h-[34px] px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
                       >
-                        Inspect 3D
+                        {availability.canOpenViewer ? 'Inspect 3D' : 'Open Details'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            /* List View for scaling to hundreds of models */
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl divide-y divide-slate-200 dark:divide-slate-800 overflow-hidden">
+              {filteredAssets.map((item) => {
+                const availability = getAsset3DAvailability(item);
+                const catLabel = get3DCategoryLabel(item.category, customCategories);
+                const importDateLabel = new Date(item.createdAt).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric'
+                });
+                return (
+                  <div
+                    key={item.id}
+                    className="p-3.5 sm:px-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-slate-50/70 dark:hover:bg-slate-950/60 transition-colors"
+                  >
+                    <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenViewer(item)}
+                        className="w-16 h-12 rounded-xl bg-slate-950 border border-slate-200 dark:border-slate-800 overflow-hidden shrink-0 flex items-center justify-center"
+                        aria-label={`Inspect ${item.name}`}
+                      >
+                        {item.thumbnailDataUrl || item.thumbnailUrl ? (
+                          <img
+                            src={item.thumbnailDataUrl || item.thumbnailUrl}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Box className="w-5 h-5 text-emerald-400" />
+                        )}
+                      </button>
+
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {item.name}
+                          </h3>
+                          {item.isFavorite && (
+                            <Star className="w-3.5 h-3.5 text-amber-500 fill-current shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate tabular-nums">
+                          <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                            {catLabel}
+                          </span>
+                          <span> · {item.format.toUpperCase()}</span>
+                          {item.byteSize ? ` · ${formatBytes(item.byteSize)}` : ''}
+                          <span> · {importDateLabel}</span>
+                          <span> · {item.sourceName}</span>
+                          {item.syllabusLinks.length > 0
+                            ? ` · ${item.syllabusLinks.length} syllabus link${
+                                item.syllabusLinks.length === 1 ? '' : 's'
+                              }`
+                            : ''}
+                          {!availability.canOpenViewer ? ' · Metadata only' : ''}
+                        </p>
+                        {item.tags.length > 0 && (
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                            {item.tags.join(' · ')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleFavorite(item)}
+                        className={`p-1.5 rounded-lg border ${
+                          item.isFavorite
+                            ? 'bg-amber-500/10 border-amber-500/40 text-amber-500'
+                            : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-amber-500'
+                        }`}
+                        aria-label={`Favorite ${item.name}`}
+                      >
+                        <Star className={`w-3.5 h-3.5 ${item.isFavorite ? 'fill-current' : ''}`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDetailsAsset(item)}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200"
+                      >
+                        Details
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditAsset(item)}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLinkModalAsset(item);
+                          setMapDept(item.departments[0] || 'anatomy');
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-emerald-600"
+                        title="Link Topic"
+                        aria-label={`Link ${item.name} to syllabus`}
+                      >
+                        <Link2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDuplicateReference(item)}
+                        className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-emerald-600"
+                        title="Duplicate metadata reference"
+                        aria-label={`Duplicate reference for ${item.name}`}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTargetAsset(item)}
+                        className="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-rose-600"
+                        title="Delete asset"
+                        aria-label={`Delete ${item.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenViewer(item)}
+                        className="min-h-[32px] px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
+                      >
+                        {availability.canOpenViewer ? 'Inspect 3D' : 'Open'}
                       </button>
                     </div>
                   </div>
-                </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -728,9 +1445,9 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                   className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
                 >
                   <option value="all">All Scientific Categories</option>
-                  {ALL_3D_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {CATEGORY_3D_LABELS[c]}
+                  {categoryOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
                     </option>
                   ))}
                 </select>
@@ -942,7 +1659,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                           <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                             {cand.creator} · {cand.license}
                             {cand.suggestedCategory
-                              ? ` · ${CATEGORY_3D_LABELS[cand.suggestedCategory]}`
+                              ? ` · ${get3DCategoryLabel(cand.suggestedCategory, customCategories)}`
                               : ''}
                           </p>
                           <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
@@ -1152,7 +1869,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                             {item.name}
                           </p>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {item.format.toUpperCase()} · {CATEGORY_3D_LABELS[item.category]} ·{' '}
+                            {item.format.toUpperCase()} · {get3DCategoryLabel(item.category, customCategories)} ·{' '}
                             {IMPORT_STATUS_3D_LABELS[item.importStatus]}
                           </p>
                         </div>
@@ -1372,6 +2089,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
         onClose={() => setImportCandidate(null)}
         onImported={(saved) => {
           setAssets((prev) => [saved, ...prev]);
+          void refreshStorageReport();
           setToast({
             type: 'info',
             msg: `Imported "${saved.name}" (${saved.format.toUpperCase()} · ${formatBytes(
@@ -1392,9 +2110,69 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
         onClose={() => setViewerAsset(null)}
         onAssetUpdated={(updated) => {
           setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+          if (detailsAsset?.id === updated.id) setDetailsAsset(updated);
         }}
         onAssetDeleted={(id) => {
           setAssets((prev) => prev.filter((a) => a.id !== id));
+          if (detailsAsset?.id === id) setDetailsAsset(null);
+          void refreshStorageReport();
+        }}
+      />
+
+      <Asset3DDetailsModal
+        asset={detailsAsset}
+        customCategories={customCategories}
+        onClose={() => setDetailsAsset(null)}
+        onOpenViewer={(item) => handleOpenViewer(item)}
+        onToggleFavorite={(item) => void handleToggleFavorite(item)}
+        onEdit={(item) => {
+          setDetailsAsset(null);
+          setEditAsset(item);
+        }}
+        onDuplicateReference={(item) => void handleDuplicateReference(item)}
+        onLinkTopic={(item) => {
+          setDetailsAsset(null);
+          setLinkModalAsset(item);
+          setMapDept(item.departments[0] || 'anatomy');
+        }}
+        onUnlinkAssociation={async (assetId, assocId) => {
+          const updated = await removeSyllabusAssociation(assetId, assocId);
+          if (updated) {
+            setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+            setDetailsAsset(updated);
+          }
+        }}
+        onRequestDelete={(item) => setDeleteTargetAsset(item)}
+      />
+
+      <Asset3DEditModal
+        asset={editAsset}
+        allAssets={assets}
+        onClose={() => setEditAsset(null)}
+        onUpdated={(updated) => {
+          setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+          if (detailsAsset?.id === updated.id) setDetailsAsset(updated);
+          if (viewerAsset?.id === updated.id) setViewerAsset(updated);
+          setToast({
+            type: 'info',
+            msg: `Updated metadata for "${updated.name}".`
+          });
+        }}
+        onCategoriesChanged={(cats) => setCustomCategories(cats)}
+      />
+
+      <Asset3DDeleteModal
+        asset={deleteTargetAsset}
+        onClose={() => setDeleteTargetAsset(null)}
+        onDeleted={(id) => {
+          setAssets((prev) => prev.filter((a) => a.id !== id));
+          if (detailsAsset?.id === id) setDetailsAsset(null);
+          if (viewerAsset?.id === id) setViewerAsset(null);
+          void refreshStorageReport();
+          setToast({
+            type: 'info',
+            msg: 'Removed 3D asset and safely updated linked binary references.'
+          });
         }}
       />
 
@@ -1403,6 +2181,8 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
         onClose={() => setUploadOpen(false)}
         onSaved={(saved) => {
           setAssets((prev) => [saved, ...prev]);
+          setCustomCategories(getCustom3DCategories());
+          void refreshStorageReport();
           setToast({
             type: 'info',
             msg: `Saved "${saved.name}" (${saved.format.toUpperCase()}) to your 3D Asset Library.`

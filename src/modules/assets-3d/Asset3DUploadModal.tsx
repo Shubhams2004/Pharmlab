@@ -1,18 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { unzipSync, zipSync } from 'fflate';
-import { AlertTriangle, Box, Globe, Loader2, Upload, X } from 'lucide-react';
+import { AlertTriangle, Box, FolderPlus, Globe, Loader2, Plus, Upload, X } from 'lucide-react';
 import { getAllSyllabi } from '../study-mode/studyDb';
 import { SyllabusProfile } from '../study-mode/types';
-import { save3DAssetWithFile } from './asset3dDb';
+import {
+  getCustom3DCategories,
+  getMerged3DCategoryOptions,
+  save3DAssetWithFile,
+  saveCustom3DCategory
+} from './asset3dDb';
 import { fetchRemote3DBinary } from './discoveryProviders';
 import {
-  ALL_3D_CATEGORIES,
   ALL_BPHARM_DEPARTMENTS,
   Asset3DCategory,
   Asset3DItem,
   BPHARM_DEPARTMENT_LABELS,
   BPharmDepartmentId,
-  CATEGORY_3D_LABELS,
+  Custom3DCategory,
   detectModelFormatFromName,
   formatBytes,
   SyllabusAssociation
@@ -66,6 +70,9 @@ export default function Asset3DUploadModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<Asset3DCategory>('anatomy');
+  const [customCategories, setCustomCategories] = useState<Custom3DCategory[]>([]);
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCategoryLabel, setNewCategoryLabel] = useState('');
   const [selectedDepts, setSelectedDepts] = useState<BPharmDepartmentId[]>(['anatomy']);
   const [creator, setCreator] = useState('');
   const [sourceName, setSourceName] = useState('Local / User Upload');
@@ -91,6 +98,9 @@ export default function Asset3DUploadModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    setCustomCategories(getCustom3DCategories());
+    setShowNewCategory(false);
+    setNewCategoryLabel('');
     getAllSyllabi()
       .then((list) => setSyllabi(list))
       .catch(() => setSyllabi([]));
@@ -542,22 +552,71 @@ export default function Asset3DUploadModal({
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                Scientific Category
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                  Scientific Category
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowNewCategory((v) => !v)}
+                  className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline inline-flex items-center gap-1"
+                >
+                  <FolderPlus className="w-3 h-3" />
+                  <span>{showNewCategory ? 'Cancel' : 'New Category'}</span>
+                </button>
+              </div>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as Asset3DCategory)}
                 className="w-full min-h-[40px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm text-slate-900 dark:text-white"
               >
-                {ALL_3D_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {CATEGORY_3D_LABELS[c]}
+                {getMerged3DCategoryOptions([], customCategories).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                    {c.isCustom ? ' (Custom)' : ''}
                   </option>
                 ))}
               </select>
             </div>
           </div>
+
+          {showNewCategory && (
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-emerald-500/40 flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={newCategoryLabel}
+                onChange={(e) => setNewCategoryLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!newCategoryLabel.trim()) return;
+                    const created = saveCustom3DCategory(newCategoryLabel);
+                    setCustomCategories(getCustom3DCategories());
+                    setCategory(created.id);
+                    setNewCategoryLabel('');
+                    setShowNewCategory(false);
+                  }
+                }}
+                placeholder="Enter custom category name..."
+                className="flex-1 min-w-[200px] min-h-[36px] px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!newCategoryLabel.trim()) return;
+                  const created = saveCustom3DCategory(newCategoryLabel);
+                  setCustomCategories(getCustom3DCategories());
+                  setCategory(created.id);
+                  setNewCategoryLabel('');
+                  setShowNewCategory(false);
+                }}
+                className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add &amp; Select</span>
+              </button>
+            </div>
+          )}
 
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
