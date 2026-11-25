@@ -101,9 +101,17 @@ export default function App() {
     subjectCode: null,
     topicId: null,
     structureName: null,
+    experimentId: null,
+    experimentTitle: null,
+    experimentTab: null,
+    stepId: null,
+    stepTitle: null,
+    focusComponentName: null,
+    returnTab: null,
     nonce: 0
   });
   const [explorerReturnModule, setExplorerReturnModule] = useState('assets_3d');
+  const [explorerReturnTab, setExplorerReturnTab] = useState(null);
   const explorerReturnScrollRef = React.useRef(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
@@ -211,6 +219,11 @@ export default function App() {
         setActiveModule((prev) => {
           if (prev && prev !== 'explorer_3d') {
             setExplorerReturnModule(prev);
+            const fallbackTab =
+              opts?.returnTab ??
+              opts?.experimentTab ??
+              (navTarget.module === prev ? navTarget.tab : null);
+            setExplorerReturnTab(fallbackTab ?? null);
           }
           return 'explorer_3d';
         });
@@ -277,7 +290,7 @@ export default function App() {
         }
       }
     },
-    [preferences.reducedMotion]
+    [preferences.reducedMotion, navTarget.module, navTarget.tab]
   );
 
   const openKnowledgeLibrary = useCallback(
@@ -397,9 +410,19 @@ export default function App() {
         subjectCode: opts.subjectCode ?? null,
         topicId: opts.topicId ?? null,
         structureName: opts.structureName ?? null,
+        experimentId: opts.experimentId ?? null,
+        experimentTitle: opts.experimentTitle ?? null,
+        experimentTab: opts.experimentTab ?? null,
+        stepId: opts.stepId ?? null,
+        stepTitle: opts.stepTitle ?? null,
+        focusComponentName: opts.focusComponentName ?? null,
+        returnTab: opts.returnTab ?? opts.experimentTab ?? null,
         nonce: prev.nonce + 1
       }));
-      navigateTo('explorer_3d');
+      navigateTo('explorer_3d', null, {
+        returnTab: opts.returnTab ?? opts.experimentTab ?? null,
+        experimentTab: opts.experimentTab ?? null
+      });
     },
     [navigateTo]
   );
@@ -541,9 +564,13 @@ export default function App() {
       resource_hub: 'Back to Resource Hub',
       inorganic: 'Back to Inorganic Lab',
       pharmacognosy: 'Back to Pharmacognosy',
-      general_pharmacy: 'Back to General Pharmacy'
+      general_pharmacy: 'Back to Pharmaceutics',
+      python: 'Back to Python Lab',
+      pandas: 'Back to Data Science'
     };
-    const explorerReturnLabel = returnLabels[explorerReturnModule] || 'Back to Module';
+    const explorerReturnLabel = explorer3dJump.experimentTitle
+      ? `Back to ${explorer3dJump.experimentTitle}`
+      : returnLabels[explorerReturnModule] || 'Back to Module';
     return (
       <LibraryNavigationContext.Provider value={libraryContextValue}>
         <Academic3DExplorerModule
@@ -551,10 +578,23 @@ export default function App() {
           returnLabel={explorerReturnLabel}
           onExitExplorer={() => {
             const targetScroll = explorerReturnScrollRef.current || 0;
-            setActiveModule(explorerReturnModule || 'assets_3d');
+            const targetMod = explorerReturnModule || 'assets_3d';
+            const targetTab = explorerReturnTab;
+            setActiveModule(targetMod);
+            if (targetTab) {
+              setNavTarget((prev) => ({
+                module: targetMod,
+                tab: targetTab,
+                structureId: null,
+                nonce: prev.nonce + 1
+              }));
+            }
             if (typeof window !== 'undefined') {
               requestAnimationFrame(() => {
                 window.scrollTo({ top: targetScroll, behavior: 'auto' });
+                setTimeout(() => {
+                  window.scrollTo({ top: targetScroll, behavior: 'auto' });
+                }, 60);
               });
             }
           }}

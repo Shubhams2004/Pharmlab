@@ -22,6 +22,8 @@ import {
   AlertTriangle,
   Box,
   Camera,
+  Crosshair,
+  Download,
   Eye,
   EyeOff,
   Focus,
@@ -32,7 +34,10 @@ import {
   Maximize2,
   Minimize2,
   RotateCcw,
+  RotateCw,
+  Ruler,
   Scan,
+  Scissors,
   SlidersHorizontal,
   Sun,
   Tag,
@@ -44,9 +49,15 @@ import {
   Asset3DAnnotation,
   Asset3DItem,
   CameraViewPreset,
+  CoordinateSample,
+  DistanceMeasurement,
   ModelAnalysisSummary,
   ModelFormat,
   RenderVisualizationMode,
+  SceneHierarchyNode,
+  SectionPlaneAxis,
+  SectioningState,
+  ViewerInteractionTool,
   ViewerRenderSettings
 } from './types';
 
@@ -78,6 +89,12 @@ interface ProjectedPin {
   y: number;
 }
 
+interface ProjectedMeasurement {
+  measurement: DistanceMeasurement;
+  x: number;
+  y: number;
+}
+
 export interface ViewerLoadingState {
   status: 'idle' | 'loading' | 'ready' | 'error';
   percent: number;
@@ -86,13 +103,34 @@ export interface ViewerLoadingState {
 
 export interface Universal3DViewerHandle {
   setCameraPreset: (preset: CameraViewPreset, immediate?: boolean) => void;
+  fitToViewport: (immediate?: boolean) => void;
   focusComponent: (compId: string) => void;
+  focusSelected: () => void;
   focusPoint: (localPoint: [number, number, number]) => void;
   toggleComponentVisible: (compId: string) => void;
+  setComponentsVisibility: (compIds: string[], visible: boolean) => void;
   isolateComponent: (compId: string | null) => void;
+  isolateComponents: (compIds: string[]) => void;
   restoreAllComponents: () => void;
   selectComponent: (compId: string | null) => void;
+  selectComponents: (compIds: string[]) => void;
+  selectAllComponents: () => void;
+  deselectAllComponents: () => void;
+  getCameraState: () => {
+    position: [number, number, number];
+    target: [number, number, number];
+  } | null;
+  applyCameraState: (
+    position: [number, number, number],
+    target: [number, number, number],
+    immediate?: boolean
+  ) => void;
   captureThumbnail: () => Promise<void>;
+  downloadScreenshot: (fileName?: string) => void;
+  clearMeasurements: () => void;
+  removeMeasurement: (id: string) => void;
+  resetSectioning: () => void;
+  resetExploration: () => void;
   toggleFullscreen: () => Promise<void>;
 }
 
@@ -105,22 +143,35 @@ export interface Universal3DViewerProps {
   onRemoveAnnotation?: (id: string) => void | Promise<void>;
   onThumbnailCaptured?: (dataUrl: string) => void | Promise<void>;
   onModelAnalyzed?: (stats: ModelAnalysisSummary) => void;
-  // P3.4 Explorer integration hooks (all optional; standalone modal mode stays automatic)
+  // P3.4 / P3.6 Explorer integration hooks (all optional; standalone modal mode stays automatic)
   hideBuiltInHeader?: boolean;
   hideBuiltInSidebars?: boolean;
   className?: string;
   selectedComponentId?: string | null;
   onSelectComponent?: (compId: string | null) => void;
+  selectedComponentIds?: string[];
+  onSelectComponents?: (compIds: string[]) => void;
   isolatedComponentId?: string | null;
   onIsolateChange?: (compId: string | null) => void;
+  isolatedComponentIds?: string[];
+  onIsolateChangeMulti?: (compIds: string[]) => void;
   renderSettings?: ViewerRenderSettings;
   onRenderSettingsChange?: (next: ViewerRenderSettings) => void;
   onLoadingStateChange?: (state: ViewerLoadingState) => void;
   onComponentsChange?: (components: Analyzed3DComponent[]) => void;
+  onHierarchyChange?: (tree: SceneHierarchyNode[]) => void;
   activePinId?: string | null;
   onActivePinChange?: (pinId: string | null) => void;
   pinMode?: boolean;
   onPinModeChange?: (active: boolean) => void;
+  interactionTool?: ViewerInteractionTool;
+  onInteractionToolChange?: (tool: ViewerInteractionTool) => void;
+  sectioning?: SectioningState;
+  onSectioningChange?: (next: SectioningState) => void;
+  measurements?: DistanceMeasurement[];
+  onMeasurementsChange?: (next: DistanceMeasurement[]) => void;
+  onCoordinateSample?: (sample: CoordinateSample | null) => void;
+  presentationMode?: boolean;
   fullscreenTargetRef?: React.RefObject<HTMLElement | null>;
 }
 
@@ -172,6 +223,7 @@ function snapshotMaterialOriginals(mat: THREE.Material) {
   mat.userData.__origTransparent = mat.transparent;
   mat.userData.__origOpacity = mat.opacity;
   mat.userData.__origDepthWrite = mat.depthWrite;
+  mat.userData.__origSide = mat.side;
   mat.userData.__origWireframe = 'wireframe' in mat ? Boolean((mat as THREE.MeshStandardMaterial).wireframe) : false;
   if ('emissive' in mat) {
     const std = mat as THREE.MeshStandardMaterial;
@@ -204,12 +256,44 @@ function getCameraOffsetForPreset(preset: CameraViewPreset, dist: number): THREE
     case 'bottom':
       dir.set(0, -1, 0.08);
       break;
+    case 'iso':
+      dir.set(1, 0.72, 1);
+      break;
+    case 'fit':
     case 'reset':
     default:
       dir.set(0.72, 0.45, 0.85);
       break;
   }
   return dir.normalize().multiplyScalar(dist);
+}
+
+const SECTION_AXIS_COLORS: Record<SectionPlaneAxis, number> = {
+  x: 0xf43f5e,
+  y: 0x10b981,
+  z: 0x38bdf8
+};
+
+export const DEFAULT_SECTIONING_STATE: SectioningState = {
+  active: false,
+  showPlaneGuides: true,
+  planes: {
+    x: { enabled: false, axis: 'x', offset: 0, inverted: false, tiltXDeg: 0, tiltYDeg: 0 },
+    y: { enabled: true, axis: 'y', offset: 0, inverted: false, tiltXDeg: 0, tiltYDeg: 0 },
+    z: { enabled: false, axis: 'z', offset: 0, inverted: false, tiltXDeg: 0, tiltYDeg: 0 }
+  }
+};
+
+export function createDefaultSectioningState(): SectioningState {
+  return {
+    active: false,
+    showPlaneGuides: true,
+    planes: {
+      x: { ...DEFAULT_SECTIONING_STATE.planes.x },
+      y: { ...DEFAULT_SECTIONING_STATE.planes.y },
+      z: { ...DEFAULT_SECTIONING_STATE.planes.z }
+    }
+  };
 }
 
 export const DEFAULT_VIEWER_SETTINGS: ViewerRenderSettings = {
@@ -221,6 +305,10 @@ export const DEFAULT_VIEWER_SETTINGS: ViewerRenderSettings = {
   showGrid: true,
   showAxes: false,
   showLabels: false,
+  showAnnotations: true,
+  highlightSelected: true,
+  autoRotate: false,
+  autoRotateSpeed: 1.5,
   backgroundMode: 'slate_dark'
 };
 
@@ -240,16 +328,29 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       className,
       selectedComponentId: controlledSelectedId,
       onSelectComponent,
+      selectedComponentIds: controlledSelectedIds,
+      onSelectComponents,
       isolatedComponentId: controlledIsolatedId,
       onIsolateChange,
+      isolatedComponentIds: controlledIsolatedIds,
+      onIsolateChangeMulti,
       renderSettings: controlledSettings,
       onRenderSettingsChange,
       onLoadingStateChange,
       onComponentsChange,
+      onHierarchyChange,
       activePinId: controlledActivePinId,
       onActivePinChange,
       pinMode: controlledPinMode,
       onPinModeChange,
+      interactionTool: controlledTool,
+      onInteractionToolChange,
+      sectioning: controlledSectioning,
+      onSectioningChange,
+      measurements: controlledMeasurements,
+      onMeasurementsChange,
+      onCoordinateSample,
+      presentationMode = false,
       fullscreenTargetRef
     },
     ref
@@ -294,6 +395,52 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       [onPinModeChange, pinMode]
     );
 
+    const [internalTool, setInternalTool] = useState<ViewerInteractionTool>('select');
+    const activeTool: ViewerInteractionTool =
+      controlledTool ?? (pinMode ? 'pin' : internalTool);
+    const setActiveTool = useCallback(
+      (nextTool: ViewerInteractionTool) => {
+        if (onInteractionToolChange) onInteractionToolChange(nextTool);
+        else setInternalTool(nextTool);
+        setPinMode(nextTool === 'pin');
+      },
+      [onInteractionToolChange, setPinMode]
+    );
+
+    const [internalSectioning, setInternalSectioning] = useState<SectioningState>(
+      createDefaultSectioningState
+    );
+    const sectioning = controlledSectioning ?? internalSectioning;
+    const updateSectioning = useCallback(
+      (next: SectioningState | ((prev: SectioningState) => SectioningState)) => {
+        const resolved = typeof next === 'function' ? next(sectioning) : next;
+        if (onSectioningChange) onSectioningChange(resolved);
+        else setInternalSectioning(resolved);
+      },
+      [onSectioningChange, sectioning]
+    );
+
+    const [internalMeasurements, setInternalMeasurements] = useState<DistanceMeasurement[]>([]);
+    const measurements = controlledMeasurements ?? internalMeasurements;
+    const updateMeasurements = useCallback(
+      (
+        next:
+          | DistanceMeasurement[]
+          | ((prev: DistanceMeasurement[]) => DistanceMeasurement[])
+      ) => {
+        const resolved = typeof next === 'function' ? next(measurements) : next;
+        if (onMeasurementsChange) onMeasurementsChange(resolved);
+        else setInternalMeasurements(resolved);
+      },
+      [onMeasurementsChange, measurements]
+    );
+
+    const [pendingMeasureStart, setPendingMeasureStart] = useState<{
+      pointLocal: [number, number, number];
+      componentName?: string;
+    } | null>(null);
+    const [coordinateSample, setCoordinateSample] = useState<CoordinateSample | null>(null);
+
     const [pendingPinPos, setPendingPinPos] = useState<[number, number, number] | null>(null);
     const [pendingPinComp, setPendingPinComp] = useState<string | undefined>(undefined);
     const [pinLabelDraft, setPinLabelDraft] = useState('');
@@ -318,27 +465,59 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
 
     const [components, setComponents] = useState<Analyzed3DComponent[]>([]);
 
-    const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
-    const selectedComponentId =
-      controlledSelectedId !== undefined ? controlledSelectedId : internalSelectedId;
-    const setSelectedComponentId = useCallback(
-      (val: string | null | ((prev: string | null) => string | null)) => {
-        const next = typeof val === 'function' ? val(selectedComponentId) : val;
-        if (onSelectComponent) onSelectComponent(next);
-        else setInternalSelectedId(next);
+    const [internalSelectedIds, setInternalSelectedIds] = useState<string[]>([]);
+    const selectedComponentIds = useMemo(() => {
+      if (controlledSelectedIds !== undefined) return controlledSelectedIds;
+      if (controlledSelectedId !== undefined) {
+        return controlledSelectedId ? [controlledSelectedId] : [];
+      }
+      return internalSelectedIds;
+    }, [controlledSelectedIds, controlledSelectedId, internalSelectedIds]);
+
+    const selectedComponentId = selectedComponentIds[0] ?? null;
+
+    const setSelectedComponentIds = useCallback(
+      (updater: string[] | ((prev: string[]) => string[])) => {
+        const next = typeof updater === 'function' ? updater(selectedComponentIds) : updater;
+        const deduped = Array.from(new Set(next));
+        if (onSelectComponents) onSelectComponents(deduped);
+        if (onSelectComponent) onSelectComponent(deduped[0] ?? null);
+        if (controlledSelectedIds === undefined && controlledSelectedId === undefined) {
+          setInternalSelectedIds(deduped);
+        }
       },
-      [onSelectComponent, selectedComponentId]
+      [selectedComponentIds, onSelectComponents, onSelectComponent, controlledSelectedIds, controlledSelectedId]
     );
 
-    const [internalIsolatedId, setInternalIsolatedId] = useState<string | null>(null);
-    const isolatedComponentId =
-      controlledIsolatedId !== undefined ? controlledIsolatedId : internalIsolatedId;
-    const setIsolatedComponentId = useCallback(
-      (val: string | null) => {
-        if (onIsolateChange) onIsolateChange(val);
-        else setInternalIsolatedId(val);
+    const setSelectedComponentId = useCallback(
+      (val: string | null | ((prev: string | null) => string | null)) => {
+        const nextSingle = typeof val === 'function' ? val(selectedComponentId) : val;
+        setSelectedComponentIds(nextSingle ? [nextSingle] : []);
       },
-      [onIsolateChange]
+      [selectedComponentId, setSelectedComponentIds]
+    );
+
+    const [internalIsolatedIds, setInternalIsolatedIds] = useState<string[]>([]);
+    const isolatedComponentIds = useMemo(() => {
+      if (controlledIsolatedIds !== undefined) return controlledIsolatedIds;
+      if (controlledIsolatedId !== undefined) {
+        return controlledIsolatedId ? [controlledIsolatedId] : [];
+      }
+      return internalIsolatedIds;
+    }, [controlledIsolatedIds, controlledIsolatedId, internalIsolatedIds]);
+
+    const isolatedComponentId = isolatedComponentIds[0] ?? null;
+
+    const setIsolatedComponentIds = useCallback(
+      (nextIds: string[]) => {
+        const deduped = Array.from(new Set(nextIds));
+        if (onIsolateChangeMulti) onIsolateChangeMulti(deduped);
+        if (onIsolateChange) onIsolateChange(deduped[0] ?? null);
+        if (controlledIsolatedIds === undefined && controlledIsolatedId === undefined) {
+          setInternalIsolatedIds(deduped);
+        }
+      },
+      [onIsolateChangeMulti, onIsolateChange, controlledIsolatedIds, controlledIsolatedId]
     );
 
     const [meshStats, setMeshStats] = useState<{
@@ -350,6 +529,7 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
 
     const [projectedLabels, setProjectedLabels] = useState<ProjectedLabel[]>([]);
     const [projectedPins, setProjectedPins] = useState<ProjectedPin[]>([]);
+    const [projectedMeasurements, setProjectedMeasurements] = useState<ProjectedMeasurement[]>([]);
     const [captureNotice, setCaptureNotice] = useState<string | null>(null);
 
     // Camera transition state for damped view presets & focus actions
@@ -373,8 +553,18 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       hemiLight: THREE.HemisphereLight;
       gridHelper: THREE.GridHelper;
       axesHelper: THREE.AxesHelper;
+      measureGroup: THREE.Group;
+      sectionGuideGroup: THREE.Group;
+      sectionPlanes: Record<SectionPlaneAxis, THREE.Plane>;
+      sectionPlaneVisuals: Record<
+        SectionPlaneAxis,
+        { holder: THREE.Group; fill: THREE.Mesh; border: THREE.LineSegments }
+      >;
       modelGroup: THREE.Group | null;
       componentEntries: ComponentEntry[];
+      normBounds: THREE.Box3;
+      normalizeScale: number;
+      rawCenter: THREE.Vector3;
       fitRadius: number;
       isSoftware: boolean;
       requestRender: () => void;
@@ -383,14 +573,20 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
 
     const settingsRef = useRef(settings);
     settingsRef.current = settings;
+    const sectioningRef = useRef(sectioning);
+    sectioningRef.current = sectioning;
     const annotationsRef = useRef(annotations);
     annotationsRef.current = annotations;
-    const selectedIdRef = useRef(selectedComponentId);
-    selectedIdRef.current = selectedComponentId;
-    const isolatedIdRef = useRef(isolatedComponentId);
-    isolatedIdRef.current = isolatedComponentId;
-    const pinModeRef = useRef(pinMode);
-    pinModeRef.current = pinMode;
+    const measurementsRef = useRef(measurements);
+    measurementsRef.current = measurements;
+    const selectedIdsRef = useRef(selectedComponentIds);
+    selectedIdsRef.current = selectedComponentIds;
+    const isolatedIdsRef = useRef(isolatedComponentIds);
+    isolatedIdsRef.current = isolatedComponentIds;
+    const activeToolRef = useRef(activeTool);
+    activeToolRef.current = activeTool;
+    const pendingMeasureStartRef = useRef(pendingMeasureStart);
+    pendingMeasureStartRef.current = pendingMeasureStart;
 
     const onModelAnalyzedRef = useRef(onModelAnalyzed);
     onModelAnalyzedRef.current = onModelAnalyzed;
@@ -398,19 +594,27 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
     onLoadingStateChangeRef.current = onLoadingStateChange;
     const onComponentsChangeRef = useRef(onComponentsChange);
     onComponentsChangeRef.current = onComponentsChange;
+    const onHierarchyChangeRef = useRef(onHierarchyChange);
+    onHierarchyChangeRef.current = onHierarchyChange;
+    const onCoordinateSampleRef = useRef(onCoordinateSample);
+    onCoordinateSampleRef.current = onCoordinateSample;
 
     const emitLoadingState = useCallback((next: ViewerLoadingState) => {
       setLoadingState(next);
       onLoadingStateChangeRef.current?.(next);
     }, []);
 
-    // Project 3D component labels & user pins onto 2D viewport overlay
+    // Scratch vector for projection (zero GC)
+    const projScratchRef = useRef(new THREE.Vector3());
+
+    // Project 3D component labels, measurement distances & user pins onto 2D viewport overlay
     const updateProjectedOverlays = useCallback(() => {
       const eng = engineRef.current;
       const host = canvasHostRef.current;
       if (!eng || !host || !eng.modelGroup) {
         setProjectedLabels([]);
         setProjectedPins([]);
+        setProjectedMeasurements([]);
         return;
       }
 
@@ -419,7 +623,8 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       if (w <= 0 || h <= 0) return;
 
       eng.camera.updateMatrixWorld();
-      const vec = new THREE.Vector3();
+      const vec = projScratchRef.current;
+      const selectedSet = new Set(selectedIdsRef.current);
 
       if (settingsRef.current.showLabels && eng.componentEntries.length > 0) {
         const nextLabels: ProjectedLabel[] = [];
@@ -438,7 +643,7 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
             text: entry.name,
             x: sx,
             y: sy,
-            isSelected: selectedIdRef.current === entry.id
+            isSelected: selectedSet.has(entry.id)
           });
         }
         setProjectedLabels(nextLabels);
@@ -446,9 +651,10 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         setProjectedLabels([]);
       }
 
-      if (annotationsRef.current.length > 0) {
+      if (settingsRef.current.showAnnotations !== false && annotationsRef.current.length > 0) {
         const nextPins: ProjectedPin[] = [];
         for (const ann of annotationsRef.current) {
+          if (ann.visible === false) continue;
           vec
             .set(ann.position[0], ann.position[1], ann.position[2])
             .applyMatrix4(eng.modelGroup.matrixWorld);
@@ -462,6 +668,28 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         setProjectedPins(nextPins);
       } else {
         setProjectedPins([]);
+      }
+
+      if (measurementsRef.current.length > 0) {
+        const nextMeas: ProjectedMeasurement[] = [];
+        for (const m of measurementsRef.current) {
+          vec
+            .set(
+              (m.pointA[0] + m.pointB[0]) * 0.5,
+              (m.pointA[1] + m.pointB[1]) * 0.5,
+              (m.pointA[2] + m.pointB[2]) * 0.5
+            )
+            .applyMatrix4(eng.modelGroup.matrixWorld);
+          vec.project(eng.camera);
+          if (vec.z > 1) continue;
+          const sx = (vec.x * 0.5 + 0.5) * w;
+          const sy = (-vec.y * 0.5 + 0.5) * h;
+          if (sx < -30 || sx > w + 30 || sy < -30 || sy > h + 30) continue;
+          nextMeas.push({ measurement: m, x: sx, y: sy });
+        }
+        setProjectedMeasurements(nextMeas);
+      } else {
+        setProjectedMeasurements([]);
       }
     }, []);
 
@@ -482,6 +710,7 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.05;
+      renderer.localClippingEnabled = true;
       renderer.setSize(host.clientWidth || 640, host.clientHeight || 420);
       renderer.domElement.style.display = 'block';
       renderer.domElement.style.width = '100%';
@@ -511,8 +740,8 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = !isSoftware;
       controls.dampingFactor = 0.08;
-      controls.minDistance = 0.35;
-      controls.maxDistance = 40;
+      controls.minDistance = 0.2;
+      controls.maxDistance = 60;
       controls.target.set(0, 0, 0);
 
       // Three-point scientific illumination
@@ -534,6 +763,57 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       const axesHelper = new THREE.AxesHelper(2.2);
       axesHelper.visible = false;
       scene.add(axesHelper);
+
+      // Measurement markers & lines group
+      const measureGroup = new THREE.Group();
+      measureGroup.name = '__measure_overlay__';
+      scene.add(measureGroup);
+
+      // Sectioning clipping planes & visual guides
+      const sectionGuideGroup = new THREE.Group();
+      sectionGuideGroup.name = '__section_guides__';
+      scene.add(sectionGuideGroup);
+
+      const sectionPlanes: Record<SectionPlaneAxis, THREE.Plane> = {
+        x: new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0),
+        y: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0),
+        z: new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
+      };
+
+      const makeGuideVisual = (axis: SectionPlaneAxis) => {
+        const holder = new THREE.Group();
+        holder.visible = false;
+        const planeGeo = new THREE.PlaneGeometry(1, 1);
+        const fillMat = new THREE.MeshBasicMaterial({
+          color: SECTION_AXIS_COLORS[axis],
+          transparent: true,
+          opacity: 0.1,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        });
+        const fill = new THREE.Mesh(planeGeo, fillMat);
+        fill.raycast = () => {};
+        const edgesGeo = new THREE.EdgesGeometry(planeGeo);
+        const lineMat = new THREE.LineBasicMaterial({
+          color: SECTION_AXIS_COLORS[axis],
+          transparent: true,
+          opacity: 0.7
+        });
+        const border = new THREE.LineSegments(edgesGeo, lineMat);
+        border.raycast = () => {};
+        holder.add(fill, border);
+        sectionGuideGroup.add(holder);
+        return { holder, fill, border };
+      };
+
+      const sectionPlaneVisuals: Record<
+        SectionPlaneAxis,
+        { holder: THREE.Group; fill: THREE.Mesh; border: THREE.LineSegments }
+      > = {
+        x: makeGuideVisual('x'),
+        y: makeGuideVisual('y'),
+        z: makeGuideVisual('z')
+      };
 
       let rafId = 0;
       let renderRequested = false;
@@ -579,10 +859,12 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
           controls.update();
         }
 
-        const dampingMoving = !isSoftware && controls.enableDamping ? controls.update() : false;
+        const shouldUpdateControls =
+          (!isSoftware && controls.enableDamping) || controls.autoRotate;
+        const controlsMoving = shouldUpdateControls ? controls.update() : false;
         renderNow();
 
-        if (transitionMoving || dampingMoving) {
+        if (transitionMoving || controlsMoving || controls.autoRotate) {
           renderRequested = true;
           rafId = requestAnimationFrame(tick);
         } else {
@@ -598,7 +880,6 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       };
 
       const handleControlsStart = () => {
-        // Never fight user drag/zoom with active camera preset transition
         cameraTransitionRef.current.active = false;
       };
 
@@ -637,8 +918,18 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         hemiLight,
         gridHelper,
         axesHelper,
+        measureGroup,
+        sectionGuideGroup,
+        sectionPlanes,
+        sectionPlaneVisuals,
         modelGroup: null,
         componentEntries: [],
+        normBounds: new THREE.Box3(
+          new THREE.Vector3(-1, -1, -1),
+          new THREE.Vector3(1, 1, 1)
+        ),
+        normalizeScale: 1,
+        rawCenter: new THREE.Vector3(),
         fitRadius: 2.2,
         isSoftware,
         requestRender,
@@ -658,6 +949,29 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
           scene.remove(engineRef.current.modelGroup);
           disposeObjectTree(engineRef.current.modelGroup);
         }
+        disposeObjectTree(measureGroup);
+        measureGroup.traverse((o) => {
+          const line = o as THREE.Line;
+          if (line.isLine) {
+            line.geometry?.dispose();
+            if (Array.isArray(line.material)) line.material.forEach((m) => m.dispose());
+            else line.material?.dispose();
+          }
+        });
+        sectionGuideGroup.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          const line = o as THREE.LineSegments;
+          if (mesh.geometry) mesh.geometry.dispose();
+          if (line.geometry) line.geometry.dispose();
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+            else mesh.material.dispose();
+          }
+          if (line.material) {
+            if (Array.isArray(line.material)) line.material.forEach((m) => m.dispose());
+            else line.material.dispose();
+          }
+        });
         controls.dispose();
         envTarget.dispose();
         renderer.dispose();
@@ -666,20 +980,80 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       };
     }, [updateProjectedOverlays]);
 
-    // Apply Solid / Wireframe / X-Ray + component highlight consistently
-    const applyMaterials = useCallback(() => {
+    // Apply Solid / Wireframe / X-Ray + component highlight + Real WebGL Clipping Planes
+    const applyMaterialsAndClipping = useCallback(() => {
       const eng = engineRef.current;
-      if (!eng || !eng.modelGroup) return;
+      if (!eng) return;
+
+      const sec = sectioningRef.current;
+      const activeClipPlanes: THREE.Plane[] = [];
+      const bCenter = new THREE.Vector3();
+      const bSize = new THREE.Vector3(2, 2, 2);
+      if (!eng.normBounds.isEmpty()) {
+        eng.normBounds.getCenter(bCenter);
+        eng.normBounds.getSize(bSize);
+      }
+      const maxSpan = Math.max(bSize.x, bSize.y, bSize.z, 1) * 1.18;
+      const euler = new THREE.Euler();
+      const baseAxis = new THREE.Vector3();
+      const clipNormal = new THREE.Vector3();
+      const cutPoint = new THREE.Vector3();
+      const zUnit = new THREE.Vector3(0, 0, 1);
+
+      (['x', 'y', 'z'] as SectionPlaneAxis[]).forEach((axis) => {
+        const cfg = sec.planes[axis];
+        const vis = eng.sectionPlaneVisuals[axis];
+        if (!sec.active || !cfg.enabled || !eng.modelGroup) {
+          vis.holder.visible = false;
+          return;
+        }
+        if (axis === 'x') baseAxis.set(1, 0, 0);
+        else if (axis === 'y') baseAxis.set(0, 1, 0);
+        else baseAxis.set(0, 0, 1);
+
+        euler.set(
+          THREE.MathUtils.degToRad(cfg.tiltXDeg),
+          THREE.MathUtils.degToRad(cfg.tiltYDeg),
+          0,
+          'XYZ'
+        );
+        baseAxis.applyEuler(euler).normalize();
+
+        const halfExtent =
+          Math.abs(baseAxis.x) * (bSize.x * 0.52) +
+          Math.abs(baseAxis.y) * (bSize.y * 0.52) +
+          Math.abs(baseAxis.z) * (bSize.z * 0.52);
+
+        cutPoint.copy(bCenter).addScaledVector(baseAxis, cfg.offset * halfExtent);
+        clipNormal.copy(baseAxis);
+        if (!cfg.inverted) clipNormal.negate();
+
+        const plane = eng.sectionPlanes[axis];
+        plane.setFromNormalAndCoplanarPoint(clipNormal, cutPoint);
+        activeClipPlanes.push(plane);
+
+        vis.holder.visible = Boolean(sec.showPlaneGuides);
+        vis.holder.position.copy(cutPoint);
+        vis.holder.quaternion.setFromUnitVectors(zUnit, clipNormal);
+        vis.holder.scale.set(maxSpan, maxSpan, 1);
+      });
+
+      if (!eng.modelGroup) {
+        eng.requestRender();
+        return;
+      }
 
       const mode: RenderVisualizationMode =
         settingsRef.current.renderMode || (settingsRef.current.wireframe ? 'wireframe' : 'solid');
-      const selId = selectedIdRef.current;
-      const isoId = isolatedIdRef.current;
-      const hasFocusInXray = Boolean(selId || isoId);
+      const selectedSet = new Set(selectedIdsRef.current);
+      const isolatedSet = new Set(isolatedIdsRef.current);
+      const highlightEnabled = settingsRef.current.highlightSelected !== false;
+      const hasFocusInXray = selectedSet.size > 0 || isolatedSet.size > 0;
+      const clippingActive = activeClipPlanes.length > 0;
 
       for (const entry of eng.componentEntries) {
-        const isSelected = entry.id === selId;
-        const isFocused = isSelected || entry.id === isoId;
+        const isSelected = selectedSet.has(entry.id);
+        const isFocused = isSelected || isolatedSet.has(entry.id);
         const mats = Array.isArray(entry.mesh.material)
           ? entry.mesh.material
           : [entry.mesh.material];
@@ -695,6 +1069,15 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
             typeof mat.userData.__origDepthWrite === 'boolean'
               ? mat.userData.__origDepthWrite
               : true;
+          const origSide =
+            typeof mat.userData.__origSide === 'number'
+              ? (mat.userData.__origSide as THREE.Side)
+              : THREE.FrontSide;
+
+          // Real geometry clipping planes
+          mat.clippingPlanes = clippingActive ? activeClipPlanes : null;
+          mat.clipShadows = clippingActive;
+          mat.side = clippingActive ? THREE.DoubleSide : origSide;
 
           // Visualization Mode
           if ('wireframe' in mat) {
@@ -717,10 +1100,11 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
             mat.depthWrite = origDepthWrite;
           }
 
-          // Selection Emissive / Basic Tint Highlight
+          // Non-destructive Selection Highlight
+          const shouldHighlight = isSelected && highlightEnabled;
           if ('emissive' in mat) {
             const std = mat as THREE.MeshStandardMaterial;
-            if (isSelected) {
+            if (shouldHighlight) {
               std.emissive.setHex(0x059669);
               std.emissiveIntensity = mode === 'xray' ? 0.65 : 0.45;
             } else if (mat.userData.__origEmissive !== undefined) {
@@ -729,7 +1113,7 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
             }
           } else if ('color' in mat && mat.userData.__origColorHex !== undefined) {
             const basic = mat as THREE.MeshBasicMaterial;
-            if (isSelected) {
+            if (shouldHighlight) {
               basic.color.setHex(0x10b981);
             } else {
               basic.color.setHex(mat.userData.__origColorHex);
@@ -743,7 +1127,80 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       eng.requestRender();
     }, []);
 
-    // Apply lighting, environment, grid/axes & render mode reactively
+    // Rebuild 3D measurement spheres + lines cleanly on state changes
+    useEffect(() => {
+      const eng = engineRef.current;
+      if (!eng) return;
+
+      const group = eng.measureGroup;
+      // Cleanly dispose previous measurement geometries & materials
+      group.traverse((o) => {
+        const m = o as THREE.Mesh;
+        const l = o as THREE.Line;
+        if (m.isMesh) {
+          m.geometry?.dispose();
+          if (Array.isArray(m.material)) m.material.forEach((mt) => mt.dispose());
+          else m.material?.dispose();
+        } else if (l.isLine) {
+          l.geometry?.dispose();
+          if (Array.isArray(l.material)) l.material.forEach((mt) => mt.dispose());
+          else l.material?.dispose();
+        }
+      });
+      group.clear();
+
+      const sphereRadius = Math.max(0.025, eng.fitRadius * 0.016);
+
+      if (pendingMeasureStart) {
+        const dotGeo = new THREE.SphereGeometry(sphereRadius * 1.25, 14, 10);
+        const dotMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+        const dot = new THREE.Mesh(dotGeo, dotMat);
+        dot.position.set(
+          pendingMeasureStart.pointLocal[0],
+          pendingMeasureStart.pointLocal[1],
+          pendingMeasureStart.pointLocal[2]
+        );
+        dot.raycast = () => {};
+        group.add(dot);
+      }
+
+      if (coordinateSample && activeTool === 'measure_coords') {
+        const dotGeo = new THREE.SphereGeometry(sphereRadius * 1.2, 14, 10);
+        const dotMat = new THREE.MeshBasicMaterial({ color: 0xa855f7 });
+        const dot = new THREE.Mesh(dotGeo, dotMat);
+        dot.position.set(
+          coordinateSample.pointLocal[0],
+          coordinateSample.pointLocal[1],
+          coordinateSample.pointLocal[2]
+        );
+        dot.raycast = () => {};
+        group.add(dot);
+      }
+
+      measurements.forEach((m) => {
+        const ptA = new THREE.Vector3(...m.pointA);
+        const ptB = new THREE.Vector3(...m.pointB);
+        const dotMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+        const sA = new THREE.Mesh(new THREE.SphereGeometry(sphereRadius, 12, 10), dotMat);
+        sA.position.copy(ptA);
+        sA.raycast = () => {};
+
+        const sB = new THREE.Mesh(new THREE.SphereGeometry(sphereRadius, 12, 10), dotMat.clone());
+        sB.position.copy(ptB);
+        sB.raycast = () => {};
+
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([ptA, ptB]);
+        const lineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8 });
+        const line = new THREE.Line(lineGeo, lineMat);
+        line.raycast = () => {};
+
+        group.add(sA, sB, line);
+      });
+
+      eng.requestRender();
+    }, [measurements, pendingMeasureStart, coordinateSample, activeTool]);
+
+    // Apply lighting, environment, grid/axes, auto-rotate & render mode reactively
     useEffect(() => {
       const eng = engineRef.current;
       if (!eng) return;
@@ -752,6 +1209,8 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       eng.scene.background = new THREE.Color(bgHex);
       eng.gridHelper.visible = settings.showGrid;
       eng.axesHelper.visible = settings.showAxes;
+      eng.controls.autoRotate = Boolean(settings.autoRotate);
+      eng.controls.autoRotateSpeed = settings.autoRotateSpeed ?? 1.5;
 
       const presetMult =
         settings.environmentPreset === 'clinical_bright'
@@ -764,41 +1223,100 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       eng.fillLight.intensity = settings.environmentPreset === 'contrast_dark' ? 0.35 : 0.9;
       eng.hemiLight.intensity = settings.ambientIntensity * presetMult;
 
-      applyMaterials();
+      applyMaterialsAndClipping();
       eng.requestRender();
-    }, [settings, applyMaterials]);
+    }, [settings, applyMaterialsAndClipping]);
 
-    // Re-apply highlight/xray when selection or isolation changes
+    // Re-apply highlight/xray/clipping when selection, isolation, or sectioning changes
     useEffect(() => {
-      applyMaterials();
-    }, [selectedComponentId, isolatedComponentId, applyMaterials]);
+      applyMaterialsAndClipping();
+    }, [selectedComponentIds, isolatedComponentIds, sectioning, applyMaterialsAndClipping]);
 
-    // Re-project overlays when annotations or active pin change
+    // Re-project overlays when annotations, active pin, or measurements change
     useEffect(() => {
       engineRef.current?.requestRender();
-    }, [annotations, activePinId, settings.showLabels]);
+    }, [annotations, activePinId, settings.showLabels, settings.showAnnotations, measurements]);
 
-    const setCameraPreset = useCallback((preset: CameraViewPreset, immediate = false) => {
+    const fitToViewport = useCallback((immediate = false) => {
       const eng = engineRef.current;
       if (!eng) return;
-      const dist = Math.max(2.6, eng.fitRadius * 2.15);
-      const offset = getCameraOffsetForPreset(preset, dist);
-      const goalTarget = new THREE.Vector3(0, 0, 0);
+
+      const visibleBox = new THREE.Box3();
+      if (eng.modelGroup) {
+        eng.componentEntries.forEach((entry) => {
+          if (entry.mesh.visible) {
+            visibleBox.expandByObject(entry.mesh);
+          }
+        });
+        if (visibleBox.isEmpty()) {
+          visibleBox.copy(eng.normBounds);
+        }
+      }
+
+      const center = new THREE.Vector3();
+      const sphere = new THREE.Sphere();
+      if (!visibleBox.isEmpty()) {
+        visibleBox.getCenter(center);
+        visibleBox.getBoundingSphere(sphere);
+      } else {
+        sphere.radius = eng.fitRadius;
+      }
+
+      const halfFovRad = THREE.MathUtils.degToRad(eng.camera.fov * 0.5);
+      const fitDist = Math.max(
+        0.9,
+        (Math.max(0.5, sphere.radius) / Math.max(0.15, Math.sin(halfFovRad))) * 1.12
+      );
+
+      const dir = eng.camera.position.clone().sub(eng.controls.target);
+      if (dir.lengthSq() < 0.001) dir.set(0.72, 0.45, 0.85);
+      dir.normalize();
+
+      const goalPos = center.clone().addScaledVector(dir, fitDist);
 
       if (immediate || eng.isSoftware) {
         cameraTransitionRef.current.active = false;
-        eng.camera.position.copy(offset);
-        eng.controls.target.copy(goalTarget);
+        eng.camera.position.copy(goalPos);
+        eng.controls.target.copy(center);
         eng.controls.update();
       } else {
         cameraTransitionRef.current = {
           active: true,
-          goalPos: offset,
-          goalTarget
+          goalPos,
+          goalTarget: center
         };
       }
       eng.requestRender();
     }, []);
+
+    const setCameraPreset = useCallback(
+      (preset: CameraViewPreset, immediate = false) => {
+        if (preset === 'fit') {
+          fitToViewport(immediate);
+          return;
+        }
+        const eng = engineRef.current;
+        if (!eng) return;
+        const dist = Math.max(2.6, eng.fitRadius * 2.15);
+        const offset = getCameraOffsetForPreset(preset, dist);
+        const goalTarget = new THREE.Vector3(0, 0, 0);
+
+        if (immediate || eng.isSoftware) {
+          cameraTransitionRef.current.active = false;
+          eng.camera.position.copy(offset);
+          eng.controls.target.copy(goalTarget);
+          eng.controls.update();
+        } else {
+          cameraTransitionRef.current = {
+            active: true,
+            goalPos: offset,
+            goalTarget
+          };
+        }
+        eng.requestRender();
+      },
+      [fitToViewport]
+    );
 
     const resetCamera = useCallback(() => {
       setCameraPreset('reset', false);
@@ -836,6 +1354,49 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       }
       eng.requestRender();
     }, []);
+
+    const focusSelected = useCallback(() => {
+      const eng = engineRef.current;
+      if (!eng || !eng.modelGroup) return;
+      const ids = selectedIdsRef.current;
+      if (ids.length === 0) {
+        fitToViewport(false);
+        return;
+      }
+      if (ids.length === 1) {
+        focusComponent(ids[0]);
+        return;
+      }
+      const box = new THREE.Box3();
+      ids.forEach((id) => {
+        const entry = eng.componentEntries.find((e) => e.id === id);
+        if (entry) box.expandByObject(entry.mesh);
+      });
+      if (box.isEmpty()) return;
+      const center = new THREE.Vector3();
+      const sphere = new THREE.Sphere();
+      box.getCenter(center);
+      box.getBoundingSphere(sphere);
+      const dir = eng.camera.position.clone().sub(eng.controls.target);
+      if (dir.lengthSq() < 0.001) dir.set(0.72, 0.45, 0.85);
+      dir.normalize();
+      const dist = Math.max(1.2, Math.min(eng.fitRadius * 2.5, sphere.radius * 2.6));
+      const goalPos = center.clone().addScaledVector(dir, dist);
+
+      if (eng.isSoftware) {
+        cameraTransitionRef.current.active = false;
+        eng.controls.target.copy(center);
+        eng.camera.position.copy(goalPos);
+        eng.controls.update();
+      } else {
+        cameraTransitionRef.current = {
+          active: true,
+          goalPos,
+          goalTarget: center
+        };
+      }
+      eng.requestRender();
+    }, [fitToViewport, focusComponent]);
 
     const focusPoint = useCallback((localPoint: [number, number, number]) => {
       const eng = engineRef.current;
@@ -880,8 +1441,12 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       }
       setComponents([]);
       onComponentsChangeRef.current?.([]);
-      setSelectedComponentId(null);
-      setIsolatedComponentId(null);
+      onHierarchyChangeRef.current?.([]);
+      setSelectedComponentIds([]);
+      setIsolatedComponentIds([]);
+      setPendingMeasureStart(null);
+      setCoordinateSample(null);
+      onCoordinateSampleRef.current?.(null);
       setMeshStats(null);
 
       if (!modelUrl) {
@@ -917,7 +1482,7 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         const maxDim = Math.max(rawSize.x, rawSize.y, rawSize.z, 0.0001);
         const scale = 3.2 / maxDim;
         loadedRoot.scale.multiplyScalar(scale);
-        loadedRoot.position.sub(rawCenter.multiplyScalar(scale));
+        loadedRoot.position.sub(rawCenter.clone().multiplyScalar(scale));
         wrapper.updateMatrixWorld(true);
 
         const normBox = new THREE.Box3().setFromObject(wrapper);
@@ -926,10 +1491,15 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         const sphere = new THREE.Sphere();
         normBox.getBoundingSphere(sphere);
 
+        eng.normBounds.copy(normBox);
+        eng.normalizeScale = scale;
+        eng.rawCenter.copy(rawCenter);
         eng.gridHelper.position.y = normBox.min.y - 0.05;
         eng.fitRadius = Math.max(1.2, sphere.radius);
 
         const entries: ComponentEntry[] = [];
+        const compMetaList: Analyzed3DComponent[] = [];
+        const meshUuidToCompId = new Map<string, string>();
         let totalVertices = 0;
         let totalTriangles = 0;
         let partIdx = 1;
@@ -971,18 +1541,23 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
 
             const meshBox = new THREE.Box3().setFromObject(mesh);
             const meshCenter = new THREE.Vector3();
+            const meshSize = new THREE.Vector3();
             meshBox.getCenter(meshCenter);
+            meshBox.getSize(meshSize);
 
             const directMeshName = mesh.name?.trim() || '';
+            const hierarchyPath: string[] = [];
             let ancestorName = '';
             let p: THREE.Object3D | null = mesh.parent;
             while (p && p !== wrapper) {
-              if (p.name?.trim() && isMeaningfulNodeName(p.name)) {
-                ancestorName = p.name.trim();
-                break;
+              const pn = p.name?.trim() || '';
+              if (pn) hierarchyPath.unshift(pn);
+              if (!ancestorName && pn && isMeaningfulNodeName(pn)) {
+                ancestorName = pn;
               }
               p = p.parent;
             }
+            if (directMeshName) hierarchyPath.push(directMeshName);
 
             const meshNameMeaningful = !isSingleFormat && isMeaningfulNodeName(directMeshName);
             const ancestorMeaningful = !isSingleFormat && isMeaningfulNodeName(ancestorName);
@@ -1001,10 +1576,13 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
             const rawNodeName = directMeshName || ancestorName || `Unnamed Node #${partIdx}`;
             const firstMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
             const materialName = firstMat?.name?.trim() || undefined;
+            const compId = `comp_${entries.length}_${mesh.uuid.slice(0, 6)}`;
             partIdx += 1;
 
+            meshUuidToCompId.set(mesh.uuid, compId);
+
             entries.push({
-              id: `comp_${entries.length}_${mesh.uuid.slice(0, 6)}`,
+              id: compId,
               name: displayName,
               rawNodeName,
               parentName: ancestorName || undefined,
@@ -1016,38 +1594,107 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
               localCenter: meshCenter,
               visible: true
             });
+
+            compMetaList.push({
+              id: compId,
+              name: displayName,
+              rawNodeName,
+              parentId: mesh.parent && mesh.parent !== wrapper ? mesh.parent.uuid : null,
+              parentName: ancestorName || undefined,
+              hierarchyPath,
+              depth: Math.max(0, hierarchyPath.length - 1),
+              hasMeaningfulName,
+              visible: true,
+              vertexCount: meshVerts,
+              triangleCount: meshTris,
+              materialName,
+              localCenter: [
+                Number(meshCenter.x.toFixed(4)),
+                Number(meshCenter.y.toFixed(4)),
+                Number(meshCenter.z.toFixed(4))
+              ],
+              boundsSize: [
+                Number((meshSize.x / scale).toFixed(3)),
+                Number((meshSize.y / scale).toFixed(3)),
+                Number((meshSize.z / scale).toFixed(3))
+              ]
+            });
           }
         });
+
+        // Build authentic scene hierarchy tree preserving parent/child groups without fabricating names
+        let groupIdx = 1;
+        const buildHierarchyNode = (
+          obj: THREE.Object3D,
+          depth: number
+        ): SceneHierarchyNode | null => {
+          if ((obj as THREE.Mesh).isMesh) {
+            const compId = meshUuidToCompId.get(obj.uuid);
+            const comp = compMetaList.find((c) => c.id === compId);
+            if (!comp) return null;
+            return {
+              id: `node_${obj.uuid.slice(0, 8)}`,
+              name: comp.name,
+              rawName: comp.rawNodeName,
+              kind: 'mesh',
+              hasMeaningfulName: comp.hasMeaningfulName,
+              componentId: comp.id,
+              meshIds: [comp.id],
+              depth,
+              children: []
+            };
+          }
+
+          const children: SceneHierarchyNode[] = [];
+          const meshIds: string[] = [];
+          for (const child of obj.children) {
+            const built = buildHierarchyNode(child, depth + 1);
+            if (built) {
+              children.push(built);
+              meshIds.push(...built.meshIds);
+            }
+          }
+          if (children.length === 0) return null;
+
+          const rawName = obj.name?.trim() || '';
+          const meaningful = !isSingleFormat && isMeaningfulNodeName(rawName);
+          const nodeName = meaningful
+            ? rawName
+            : rawName || `Unnamed Group ${groupIdx++}`;
+
+          return {
+            id: `node_${obj.uuid.slice(0, 8)}`,
+            name: nodeName,
+            rawName: rawName || nodeName,
+            kind: 'group',
+            hasMeaningfulName: meaningful,
+            meshIds,
+            depth,
+            children
+          };
+        };
+
+        const rootBuilt = buildHierarchyNode(loadedRoot, 0);
+        const hierarchyTree: SceneHierarchyNode[] = rootBuilt
+          ? rootBuilt.kind === 'group' && rootBuilt.children.length > 0 && !isMeaningfulNodeName(rootBuilt.rawName)
+            ? rootBuilt.children.map((c) => ({ ...c, depth: Math.max(0, c.depth - 1) }))
+            : [rootBuilt]
+          : [];
 
         eng.modelGroup = wrapper;
         eng.componentEntries = entries;
         eng.scene.add(wrapper);
 
-        const analyzedList: Analyzed3DComponent[] = entries.map((e) => ({
-          id: e.id,
-          name: e.name,
-          rawNodeName: e.rawNodeName,
-          parentName: e.parentName,
-          hasMeaningfulName: e.hasMeaningfulName,
-          visible: e.visible,
-          vertexCount: e.vertexCount,
-          triangleCount: e.triangleCount,
-          materialName: e.materialName,
-          localCenter: [
-            Number(e.localCenter.x.toFixed(4)),
-            Number(e.localCenter.y.toFixed(4)),
-            Number(e.localCenter.z.toFixed(4))
-          ]
-        }));
-
-        setComponents(analyzedList);
-        onComponentsChangeRef.current?.(analyzedList);
+        setComponents(compMetaList);
+        onComponentsChangeRef.current?.(compMetaList);
+        onHierarchyChangeRef.current?.(hierarchyTree);
 
         const dimensions: [number, number, number] = [
           Number(rawSize.x.toFixed(2)),
           Number(rawSize.y.toFixed(2)),
           Number(rawSize.z.toFixed(2))
         ];
+        const unitLabel = isMolecularFmt ? 'Å (coordinate units)' : 'model units';
         const stats = {
           vertices: Math.round(totalVertices),
           triangles: Math.round(totalTriangles),
@@ -1060,10 +1707,14 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
           vertexCount: stats.vertices,
           triangleCount: stats.triangles,
           dimensions,
-          components: analyzedList
+          normalizeScale: scale,
+          unitLabel,
+          isCalibrated: false,
+          components: compMetaList,
+          hierarchy: hierarchyTree
         });
 
-        applyMaterials();
+        applyMaterialsAndClipping();
         setCameraPreset('reset', true);
         emitLoadingState({ status: 'ready', percent: 100 });
         eng.requestRender();
@@ -1359,35 +2010,64 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [modelUrl, modelFormat, asset.id]);
 
-    const handleToggleComponentVisible = useCallback((compId: string) => {
-      const eng = engineRef.current;
-      if (!eng) return;
-      setIsolatedComponentId(null);
-      setComponents((prev) => {
-        const next = prev.map((c) => {
-          if (c.id !== compId) return c;
-          const nextVis = !c.visible;
-          const entry = eng.componentEntries.find((e) => e.id === compId);
-          if (entry) {
-            entry.visible = nextVis;
-            entry.mesh.visible = nextVis;
-          }
-          return { ...c, visible: nextVis };
-        });
-        onComponentsChangeRef.current?.(next);
-        return next;
-      });
-      eng.requestRender();
-    }, [setIsolatedComponentId]);
-
-    const handleIsolateComponent = useCallback(
-      (compId: string | null) => {
+    const handleToggleComponentVisible = useCallback(
+      (compId: string) => {
         const eng = engineRef.current;
         if (!eng) return;
-        setIsolatedComponentId(compId);
+        setIsolatedComponentIds([]);
         setComponents((prev) => {
           const next = prev.map((c) => {
-            const nextVis = compId === null ? true : c.id === compId;
+            if (c.id !== compId) return c;
+            const nextVis = !c.visible;
+            const entry = eng.componentEntries.find((e) => e.id === compId);
+            if (entry) {
+              entry.visible = nextVis;
+              entry.mesh.visible = nextVis;
+            }
+            return { ...c, visible: nextVis };
+          });
+          onComponentsChangeRef.current?.(next);
+          return next;
+        });
+        eng.requestRender();
+      },
+      [setIsolatedComponentIds]
+    );
+
+    const handleSetComponentsVisibility = useCallback(
+      (compIds: string[], visible: boolean) => {
+        const eng = engineRef.current;
+        if (!eng || compIds.length === 0) return;
+        const targetSet = new Set(compIds);
+        setIsolatedComponentIds([]);
+        setComponents((prev) => {
+          const next = prev.map((c) => {
+            if (!targetSet.has(c.id)) return c;
+            const entry = eng.componentEntries.find((e) => e.id === c.id);
+            if (entry) {
+              entry.visible = visible;
+              entry.mesh.visible = visible;
+            }
+            return { ...c, visible };
+          });
+          onComponentsChangeRef.current?.(next);
+          return next;
+        });
+        eng.requestRender();
+      },
+      [setIsolatedComponentIds]
+    );
+
+    const handleIsolateComponents = useCallback(
+      (compIds: string[]) => {
+        const eng = engineRef.current;
+        if (!eng) return;
+        const cleanIds = Array.from(new Set(compIds));
+        setIsolatedComponentIds(cleanIds);
+        const isoSet = new Set(cleanIds);
+        setComponents((prev) => {
+          const next = prev.map((c) => {
+            const nextVis = cleanIds.length === 0 ? true : isoSet.has(c.id);
             const entry = eng.componentEntries.find((e) => e.id === c.id);
             if (entry) {
               entry.visible = nextVis;
@@ -1398,18 +2078,77 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
           onComponentsChangeRef.current?.(next);
           return next;
         });
-        if (compId) setSelectedComponentId(compId);
+        if (cleanIds.length > 0) setSelectedComponentIds(cleanIds);
         eng.requestRender();
       },
-      [setIsolatedComponentId, setSelectedComponentId]
+      [setIsolatedComponentIds, setSelectedComponentIds]
+    );
+
+    const handleIsolateComponent = useCallback(
+      (compId: string | null) => {
+        handleIsolateComponents(compId ? [compId] : []);
+      },
+      [handleIsolateComponents]
     );
 
     const restoreAllComponents = useCallback(() => {
-      handleIsolateComponent(null);
-    }, [handleIsolateComponent]);
+      handleIsolateComponents([]);
+    }, [handleIsolateComponents]);
 
-    // Raycast click-to-select or click-to-pin 3D annotation
+    const selectAllComponents = useCallback(() => {
+      const eng = engineRef.current;
+      if (!eng) return;
+      setSelectedComponentIds(eng.componentEntries.map((e) => e.id));
+    }, [setSelectedComponentIds]);
+
+    const deselectAllComponents = useCallback(() => {
+      setSelectedComponentIds([]);
+    }, [setSelectedComponentIds]);
+
+    const handleClearMeasurements = useCallback(() => {
+      setPendingMeasureStart(null);
+      updateMeasurements([]);
+      setCoordinateSample(null);
+      onCoordinateSampleRef.current?.(null);
+    }, [updateMeasurements]);
+
+    const handleRemoveMeasurement = useCallback(
+      (id: string) => {
+        updateMeasurements((prev) => prev.filter((m) => m.id !== id));
+      },
+      [updateMeasurements]
+    );
+
+    const handleResetSectioning = useCallback(() => {
+      updateSectioning(createDefaultSectioningState());
+    }, [updateSectioning]);
+
+    const handleResetExploration = useCallback(() => {
+      handleIsolateComponents([]);
+      setSelectedComponentIds([]);
+      handleClearMeasurements();
+      updateSectioning(createDefaultSectioningState());
+      updateSettings((s) => ({
+        ...DEFAULT_VIEWER_SETTINGS,
+        environmentPreset: s.environmentPreset,
+        backgroundMode: s.backgroundMode
+      }));
+      setActiveTool('select');
+      setCameraPreset('reset', false);
+    }, [
+      handleIsolateComponents,
+      setSelectedComponentIds,
+      handleClearMeasurements,
+      updateSectioning,
+      updateSettings,
+      setActiveTool,
+      setCameraPreset
+    ]);
+
+    // Raycast click-to-select, multi-select, measure distance/coords, or click-to-pin 3D annotation
     const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
+    const raycasterScratchRef = useRef(new THREE.Raycaster());
+    const pointerNdcScratchRef = useRef(new THREE.Vector2());
 
     const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
       pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
@@ -1427,11 +2166,12 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       if (!eng || !host || !eng.modelGroup) return;
 
       const rect = host.getBoundingClientRect();
-      const ndc = new THREE.Vector2(
+      const ndc = pointerNdcScratchRef.current;
+      ndc.set(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1
       );
-      const raycaster = new THREE.Raycaster();
+      const raycaster = raycasterScratchRef.current;
       raycaster.setFromCamera(ndc, eng.camera);
 
       const visibleMeshes = eng.componentEntries
@@ -1439,17 +2179,35 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         .map((entry) => entry.mesh);
 
       const hits = raycaster.intersectObjects(visibleMeshes, false);
-      if (hits.length === 0) {
-        if (!pinModeRef.current) setSelectedComponentId(null);
+
+      // Filter out clipped-away surface hits when WebGL clipping planes are active
+      const activePlanes = Object.values(eng.sectionPlanes).filter((_, idx) => {
+        const axis = (['x', 'y', 'z'] as SectionPlaneAxis[])[idx];
+        return sectioningRef.current.active && sectioningRef.current.planes[axis].enabled;
+      });
+      const validHit = hits.find((h) =>
+        activePlanes.every((pl) => pl.distanceToPoint(h.point) >= -0.0005)
+      );
+
+      const tool = activeToolRef.current;
+
+      if (!validHit) {
+        if (tool === 'select') {
+          setSelectedComponentIds([]);
+        }
         return;
       }
 
-      const firstHit = hits[0];
-      const matchedEntry = eng.componentEntries.find((entry) => entry.mesh === firstHit.object);
+      const matchedEntry = eng.componentEntries.find((entry) => entry.mesh === validHit.object);
+      const localPt = validHit.point.clone();
+      eng.modelGroup.worldToLocal(localPt);
 
-      if (pinModeRef.current && onAddAnnotation) {
-        const localPt = firstHit.point.clone();
-        eng.modelGroup.worldToLocal(localPt);
+      const isMolecularFmt =
+        modelFormat === 'pdb' || modelFormat === 'sdf' || modelFormat === 'mol';
+      const unitLabel = isMolecularFmt ? 'Å (coordinate units)' : 'model units';
+      const scaleInv = eng.normalizeScale > 0 ? 1 / eng.normalizeScale : 1;
+
+      if (tool === 'pin' && onAddAnnotation) {
         setPendingPinPos([
           Number(localPt.x.toFixed(4)),
           Number(localPt.y.toFixed(4)),
@@ -1461,8 +2219,76 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         return;
       }
 
+      if (tool === 'measure_coords') {
+        const sample: CoordinateSample = {
+          pointLocal: [
+            Number(localPt.x.toFixed(4)),
+            Number(localPt.y.toFixed(4)),
+            Number(localPt.z.toFixed(4))
+          ],
+          pointRaw: [
+            Number((localPt.x * scaleInv + eng.rawCenter.x).toFixed(4)),
+            Number((localPt.y * scaleInv + eng.rawCenter.y).toFixed(4)),
+            Number((localPt.z * scaleInv + eng.rawCenter.z).toFixed(4))
+          ],
+          unitLabel,
+          isCalibrated: false,
+          componentName: matchedEntry?.name
+        };
+        setCoordinateSample(sample);
+        onCoordinateSampleRef.current?.(sample);
+        return;
+      }
+
+      if (tool === 'measure_distance') {
+        const ptArr: [number, number, number] = [
+          Number(localPt.x.toFixed(4)),
+          Number(localPt.y.toFixed(4)),
+          Number(localPt.z.toFixed(4))
+        ];
+        const prevStart = pendingMeasureStartRef.current;
+        if (!prevStart) {
+          setPendingMeasureStart({
+            pointLocal: ptArr,
+            componentName: matchedEntry?.name
+          });
+        } else {
+          const dx = ptArr[0] - prevStart.pointLocal[0];
+          const dy = ptArr[1] - prevStart.pointLocal[1];
+          const dz = ptArr[2] - prevStart.pointLocal[2];
+          const dLocal = Math.hypot(dx, dy, dz);
+          const dRaw = dLocal * scaleInv;
+          const nextItem: DistanceMeasurement = {
+            id: `meas_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            pointA: prevStart.pointLocal,
+            pointB: ptArr,
+            distanceLocal: Number(dLocal.toFixed(4)),
+            distanceRaw: Number(dRaw.toFixed(4)),
+            unitLabel,
+            isCalibrated: false,
+            componentA: prevStart.componentName,
+            componentB: matchedEntry?.name,
+            createdAt: Date.now()
+          };
+          setPendingMeasureStart(null);
+          updateMeasurements((prev) => [nextItem, ...prev]);
+        }
+        return;
+      }
+
       if (matchedEntry && eng.componentEntries.length > 1) {
-        setSelectedComponentId((prev) => (prev === matchedEntry.id ? null : matchedEntry.id));
+        const multiMode = tool === 'multi_select' || e.shiftKey;
+        if (multiMode) {
+          setSelectedComponentIds((prev) =>
+            prev.includes(matchedEntry.id)
+              ? prev.filter((id) => id !== matchedEntry.id)
+              : [...prev, matchedEntry.id]
+          );
+        } else {
+          setSelectedComponentIds((prev) =>
+            prev.length === 1 && prev[0] === matchedEntry.id ? [] : [matchedEntry.id]
+          );
+        }
       }
     };
 
@@ -1509,28 +2335,133 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
       }
     }, [onThumbnailCaptured]);
 
+    const handleDownloadScreenshot = useCallback(
+      (customName?: string) => {
+        const eng = engineRef.current;
+        if (!eng) return;
+        try {
+          // Hide temporary section plane helper sheet for crisp scientific screenshot, keep clipped geometry
+          const prevGuideVis = eng.sectionGuideGroup.visible;
+          eng.sectionGuideGroup.visible = false;
+          eng.renderNow();
+          const dataUrl = eng.renderer.domElement.toDataURL('image/png');
+          eng.sectionGuideGroup.visible = prevGuideVis;
+          eng.renderNow();
+
+          const safeSlug = (customName || asset.name || 'pharmlab-3d-model')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+          const link = document.createElement('a');
+          link.href = dataUrl;
+          link.download = `${safeSlug || 'pharmlab-3d'}-capture.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          setCaptureNotice('PNG screenshot downloaded.');
+          window.setTimeout(() => setCaptureNotice(null), 2600);
+        } catch {
+          setCaptureNotice('Unable to export PNG screenshot.');
+        }
+      },
+      [asset.name]
+    );
+
+    const getCameraState = useCallback(() => {
+      const eng = engineRef.current;
+      if (!eng) return null;
+      return {
+        position: [
+          Number(eng.camera.position.x.toFixed(4)),
+          Number(eng.camera.position.y.toFixed(4)),
+          Number(eng.camera.position.z.toFixed(4))
+        ] as [number, number, number],
+        target: [
+          Number(eng.controls.target.x.toFixed(4)),
+          Number(eng.controls.target.y.toFixed(4)),
+          Number(eng.controls.target.z.toFixed(4))
+        ] as [number, number, number]
+      };
+    }, []);
+
+    const applyCameraState = useCallback(
+      (
+        pos: [number, number, number],
+        target: [number, number, number],
+        immediate = false
+      ) => {
+        const eng = engineRef.current;
+        if (!eng) return;
+        const goalPos = new THREE.Vector3(pos[0], pos[1], pos[2]);
+        const goalTarget = new THREE.Vector3(target[0], target[1], target[2]);
+        if (immediate || eng.isSoftware) {
+          cameraTransitionRef.current.active = false;
+          eng.camera.position.copy(goalPos);
+          eng.controls.target.copy(goalTarget);
+          eng.controls.update();
+        } else {
+          cameraTransitionRef.current = {
+            active: true,
+            goalPos,
+            goalTarget
+          };
+        }
+        eng.requestRender();
+      },
+      []
+    );
+
     useImperativeHandle(
       ref,
       () => ({
         setCameraPreset,
+        fitToViewport,
         focusComponent,
+        focusSelected,
         focusPoint,
         toggleComponentVisible: handleToggleComponentVisible,
+        setComponentsVisibility: handleSetComponentsVisibility,
         isolateComponent: handleIsolateComponent,
+        isolateComponents: handleIsolateComponents,
         restoreAllComponents,
         selectComponent: (compId) => setSelectedComponentId(compId),
+        selectComponents: (compIds) => setSelectedComponentIds(compIds),
+        selectAllComponents,
+        deselectAllComponents,
+        getCameraState,
+        applyCameraState,
         captureThumbnail: handleCaptureThumbnail,
+        downloadScreenshot: handleDownloadScreenshot,
+        clearMeasurements: handleClearMeasurements,
+        removeMeasurement: handleRemoveMeasurement,
+        resetSectioning: handleResetSectioning,
+        resetExploration: handleResetExploration,
         toggleFullscreen: handleToggleFullscreen
       }),
       [
         setCameraPreset,
+        fitToViewport,
         focusComponent,
+        focusSelected,
         focusPoint,
         handleToggleComponentVisible,
+        handleSetComponentsVisibility,
         handleIsolateComponent,
+        handleIsolateComponents,
         restoreAllComponents,
         setSelectedComponentId,
+        setSelectedComponentIds,
+        selectAllComponents,
+        deselectAllComponents,
+        getCameraState,
+        applyCameraState,
         handleCaptureThumbnail,
+        handleDownloadScreenshot,
+        handleClearMeasurements,
+        handleRemoveMeasurement,
+        handleResetSectioning,
+        handleResetExploration,
         handleToggleFullscreen
       ]
     );
@@ -1544,12 +2475,13 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         note: pinNoteDraft.trim() || undefined,
         componentName: pendingPinComp,
         position: pendingPinPos,
+        visible: true,
         createdAt: Date.now()
       });
       setPendingPinPos(null);
       setPinLabelDraft('');
       setPinNoteDraft('');
-      setPinMode(false);
+      setActiveTool('select');
     };
 
     const selectedComp = useMemo(
@@ -1571,7 +2503,7 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
         }`}
       >
         {/* Optional Built-in Top Toolbar (hidden inside immersive Academic Explorer workspace) */}
-        {!hideBuiltInHeader && (
+        {!hideBuiltInHeader && !presentationMode && (
           <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-4 py-2 flex items-center justify-between gap-2 shrink-0 overflow-x-auto sm:overflow-visible sm:flex-wrap">
             <div className="flex items-center gap-1.5 shrink-0 sm:flex-wrap">
               <button
@@ -1581,7 +2513,17 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
                 title="Reset camera framing"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Reset View</span>
+                <span>Reset</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => fitToViewport(false)}
+                className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+                title="Fit model to viewport"
+              >
+                <Focus className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Fit</span>
               </button>
 
               <div
@@ -1637,6 +2579,20 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
 
               <button
                 type="button"
+                onClick={() => updateSettings((s) => ({ ...s, autoRotate: !s.autoRotate }))}
+                className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border transition-colors ${
+                  settings.autoRotate
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+                }`}
+                title="Toggle automatic turntable rotation"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Rotate</span>
+              </button>
+
+              <button
+                type="button"
                 disabled={!components.some((c) => c.hasMeaningfulName)}
                 onClick={() => updateSettings((s) => ({ ...s, showLabels: !s.showLabels }))}
                 className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${
@@ -1651,29 +2607,58 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
                 }
               >
                 <Tag className="w-3.5 h-3.5" />
-                <span>Part Labels</span>
+                <span>Labels</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingMeasureStart(null);
+                  setActiveTool(activeTool === 'measure_distance' ? 'select' : 'measure_distance');
+                }}
+                className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border transition-colors ${
+                  activeTool === 'measure_distance'
+                    ? 'bg-sky-600 text-white border-sky-600'
+                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+                }`}
+                title="Point-to-point distance measurement (in model units)"
+              >
+                <Ruler className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Measure</span>
               </button>
 
               {onAddAnnotation && (
                 <button
                   type="button"
                   onClick={() => {
-                    setPinMode((p) => !p);
+                    setActiveTool(activeTool === 'pin' ? 'select' : 'pin');
                     setPendingPinPos(null);
                   }}
                   className={`min-h-[34px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border transition-colors ${
-                    pinMode
+                    activeTool === 'pin'
                       ? 'bg-amber-600 text-white border-amber-600'
                       : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
                   }`}
                 >
                   <MapPin className="w-3.5 h-3.5" />
-                  <span>{pinMode ? 'Click Model to Pin' : 'Pin 3D Note'}</span>
+                  <span>{activeTool === 'pin' ? 'Click Model' : 'Pin Note'}</span>
                 </button>
               )}
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0 sm:flex-wrap">
+              {loadingState.status === 'ready' && (
+                <button
+                  type="button"
+                  onClick={() => handleDownloadScreenshot()}
+                  className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0"
+                  title="Download PNG screenshot"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="hidden md:inline">PNG</span>
+                </button>
+              )}
+
               {onThumbnailCaptured && loadingState.status === 'ready' && (
                 <button
                   type="button"
@@ -1765,7 +2750,13 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
                 type="button"
                 onClick={(ev) => {
                   ev.stopPropagation();
-                  setSelectedComponentId(lbl.id);
+                  if (ev.shiftKey || activeTool === 'multi_select') {
+                    setSelectedComponentIds((prev) =>
+                      prev.includes(lbl.id) ? prev.filter((id) => id !== lbl.id) : [...prev, lbl.id]
+                    );
+                  } else {
+                    setSelectedComponentId(lbl.id);
+                  }
                 }}
                 style={{
                   left: `${lbl.x}px`,
@@ -1780,6 +2771,34 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
               >
                 {lbl.text}
               </button>
+            ))}
+
+            {/* Projected Distance Measurement Badges */}
+            {projectedMeasurements.map((pm) => (
+              <div
+                key={pm.measurement.id}
+                style={{
+                  left: `${pm.x}px`,
+                  top: `${pm.y}px`,
+                  transform: 'translate(-50%, -50%)'
+                }}
+                onClick={(ev) => ev.stopPropagation()}
+                className="absolute pointer-events-auto z-10 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sky-950/95 border border-sky-400/70 text-[11px] font-bold text-sky-100 shadow-lg tabular-nums whitespace-nowrap"
+              >
+                <Ruler className="w-3 h-3 text-sky-400 shrink-0" />
+                <span>
+                  {pm.measurement.distanceRaw.toFixed(3)} {pm.measurement.unitLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveMeasurement(pm.measurement.id)}
+                  className="text-sky-300 hover:text-rose-300"
+                  aria-label="Remove measurement"
+                  title="Remove measurement"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
             ))}
 
             {/* Projected User 3D Annotation Pins */}
@@ -1847,6 +2866,89 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
               );
             })}
 
+            {/* Active Tool Prompt Pill */}
+            {loadingState.status === 'ready' &&
+              !pendingPinPos &&
+              !presentationMode &&
+              activeTool !== 'select' && (
+                <div
+                  onClick={(ev) => ev.stopPropagation()}
+                  className="absolute top-3 left-3 z-10 inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700 text-xs text-slate-100 shadow-lg max-w-[calc(100%-24px)]"
+                >
+                  {activeTool === 'measure_distance' && (
+                    <>
+                      <Ruler className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span>
+                        {pendingMeasureStart
+                          ? 'Point A set — click Point B on the model to complete distance'
+                          : 'Distance Tool: click Point A on the model'}
+                      </span>
+                      {pendingMeasureStart && (
+                        <button
+                          type="button"
+                          onClick={() => setPendingMeasureStart(null)}
+                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200"
+                        >
+                          Cancel Point
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {activeTool === 'measure_coords' && (
+                    <>
+                      <Crosshair className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span>
+                        Coordinate Probe: click any surface on the model
+                        {coordinateSample && hideBuiltInSidebars
+                          ? ` · Last Raw (${coordinateSample.pointRaw.join(', ')})`
+                          : ''}
+                      </span>
+                    </>
+                  )}
+                  {activeTool === 'multi_select' && (
+                    <>
+                      <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>Multi-Select Mode: click parts to add/remove selection</span>
+                    </>
+                  )}
+                  {activeTool === 'pin' && (
+                    <>
+                      <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Annotation Pin Mode: click a model surface to attach a note</span>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingMeasureStart(null);
+                      setActiveTool('select');
+                    }}
+                    className="text-slate-400 hover:text-white ml-0.5"
+                    aria-label="Return to standard select mode"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+            {/* Standalone Coordinate Readout Card (when used outside Academic Explorer) */}
+            {hideBuiltInSidebars === false &&
+              activeTool === 'measure_coords' &&
+              coordinateSample && (
+                <div
+                  onClick={(ev) => ev.stopPropagation()}
+                  className="absolute top-14 left-3 z-10 px-3 py-2 rounded-xl bg-slate-900/95 border border-sky-500/60 text-[11px] text-slate-100 shadow-lg space-y-0.5 tabular-nums"
+                >
+                  <p className="font-bold text-sky-300">
+                    3D Coordinate ({coordinateSample.unitLabel})
+                  </p>
+                  <p>Raw: ({coordinateSample.pointRaw.join(', ')})</p>
+                  <p className="text-slate-400">
+                    Normalized: ({coordinateSample.pointLocal.join(', ')})
+                  </p>
+                </div>
+              )}
+
             {/* Loading State */}
             {loadingState.status === 'loading' && (
               <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center gap-3 text-slate-200 p-6">
@@ -1873,52 +2975,71 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
             )}
 
             {/* Bottom-left Telemetry Strip */}
-            <div className="absolute left-3 bottom-3 right-3 flex flex-wrap items-end justify-between gap-2 pointer-events-none">
-              <div className="space-y-1.5">
-                {selectedComp && components.length > 1 && (
-                  <div className="pointer-events-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-emerald-500/60 text-xs text-white shadow">
-                    <span className="font-semibold text-emerald-400">Selected:</span>
-                    <span className="font-bold max-w-[200px] truncate">{selectedComp.name}</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleIsolateComponent(
-                          isolatedComponentId === selectedComp.id ? null : selectedComp.id
-                        )
-                      }
-                      className="ml-1 px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-[11px] font-semibold"
-                    >
-                      {isolatedComponentId === selectedComp.id ? 'Restore All' : 'Isolate'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedComponentId(null)}
-                      className="text-slate-400 hover:text-white"
-                      aria-label="Clear selected part"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
+            {!presentationMode && (
+              <div className="absolute left-3 bottom-3 right-3 flex flex-wrap items-end justify-between gap-2 pointer-events-none">
+                <div className="space-y-1.5">
+                  {selectedComponentIds.length > 0 && components.length > 1 && (
+                    <div className="pointer-events-auto inline-flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-emerald-500/60 text-xs text-white shadow">
+                      <span className="font-semibold text-emerald-400">Selected:</span>
+                      <span className="font-bold max-w-[200px] truncate">
+                        {selectedComponentIds.length === 1 && selectedComp
+                          ? selectedComp.name
+                          : `${selectedComponentIds.length} parts`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={focusSelected}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold"
+                      >
+                        Focus
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const sameAsIso =
+                            isolatedComponentIds.length === selectedComponentIds.length &&
+                            selectedComponentIds.every((id) => isolatedComponentIds.includes(id));
+                          handleIsolateComponents(sameAsIso ? [] : selectedComponentIds);
+                        }}
+                        className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-[11px] font-semibold"
+                      >
+                        {isolatedComponentIds.length > 0 &&
+                        isolatedComponentIds.length === selectedComponentIds.length &&
+                        selectedComponentIds.every((id) => isolatedComponentIds.includes(id))
+                          ? 'Restore All'
+                          : 'Isolate'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deselectAllComponents}
+                        className="text-slate-400 hover:text-white"
+                        aria-label="Clear selected parts"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
-                {meshStats && (
-                  <div className="px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-200 tabular-nums whitespace-nowrap truncate max-w-[calc(100vw-48px)] sm:max-w-full">
-                    {modelFormat.toUpperCase()} · {meshStats.components} mesh
-                    {meshStats.components === 1 ? '' : 'es'} ·{' '}
-                    {meshStats.triangles.toLocaleString()} tris ·{' '}
-                    {meshStats.vertices.toLocaleString()} verts
-                    {isHeavyMesh ? ' · High-poly' : ''}
-                    {softwareGlWarning ? ' · Software WebGL' : ''}
+                  {meshStats && (
+                    <div className="px-2.5 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-200 tabular-nums whitespace-nowrap truncate max-w-[calc(100vw-48px)] sm:max-w-full">
+                      {modelFormat.toUpperCase()} · {meshStats.components} mesh
+                      {meshStats.components === 1 ? '' : 'es'} ·{' '}
+                      {meshStats.triangles.toLocaleString()} tris ·{' '}
+                      {meshStats.vertices.toLocaleString()} verts
+                      {sectioning.active ? ' · Section Active' : ''}
+                      {isHeavyMesh ? ' · High-poly' : ''}
+                      {softwareGlWarning ? ' · Software WebGL' : ''}
+                    </div>
+                  )}
+                </div>
+
+                {captureNotice && (
+                  <div className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold shadow">
+                    {captureNotice}
                   </div>
                 )}
               </div>
-
-              {captureNotice && (
-                <div className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold shadow">
-                  {captureNotice}
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Pending 3D Pin Modal Form */}
             {pendingPinPos && (
@@ -2111,7 +3232,7 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
           )}
 
           {/* Component Hierarchy & Isolation Drawer (Standalone modal mode) */}
-          {!hideBuiltInSidebars && showComponentsDrawer && (
+          {!hideBuiltInSidebars && !presentationMode && showComponentsDrawer && (
             <aside className="absolute inset-y-0 right-0 z-20 w-72 max-w-[85%] shadow-2xl md:shadow-none md:static md:w-64 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-3.5 flex flex-col gap-3 overflow-hidden shrink-0">
               <div className="flex items-center justify-between gap-2">
                 <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -2119,10 +3240,10 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
                   <span>Model Parts ({components.length})</span>
                 </h4>
                 <div className="flex items-center gap-2">
-                  {isolatedComponentId && (
+                  {(isolatedComponentIds.length > 0 || components.some((c) => !c.visible)) && (
                     <button
                       type="button"
-                      onClick={() => handleIsolateComponent(null)}
+                      onClick={restoreAllComponents}
                       className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
                     >
                       Show All
@@ -2139,6 +3260,36 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
                 </div>
               </div>
 
+              {components.length > 1 && (
+                <div className="flex flex-wrap gap-1 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={selectAllComponents}
+                    className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold"
+                  >
+                    Select All
+                  </button>
+                  {selectedComponentIds.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={deselectAllComponents}
+                        className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleIsolateComponents(selectedComponentIds)}
+                        className="px-2 py-0.5 rounded bg-emerald-600 text-white font-semibold"
+                      >
+                        Isolate ({selectedComponentIds.length})
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
               {components.length <= 1 ? (
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 leading-relaxed space-y-1.5">
                   <p className="font-semibold text-slate-800 dark:text-slate-200">
@@ -2151,8 +3302,8 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
               ) : (
                 <div className="flex-1 overflow-y-auto space-y-1 pr-1">
                   {components.map((c) => {
-                    const isSel = selectedComponentId === c.id;
-                    const isIso = isolatedComponentId === c.id;
+                    const isSel = selectedComponentIds.includes(c.id);
+                    const isIso = isolatedComponentIds.includes(c.id);
                     return (
                       <div
                         key={c.id}
@@ -2164,7 +3315,17 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
                       >
                         <button
                           type="button"
-                          onClick={() => setSelectedComponentId(isSel ? null : c.id)}
+                          onClick={(ev) => {
+                            if (ev.shiftKey || activeTool === 'multi_select') {
+                              setSelectedComponentIds((prev) =>
+                                prev.includes(c.id)
+                                  ? prev.filter((id) => id !== c.id)
+                                  : [...prev, c.id]
+                              );
+                            } else {
+                              setSelectedComponentId(isSel && selectedComponentIds.length === 1 ? null : c.id);
+                            }
+                          }}
                           className="min-w-0 flex-1 text-left truncate"
                           title={c.name}
                         >
@@ -2203,7 +3364,7 @@ const Universal3DViewer = forwardRef<Universal3DViewerHandle, Universal3DViewerP
               )}
 
               <p className="text-[11px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-slate-800">
-                Drag to orbit · Scroll to zoom · Right-drag to pan · Click mesh to select
+                Drag to orbit · Scroll to zoom · Right-drag to pan · Shift+click to multi-select
               </p>
             </aside>
           )}

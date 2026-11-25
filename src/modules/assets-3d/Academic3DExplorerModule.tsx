@@ -5,23 +5,31 @@ import {
   ArrowRight,
   Atom,
   BookOpen,
+  Bookmark,
   Box,
   Camera,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Compass,
+  Crosshair,
+  Download,
+  Edit3,
   ExternalLink,
   Eye,
   EyeOff,
   FileCode2,
   FlaskConical,
   Focus,
+  FolderTree,
   Globe,
   GraduationCap,
   Grid3X3,
   Info,
   Layers,
   Link2,
+  List,
   Loader2,
   MapPin,
   Maximize2,
@@ -33,7 +41,10 @@ import {
   Play,
   Plus,
   RotateCcw,
+  RotateCw,
+  Ruler,
   Scan,
+  Scissors,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -43,6 +54,7 @@ import {
   Tag,
   Trash2,
   Upload,
+  Wrench,
   X
 } from 'lucide-react';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
@@ -50,12 +62,14 @@ import { sanitizeHttpUrl } from '../resource-hub/utils';
 import { getAllSyllabi } from '../study-mode/studyDb';
 import { SyllabusProfile } from '../study-mode/types';
 import Universal3DViewer, {
+  createDefaultSectioningState,
   DEFAULT_VIEWER_SETTINGS,
   Universal3DViewerHandle,
   ViewerLoadingState
 } from './Universal3DViewer';
 import {
   add3DAssetAnnotation,
+  add3DAssetSavedView,
   addSyllabusAssociationSafe,
   get3DModelObjectUrl,
   getAll3DAssets,
@@ -63,9 +77,11 @@ import {
   getRelated3DModels,
   mark3DAssetOpened,
   remove3DAssetAnnotation,
+  remove3DAssetSavedView,
   removeSyllabusAssociation,
   save3DAssetThumbnail,
   toggle3DAssetFavorite,
+  update3DAssetAnnotation,
   update3DAssetMeta
 } from './asset3dDb';
 import {
@@ -82,23 +98,38 @@ import {
   Analyzed3DComponent,
   Asset3DAnnotation,
   Asset3DItem,
+  Asset3DSavedView,
   BPHARM_DEPARTMENT_LABELS,
   BPharmDepartmentId,
   CameraViewPreset,
+  CoordinateSample,
   Custom3DCategory,
+  DistanceMeasurement,
   formatBytes,
   get3DCategoryLabel,
   getAsset3DAvailability,
   RenderVisualizationMode,
+  SceneHierarchyNode,
+  SectionPlaneAxis,
+  SectioningState,
   SyllabusAssociation,
+  ViewerInteractionTool,
   ViewerRenderSettings
 } from './types';
+import { getApparatusProfile, getExperimentById } from './experimentCatalog';
 
 export interface AcademicExplorerJumpTarget {
   assetId?: string | null;
   subjectCode?: string | null;
   topicId?: string | null;
   structureName?: string | null;
+  experimentId?: string | null;
+  experimentTitle?: string | null;
+  experimentTab?: string | null;
+  stepId?: string | null;
+  stepTitle?: string | null;
+  focusComponentName?: string | null;
+  returnTab?: string | null;
   nonce: number;
 }
 
@@ -144,20 +175,43 @@ export default function Academic3DExplorerModule({
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
   );
-  const [rightTab, setRightTab] = useState<'inspect' | 'academic' | 'info'>('inspect');
+  const [rightTab, setRightTab] = useState<'inspect' | 'tools' | 'academic' | 'info'>('inspect');
   const [lightingPopoverOpen, setLightingPopoverOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [presentationMode, setPresentationMode] = useState(false);
 
-  // Interactive 3D Inspection State
+  // Interactive 3D Inspection & P3.6 Tool State
   const [renderSettings, setRenderSettings] =
     useState<ViewerRenderSettings>(DEFAULT_VIEWER_SETTINGS);
   const [activeCameraPreset, setActiveCameraPreset] = useState<CameraViewPreset>('reset');
   const [components, setComponents] = useState<Analyzed3DComponent[]>([]);
+  const [hierarchyTree, setHierarchyTree] = useState<SceneHierarchyNode[]>([]);
+  const [hierarchyViewMode, setHierarchyViewMode] = useState<'tree' | 'flat'>('tree');
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
   const [componentSearch, setComponentSearch] = useState('');
-  const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
-  const [isolatedComponentId, setIsolatedComponentId] = useState<string | null>(null);
+  const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>([]);
+  const [isolatedComponentIds, setIsolatedComponentIds] = useState<string[]>([]);
+  const selectedComponentId = selectedComponentIds[0] ?? null;
+
+  const [interactionTool, setInteractionTool] = useState<ViewerInteractionTool>('select');
+  const pinMode = interactionTool === 'pin';
+  const setPinMode = useCallback((val: boolean | ((prev: boolean) => boolean)) => {
+    setInteractionTool((prevTool) => {
+      const nextBool = typeof val === 'function' ? val(prevTool === 'pin') : val;
+      return nextBool ? 'pin' : 'select';
+    });
+  }, []);
+
+  const [sectioning, setSectioning] = useState<SectioningState>(createDefaultSectioningState);
+  const [measurements, setMeasurements] = useState<DistanceMeasurement[]>([]);
+  const [coordinateSample, setCoordinateSample] = useState<CoordinateSample | null>(null);
+  const [analyzedTriCount, setAnalyzedTriCount] = useState<number | undefined>(undefined);
+
   const [activePinId, setActivePinId] = useState<string | null>(null);
-  const [pinMode, setPinMode] = useState(false);
+  const [editingPinId, setEditingPinId] = useState<string | null>(null);
+  const [editPinLabel, setEditPinLabel] = useState('');
+  const [editPinNote, setEditPinNote] = useState('');
+  const [newViewName, setNewViewName] = useState('');
   const [dimensions, setDimensions] = useState<[number, number, number] | undefined>(undefined);
 
   // Guided Identification Tour State
@@ -172,6 +226,7 @@ export default function Academic3DExplorerModule({
   const [quickLinkNotice, setQuickLinkNotice] = useState<string | null>(null);
 
   const handledNonceRef = useRef<number>(-1);
+  const pendingFocusNameRef = useRef<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoadingLibrary(true);
@@ -195,10 +250,43 @@ export default function Academic3DExplorerModule({
 
     if (jumpTarget && jumpTarget.nonce > 0 && handledNonceRef.current !== jumpTarget.nonce) {
       handledNonceRef.current = jumpTarget.nonce;
+      pendingFocusNameRef.current =
+        jumpTarget.focusComponentName || jumpTarget.structureName || null;
+
+      if (jumpTarget.experimentId || jumpTarget.experimentTitle) {
+        setRightTab(jumpTarget.focusComponentName ? 'inspect' : 'academic');
+      }
+
       if (jumpTarget.assetId) {
         const hit = assets.find((a) => a.id === jumpTarget.assetId);
         if (hit) {
           setSelectedAssetId(hit.id);
+          return;
+        }
+      }
+      if (jumpTarget.experimentId || jumpTarget.experimentTitle || jumpTarget.stepId) {
+        const qExpId = (jumpTarget.experimentId || '').toLowerCase();
+        const qExpTitle = (jumpTarget.experimentTitle || '').toLowerCase();
+        const qStepId = (jumpTarget.stepId || '').toLowerCase();
+        const expStepMatch = assets.find((a) =>
+          a.syllabusLinks.some(
+            (l) =>
+              ((qExpId && l.experimentId?.toLowerCase() === qExpId) ||
+                (qExpTitle && l.experimentTitle?.toLowerCase().includes(qExpTitle))) &&
+              (!qStepId || l.stepId?.toLowerCase() === qStepId)
+          )
+        );
+        const expAnyMatch =
+          expStepMatch ||
+          assets.find((a) =>
+            a.syllabusLinks.some(
+              (l) =>
+                (qExpId && l.experimentId?.toLowerCase() === qExpId) ||
+                (qExpTitle && l.experimentTitle?.toLowerCase().includes(qExpTitle))
+            )
+          );
+        if (expAnyMatch) {
+          setSelectedAssetId(expAnyMatch.id);
           return;
         }
       }
@@ -234,6 +322,24 @@ export default function Academic3DExplorerModule({
     setSelectedAssetId((compatible[0] || assets[0]).id);
   }, [assets, loadingLibrary, jumpTarget, selectedAssetId]);
 
+  useEffect(() => {
+    const focusName = pendingFocusNameRef.current;
+    if (!focusName || components.length === 0) return;
+    const norm = focusName.trim().toLowerCase();
+    const hit =
+      components.find((c) => c.name.toLowerCase() === norm) ||
+      components.find(
+        (c) => c.name.toLowerCase().includes(norm) || norm.includes(c.name.toLowerCase())
+      );
+    if (hit) {
+      setSelectedComponentIds([hit.id]);
+      setTimeout(() => {
+        viewerRef.current?.focusComponent(hit.id);
+      }, 150);
+    }
+    pendingFocusNameRef.current = null;
+  }, [components]);
+
   const activeAsset = useMemo(
     () => assets.find((a) => a.id === selectedAssetId) || null,
     [assets, selectedAssetId]
@@ -242,10 +348,17 @@ export default function Academic3DExplorerModule({
   // Resolve active asset binary/URL cleanly
   useEffect(() => {
     setComponents([]);
-    setSelectedComponentId(null);
-    setIsolatedComponentId(null);
+    setHierarchyTree([]);
+    setCollapsedGroupIds(new Set());
+    setSelectedComponentIds([]);
+    setIsolatedComponentIds([]);
     setActivePinId(null);
-    setPinMode(false);
+    setEditingPinId(null);
+    setInteractionTool('select');
+    setSectioning(createDefaultSectioningState());
+    setMeasurements([]);
+    setCoordinateSample(null);
+    setAnalyzedTriCount(undefined);
     setGuidedIndex(null);
     setComponentSearch('');
     setDimensions(undefined);
@@ -336,8 +449,8 @@ export default function Academic3DExplorerModule({
   );
 
   const capabilities = useMemo(
-    () => (activeAsset ? analyzeModelCapabilities(activeAsset, components) : null),
-    [activeAsset, components]
+    () => (activeAsset ? analyzeModelCapabilities(activeAsset, components, analyzedTriCount) : null),
+    [activeAsset, components, analyzedTriCount]
   );
 
   const academicContext = useMemo(
@@ -420,8 +533,16 @@ export default function Academic3DExplorerModule({
   };
 
   const selectedComponent = useMemo(
-    () => components.find((c) => c.id === selectedComponentId) || null,
-    [components, selectedComponentId]
+    () =>
+      selectedComponentIds.length === 1
+        ? components.find((c) => c.id === selectedComponentIds[0]) || null
+        : null,
+    [components, selectedComponentIds]
+  );
+
+  const selectedComponentsList = useMemo(
+    () => components.filter((c) => selectedComponentIds.includes(c.id)),
+    [components, selectedComponentIds]
   );
 
   const selectedInspection = useMemo(() => {
@@ -457,9 +578,15 @@ export default function Academic3DExplorerModule({
   }, [components, componentSearch]);
 
   const anyComponentHidden = useMemo(
-    () => Boolean(isolatedComponentId) || components.some((c) => !c.visible),
-    [components, isolatedComponentId]
+    () => isolatedComponentIds.length > 0 || components.some((c) => !c.visible),
+    [components, isolatedComponentIds]
   );
+
+  const componentById = useMemo(() => {
+    const map = new Map<string, Analyzed3DComponent>();
+    components.forEach((c) => map.set(c.id, c));
+    return map;
+  }, [components]);
 
   const jumpToGuidedStep = useCallback(
     (idx: number) => {
@@ -467,10 +594,10 @@ export default function Academic3DExplorerModule({
       if (!step) return;
       setGuidedIndex(idx);
       if (step.componentId) {
-        setSelectedComponentId(step.componentId);
+        setSelectedComponentIds([step.componentId]);
         viewerRef.current?.focusComponent(step.componentId);
       } else {
-        setSelectedComponentId(null);
+        setSelectedComponentIds([]);
         viewerRef.current?.focusPoint(step.focusPoint);
       }
       if (step.pinId) {
@@ -483,12 +610,26 @@ export default function Academic3DExplorerModule({
     [guidedSteps]
   );
 
-  // Sync fullscreen document state
+  // Sync fullscreen document state & Escape shortcut for Presentation / Tools
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const onKeyDown = (ev: KeyboardEvent) => {
+      const tag = (ev.target as HTMLElement | null)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (ev.key === 'Escape') {
+        if (presentationMode) setPresentationMode(false);
+        else if (interactionTool !== 'select') setInteractionTool('select');
+      } else if ((ev.key === 'h' || ev.key === 'H') && !ev.ctrlKey && !ev.metaKey) {
+        setPresentationMode((p) => !p);
+      }
+    };
     document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
-  }, []);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [presentationMode, interactionTool]);
 
   const handleToggleWorkspaceFullscreen = async () => {
     const el = workspaceRootRef.current;
@@ -528,12 +669,53 @@ export default function Academic3DExplorerModule({
     }
   };
 
+  const handleUpdateAnnotation = async (
+    pinId: string,
+    patch: { label?: string; note?: string; visible?: boolean }
+  ) => {
+    if (!activeAsset) return;
+    const updated = await update3DAssetAnnotation(activeAsset.id, pinId, patch);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    }
+  };
+
   const handleRemoveAnnotation = async (pinId: string) => {
     if (!activeAsset) return;
     const updated = await remove3DAssetAnnotation(activeAsset.id, pinId);
     if (updated) {
       setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       if (activePinId === pinId) setActivePinId(null);
+      if (editingPinId === pinId) setEditingPinId(null);
+    }
+  };
+
+  const handleSaveCameraView = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeAsset) return;
+    const cam = viewerRef.current?.getCameraState();
+    if (!cam) return;
+    const label =
+      newViewName.trim() || `View ${(activeAsset.savedViews?.length || 0) + 1}`;
+    const view: Asset3DSavedView = {
+      id: `view_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: label,
+      position: cam.position,
+      target: cam.target,
+      createdAt: Date.now()
+    };
+    const updated = await add3DAssetSavedView(activeAsset.id, view);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      setNewViewName('');
+    }
+  };
+
+  const handleRemoveSavedView = async (viewId: string) => {
+    if (!activeAsset) return;
+    const updated = await remove3DAssetSavedView(activeAsset.id, viewId);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
     }
   };
 
@@ -553,6 +735,7 @@ export default function Academic3DExplorerModule({
       dimensions?: [number, number, number];
     }) => {
       setDimensions(stats.dimensions);
+      setAnalyzedTriCount(stats.triangleCount);
       if (!activeAsset) return;
       if (
         activeAsset.componentCount === stats.componentCount &&
@@ -586,109 +769,302 @@ export default function Academic3DExplorerModule({
     }));
   };
 
+  const toggleGroupCollapsed = (groupId: string) => {
+    setCollapsedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
+  const updateSectionAxis = (
+    axis: SectionPlaneAxis,
+    patch: Partial<SectioningState['planes'][SectionPlaneAxis]>
+  ) => {
+    setSectioning((prev) => {
+      const nextPlane = { ...prev.planes[axis], ...patch };
+      const nextPlanes = { ...prev.planes, [axis]: nextPlane };
+      const anyEnabled = nextPlanes.x.enabled || nextPlanes.y.enabled || nextPlanes.z.enabled;
+      return {
+        ...prev,
+        active: patch.enabled === true ? true : anyEnabled ? prev.active : false,
+        planes: nextPlanes
+      };
+    });
+  };
+
   const safeSourceUrl = activeAsset ? sanitizeHttpUrl(activeAsset.sourceUrl) : null;
   const activeAvailability = activeAsset ? getAsset3DAvailability(activeAsset) : null;
+
+  const renderHierarchyNode = (node: SceneHierarchyNode): React.ReactNode => {
+    if (node.kind === 'mesh' && node.componentId) {
+      const c = componentById.get(node.componentId);
+      if (!c) return null;
+      const isSel = selectedComponentIds.includes(c.id);
+      const isIso = isolatedComponentIds.includes(c.id);
+      return (
+        <div
+          key={node.id}
+          style={{ paddingLeft: `${Math.min(node.depth, 4) * 10 + 8}px` }}
+          className={`flex items-center justify-between gap-1 pr-2 py-1.5 rounded-xl border text-xs transition-colors ${
+            isSel
+              ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-900 dark:text-emerald-200 font-semibold'
+              : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={(ev) => {
+              if (ev.shiftKey || interactionTool === 'multi_select') {
+                setSelectedComponentIds((prev) =>
+                  prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id]
+                );
+              } else {
+                const next = isSel && selectedComponentIds.length === 1 ? [] : [c.id];
+                setSelectedComponentIds(next);
+                if (next.length === 1) {
+                  viewerRef.current?.focusComponent(c.id);
+                  setRightTab('inspect');
+                }
+              }
+            }}
+            className="min-w-0 flex-1 text-left"
+            title={c.name}
+          >
+            <span className="block truncate">{c.name}</span>
+            <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums">
+              {c.triangleCount.toLocaleString()} tris
+              {!c.hasMeaningfulName ? ' · Unnamed node' : ''}
+            </span>
+          </button>
+
+          {components.length > 1 && (
+            <button
+              type="button"
+              onClick={() => viewerRef.current?.isolateComponent(isIso ? null : c.id)}
+              className={`p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 ${
+                isIso ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
+              }`}
+              title={isIso ? 'Restore entire model' : 'Isolate structure'}
+              aria-label={`Isolate ${c.name}`}
+            >
+              <Focus className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => viewerRef.current?.toggleComponentVisible(c.id)}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
+            title={c.visible ? 'Hide structure' : 'Show structure'}
+            aria-label={c.visible ? `Hide ${c.name}` : `Show ${c.name}`}
+          >
+            {c.visible ? (
+              <Eye className="w-3.5 h-3.5" />
+            ) : (
+              <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+            )}
+          </button>
+        </div>
+      );
+    }
+
+    const collapsed = collapsedGroupIds.has(node.id);
+    const allSelected =
+      node.meshIds.length > 0 && node.meshIds.every((id) => selectedComponentIds.includes(id));
+    const allHidden =
+      node.meshIds.length > 0 && node.meshIds.every((id) => componentById.get(id)?.visible === false);
+
+    return (
+      <div key={node.id} className="space-y-1">
+        <div
+          style={{ paddingLeft: `${Math.min(node.depth, 4) * 10 + 6}px` }}
+          className={`flex items-center justify-between gap-1 pr-2 py-1.5 rounded-xl border text-xs transition-colors ${
+            allSelected
+              ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-900 dark:text-emerald-200 font-semibold'
+              : 'bg-slate-100/80 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => toggleGroupCollapsed(node.id)}
+            className="p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-white shrink-0"
+            aria-label={collapsed ? `Expand ${node.name}` : `Collapse ${node.name}`}
+          >
+            {collapsed ? (
+              <ChevronRight className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedComponentIds(allSelected ? [] : node.meshIds);
+              if (!allSelected) viewerRef.current?.focusSelected();
+            }}
+            className="min-w-0 flex-1 text-left flex items-center gap-1.5"
+            title={`${node.name} (${node.meshIds.length} meshes)`}
+          >
+            <span className="truncate font-semibold">{node.name}</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
+              ({node.meshIds.length})
+            </span>
+          </button>
+
+          {components.length > 1 && (
+            <button
+              type="button"
+              onClick={() => viewerRef.current?.isolateComponents(node.meshIds)}
+              className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400"
+              title="Isolate branch"
+              aria-label={`Isolate group ${node.name}`}
+            >
+              <Focus className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => viewerRef.current?.setComponentsVisibility(node.meshIds, allHidden)}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
+            title={allHidden ? 'Show branch' : 'Hide branch'}
+            aria-label={allHidden ? `Show ${node.name}` : `Hide ${node.name}`}
+          >
+            {allHidden ? (
+              <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+            ) : (
+              <Eye className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </div>
+
+        {!collapsed && node.children.length > 0 && (
+          <div className="space-y-1">{node.children.map((child) => renderHierarchyNode(child))}</div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div
       ref={workspaceRootRef}
       className="h-[100dvh] w-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col overflow-hidden"
     >
-      {/* Top Academic Explorer Navigation Bar */}
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={() => {
-              if (onExitExplorer) onExitExplorer();
-              else openAsset3DEngine({ tab: 'library' });
-            }}
-            className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0"
-            title={`Return to ${returnLabel}`}
-          >
-            <ArrowLeft className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span className="hidden sm:inline">{returnLabel}</span>
-          </button>
-
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate">
-              Academic 3D Explorer
-              {activeAsset
-                ? ` · ${get3DCategoryLabel(
-                    activeAsset.category,
-                    customCategories
-                  )} · ${activeAsset.format.toUpperCase()}`
-                : ''}
-            </p>
-            <h1 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
-              {activeAsset ? activeAsset.name : 'Select a Scientific 3D Model'}
-            </h1>
-          </div>
-        </div>
-
-        {/* Library Switcher & Explorer Utilities */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
-          {assets.length > 0 && (
-            <select
-              aria-label="Switch 3D model from library"
-              value={selectedAssetId || ''}
-              onChange={(e) => setSelectedAssetId(e.target.value || null)}
-              className="max-w-[180px] sm:max-w-[260px] min-h-[36px] px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white"
+      {/* Top Academic Explorer Navigation Bar (hidden in Presentation Mode) */}
+      {!presentationMode && (
+        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (onExitExplorer) onExitExplorer();
+                else openAsset3DEngine({ tab: 'library' });
+              }}
+              className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0"
+              title={`Return to ${returnLabel}`}
             >
-              {assets.map((item) => {
-                const avail = getAsset3DAvailability(item);
-                return (
-                  <option key={item.id} value={item.id}>
-                    {item.name} ({item.format.toUpperCase()}
-                    {!avail.canOpenViewer ? ' · Metadata only' : ''})
-                  </option>
-                );
-              })}
-            </select>
-          )}
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden sm:inline">{returnLabel}</span>
+            </button>
 
-          {activeAsset && (
-            <>
-              <button
-                type="button"
-                onClick={() => void handleToggleFavorite()}
-                className={`min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl border transition-colors ${
-                  activeAsset.isFavorite
-                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-500'
-                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-amber-500'
-                }`}
-                aria-label={
-                  activeAsset.isFavorite ? 'Remove from favorites' : 'Add to favorites'
-                }
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 truncate">
+                Academic 3D Explorer
+                {activeAsset
+                  ? ` · ${get3DCategoryLabel(
+                      activeAsset.category,
+                      customCategories
+                    )} · ${activeAsset.format.toUpperCase()}`
+                  : ''}
+                {jumpTarget?.experimentTitle
+                  ? ` · Lab: ${jumpTarget.experimentTitle}${jumpTarget.stepTitle ? ` (${jumpTarget.stepTitle})` : ''}`
+                  : ''}
+              </p>
+              <h1 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
+                {activeAsset ? activeAsset.name : 'Select a Scientific 3D Model'}
+              </h1>
+            </div>
+          </div>
+
+          {/* Library Switcher & Explorer Utilities */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+            {assets.length > 0 && (
+              <select
+                aria-label="Switch 3D model from library"
+                value={selectedAssetId || ''}
+                onChange={(e) => setSelectedAssetId(e.target.value || null)}
+                className="max-w-[180px] sm:max-w-[260px] min-h-[36px] px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white"
               >
-                <Star className={`w-4 h-4 ${activeAsset.isFavorite ? 'fill-current' : ''}`} />
-              </button>
+                {assets.map((item) => {
+                  const avail = getAsset3DAvailability(item);
+                  return (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.format.toUpperCase()}
+                      {!avail.canOpenViewer ? ' · Metadata only' : ''})
+                    </option>
+                  );
+                })}
+              </select>
+            )}
 
-              {viewerLoading.status === 'ready' && (
+            {activeAsset && (
+              <>
                 <button
                   type="button"
-                  onClick={() => void viewerRef.current?.captureThumbnail()}
-                  className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
-                  title="Save current 3D view as library preview thumbnail"
+                  onClick={() => void handleToggleFavorite()}
+                  className={`min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl border transition-colors ${
+                    activeAsset.isFavorite
+                      ? 'bg-amber-500/10 border-amber-500/40 text-amber-500'
+                      : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-amber-500'
+                  }`}
+                  aria-label={
+                    activeAsset.isFavorite ? 'Remove from favorites' : 'Add to favorites'
+                  }
                 >
-                  <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span className="hidden md:inline">Snapshot</span>
+                  <Star className={`w-4 h-4 ${activeAsset.isFavorite ? 'fill-current' : ''}`} />
                 </button>
-              )}
-            </>
-          )}
 
-          <button
-            type="button"
-            onClick={handleToggleWorkspaceFullscreen}
-            className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
-            aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen workspace'}
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-        </div>
-      </header>
+                {viewerLoading.status === 'ready' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => viewerRef.current?.downloadScreenshot()}
+                      className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+                      title="Download PNG screenshot of current 3D viewport"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span className="hidden md:inline">Screenshot</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void viewerRef.current?.captureThumbnail()}
+                      className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+                      title="Save current 3D view as library preview thumbnail"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span className="hidden lg:inline">Save Preview</span>
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={handleToggleWorkspaceFullscreen}
+              className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen workspace'}
+              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* Empty Library State */}
       {loadingLibrary ? (
@@ -731,8 +1107,8 @@ export default function Academic3DExplorerModule({
       ) : (
         /* Main 3-Zone Responsive Exploration Workbench */
         <div className="relative flex-1 min-h-0 flex overflow-hidden">
-          {/* LEFT PANEL: Structure Hierarchy, Visibility, Isolation & Guided Identification */}
-          {leftPanelOpen && (
+          {/* LEFT PANEL: Structure Hierarchy, Multi-Select, Visibility, Isolation & Guided Identification */}
+          {leftPanelOpen && !presentationMode && (
             <aside className="absolute inset-y-0 left-0 z-30 w-80 max-w-[88vw] lg:static lg:w-72 xl:w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 shadow-2xl lg:shadow-none">
               <div className="px-3.5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
@@ -774,6 +1150,105 @@ export default function Academic3DExplorerModule({
                     </p>
                   </div>
                 )}
+
+                {/* Bulk Multi-Selection & Isolation Controls */}
+                <section className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      Selection ({selectedComponentIds.length}/{components.length})
+                    </span>
+                    {hierarchyTree.length > 0 && components.length > 1 && (
+                      <div className="inline-flex rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setHierarchyViewMode('tree')}
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold inline-flex items-center gap-1 ${
+                            hierarchyViewMode === 'tree'
+                              ? 'bg-emerald-600 text-white'
+                              : 'text-slate-500'
+                          }`}
+                          title="Scene hierarchy tree"
+                        >
+                          <FolderTree className="w-3 h-3" />
+                          <span>Tree</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHierarchyViewMode('flat')}
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold inline-flex items-center gap-1 ${
+                            hierarchyViewMode === 'flat'
+                              ? 'bg-emerald-600 text-white'
+                              : 'text-slate-500'
+                          }`}
+                          title="Flat mesh list"
+                        >
+                          <List className="w-3 h-3" />
+                          <span>List</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      disabled={!capabilities?.supportsMultiSelect}
+                      onClick={() => viewerRef.current?.selectAllComponents()}
+                      title={
+                        capabilities?.supportsMultiSelect
+                          ? 'Select all sub-structures'
+                          : capabilities?.unavailableReasons.multiSelect
+                      }
+                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedComponentIds.length === 0}
+                      onClick={() => viewerRef.current?.deselectAllComponents()}
+                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      Deselect
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedComponentIds.length === 0}
+                      onClick={() => viewerRef.current?.focusSelected()}
+                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      Focus
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!capabilities?.supportsIsolation || selectedComponentIds.length === 0}
+                      onClick={() => viewerRef.current?.isolateComponents(selectedComponentIds)}
+                      title={
+                        capabilities?.supportsIsolation
+                          ? 'Isolate selected structures'
+                          : capabilities?.unavailableReasons.isolation
+                      }
+                      className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      Isolate
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!capabilities?.supportsIsolation || selectedComponentIds.length === 0}
+                      onClick={() =>
+                        viewerRef.current?.setComponentsVisibility(selectedComponentIds, false)
+                      }
+                      title={
+                        capabilities?.supportsIsolation
+                          ? 'Hide selected structures'
+                          : capabilities?.unavailableReasons.isolation
+                      }
+                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                </section>
 
                 {/* Guided Identification Tour Controls */}
                 <section className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
@@ -850,7 +1325,7 @@ export default function Academic3DExplorerModule({
                   )}
                 </section>
 
-                {/* Component Selection List */}
+                {/* Component Selection Hierarchy Tree or Flat List */}
                 {components.length > 1 && (
                   <section className="space-y-2">
                     {components.length > 5 && (
@@ -866,72 +1341,89 @@ export default function Academic3DExplorerModule({
                       </div>
                     )}
 
-                    <div className="space-y-1">
-                      {filteredComponents.map((c) => {
-                        const isSel = selectedComponentId === c.id;
-                        const isIso = isolatedComponentId === c.id;
-                        return (
-                          <div
-                            key={c.id}
-                            className={`flex items-center justify-between gap-1 px-2.5 py-2 rounded-xl border text-xs transition-colors ${
-                              isSel
-                                ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-900 dark:text-emerald-200 font-semibold'
-                                : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextId = isSel ? null : c.id;
-                                setSelectedComponentId(nextId);
-                                if (nextId) {
-                                  viewerRef.current?.focusComponent(nextId);
-                                  setRightTab('inspect');
-                                }
-                              }}
-                              className="min-w-0 flex-1 text-left"
-                              title={c.name}
-                            >
-                              <span className="block truncate">{c.name}</span>
-                              <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums">
-                                {c.triangleCount.toLocaleString()} tris
-                                {!c.hasMeaningfulName ? ' · Unnamed node' : ''}
-                              </span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                viewerRef.current?.isolateComponent(isIso ? null : c.id)
-                              }
-                              className={`p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 ${
-                                isIso
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : 'text-slate-400'
+                    {hierarchyViewMode === 'tree' &&
+                    hierarchyTree.length > 0 &&
+                    !componentSearch.trim() ? (
+                      <div className="space-y-1">
+                        {hierarchyTree.map((rootNode) => renderHierarchyNode(rootNode))}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {filteredComponents.map((c) => {
+                          const isSel = selectedComponentIds.includes(c.id);
+                          const isIso = isolatedComponentIds.includes(c.id);
+                          return (
+                            <div
+                              key={c.id}
+                              className={`flex items-center justify-between gap-1 px-2.5 py-2 rounded-xl border text-xs transition-colors ${
+                                isSel
+                                  ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-900 dark:text-emerald-200 font-semibold'
+                                  : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                               }`}
-                              title={isIso ? 'Restore entire model' : 'Isolate structure'}
-                              aria-label={`Isolate ${c.name}`}
                             >
-                              <Focus className="w-3.5 h-3.5" />
-                            </button>
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  if (ev.shiftKey || interactionTool === 'multi_select') {
+                                    setSelectedComponentIds((prev) =>
+                                      prev.includes(c.id)
+                                        ? prev.filter((id) => id !== c.id)
+                                        : [...prev, c.id]
+                                    );
+                                  } else {
+                                    const next =
+                                      isSel && selectedComponentIds.length === 1 ? [] : [c.id];
+                                    setSelectedComponentIds(next);
+                                    if (next.length === 1) {
+                                      viewerRef.current?.focusComponent(c.id);
+                                      setRightTab('inspect');
+                                    }
+                                  }
+                                }}
+                                className="min-w-0 flex-1 text-left"
+                                title={c.name}
+                              >
+                                <span className="block truncate">{c.name}</span>
+                                <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums">
+                                  {c.triangleCount.toLocaleString()} tris
+                                  {!c.hasMeaningfulName ? ' · Unnamed node' : ''}
+                                </span>
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={() => viewerRef.current?.toggleComponentVisible(c.id)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
-                              title={c.visible ? 'Hide structure' : 'Show structure'}
-                              aria-label={c.visible ? `Hide ${c.name}` : `Show ${c.name}`}
-                            >
-                              {c.visible ? (
-                                <Eye className="w-3.5 h-3.5" />
-                              ) : (
-                                <EyeOff className="w-3.5 h-3.5 text-rose-500" />
-                              )}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  viewerRef.current?.isolateComponent(isIso ? null : c.id)
+                                }
+                                className={`p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 ${
+                                  isIso
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-slate-400'
+                                }`}
+                                title={isIso ? 'Restore entire model' : 'Isolate structure'}
+                                aria-label={`Isolate ${c.name}`}
+                              >
+                                <Focus className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => viewerRef.current?.toggleComponentVisible(c.id)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
+                                title={c.visible ? 'Hide structure' : 'Show structure'}
+                                aria-label={c.visible ? `Hide ${c.name}` : `Show ${c.name}`}
+                              >
+                                {c.visible ? (
+                                  <Eye className="w-3.5 h-3.5" />
+                                ) : (
+                                  <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </section>
                 )}
               </div>
@@ -941,178 +1433,342 @@ export default function Academic3DExplorerModule({
           {/* CENTER STAGE: Control Strip + Full Immersive WebGL Viewport */}
           <main className="flex-1 min-w-0 flex flex-col bg-slate-100 dark:bg-slate-950 relative">
             {/* Solid Control Bar above Canvas (never overlays WebGL with backdrop-blur) */}
-            <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-3.5 py-2 flex items-center justify-between gap-2 overflow-x-auto shrink-0">
-              <div className="flex items-center gap-1.5 shrink-0">
-                {!leftPanelOpen && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLeftPanelOpen(true);
-                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-                        setRightPanelOpen(false);
+            {!presentationMode && (
+              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-3.5 py-2 flex items-center justify-between gap-2 overflow-x-auto shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!leftPanelOpen && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLeftPanelOpen(true);
+                        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                          setRightPanelOpen(false);
+                        }
+                      }}
+                      className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                    >
+                      <PanelLeftOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Structures ({components.length})</span>
+                    </button>
+                  )}
+
+                  {anyComponentHidden && (
+                    <button
+                      type="button"
+                      onClick={() => viewerRef.current?.restoreAllComponents()}
+                      className="min-h-[32px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1"
+                      title="Restore all hidden or isolated parts"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Restore All</span>
+                    </button>
+                  )}
+
+                  {/* Interaction Mode Switcher: Select / Multi / Distance / Coords / Pin */}
+                  <div
+                    className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5"
+                    role="group"
+                    aria-label="3D interaction tool"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setInteractionTool('select')}
+                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
+                        interactionTool === 'select'
+                          ? 'bg-emerald-600 text-white'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title="Single structure click selection & orbit"
+                    >
+                      <Focus className="w-3 h-3" />
+                      <span className="hidden sm:inline">Select</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={!capabilities?.supportsMultiSelect}
+                      onClick={() =>
+                        setInteractionTool((t) =>
+                          t === 'multi_select' ? 'select' : 'multi_select'
+                        )
                       }
-                    }}
-                    className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
-                  >
-                    <PanelLeftOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span>Structures ({components.length})</span>
-                  </button>
-                )}
+                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${
+                        interactionTool === 'multi_select'
+                          ? 'bg-emerald-600 text-white'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title={
+                        capabilities?.supportsMultiSelect
+                          ? 'Multi-select components (or Shift+Click)'
+                          : capabilities?.unavailableReasons.multiSelect ||
+                            'Requires multi-mesh assembly'
+                      }
+                    >
+                      <Layers className="w-3 h-3" />
+                      <span className="hidden md:inline">Multi</span>
+                    </button>
 
-                {anyComponentHidden && (
-                  <button
-                    type="button"
-                    onClick={() => viewerRef.current?.restoreAllComponents()}
-                    className="min-h-[32px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1"
-                    title="Restore all hidden or isolated parts"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Restore All</span>
-                  </button>
-                )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInteractionTool((t) =>
+                          t === 'measure_distance' ? 'select' : 'measure_distance'
+                        )
+                      }
+                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
+                        interactionTool === 'measure_distance'
+                          ? 'bg-sky-600 text-white'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title="Point-to-point distance measurement (model units)"
+                    >
+                      <Ruler className="w-3 h-3" />
+                      <span className="hidden sm:inline">Measure</span>
+                    </button>
 
-                {/* Visualization Mode Switcher: Solid / Wireframe / X-Ray */}
-                <div
-                  className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5"
-                  role="group"
-                  aria-label="3D exploration mode"
-                >
-                  {(
-                    [
-                      { id: 'solid', label: 'Solid', icon: Box },
-                      { id: 'wireframe', label: 'Wireframe', icon: Grid3X3 },
-                      { id: 'xray', label: 'X-Ray', icon: Scan }
-                    ] as const
-                  ).map((mode) => {
-                    const Icon = mode.icon;
-                    const active = renderSettings.renderMode === mode.id;
-                    return (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() => setVisualizationMode(mode.id)}
-                        className={`min-h-[28px] px-2.5 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
-                          active
-                            ? 'bg-emerald-600 text-white'
-                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                        }`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{mode.label}</span>
-                      </button>
-                    );
-                  })}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInteractionTool((t) =>
+                          t === 'measure_coords' ? 'select' : 'measure_coords'
+                        )
+                      }
+                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
+                        interactionTool === 'measure_coords'
+                          ? 'bg-sky-600 text-white'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title="Inspect 3D surface coordinates"
+                    >
+                      <Crosshair className="w-3 h-3" />
+                      <span className="hidden lg:inline">Coords</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInteractionTool((t) => (t === 'pin' ? 'select' : 'pin'))
+                      }
+                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
+                        interactionTool === 'pin'
+                          ? 'bg-amber-600 text-white'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                      title="Pin 3D annotation marker on surface"
+                    >
+                      <MapPin className="w-3 h-3" />
+                      <span className="hidden sm:inline">Pin</span>
+                    </button>
+                  </div>
+
+                  {/* Visualization Mode Switcher: Solid / Wireframe / X-Ray */}
+                  <div
+                    className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5"
+                    role="group"
+                    aria-label="3D exploration mode"
+                  >
+                    {(
+                      [
+                        { id: 'solid', label: 'Solid', icon: Box },
+                        { id: 'wireframe', label: 'Wireframe', icon: Grid3X3 },
+                        { id: 'xray', label: 'X-Ray', icon: Scan }
+                      ] as const
+                    ).map((mode) => {
+                      const Icon = mode.icon;
+                      const active = renderSettings.renderMode === mode.id;
+                      return (
+                        <button
+                          key={mode.id}
+                          type="button"
+                          onClick={() => setVisualizationMode(mode.id)}
+                          className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
+                            active
+                              ? 'bg-emerald-600 text-white'
+                              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span className="hidden md:inline">{mode.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Camera Angle Presets */}
+                  <div
+                    className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5"
+                    role="group"
+                    aria-label="Camera orientation presets"
+                  >
+                    {(
+                      [
+                        { id: 'reset', label: 'Reset', icon: RotateCcw },
+                        { id: 'fit', label: 'Fit' },
+                        { id: 'iso', label: 'Iso' },
+                        { id: 'front', label: 'Front' },
+                        { id: 'back', label: 'Back' },
+                        { id: 'left', label: 'Left' },
+                        { id: 'right', label: 'Right' },
+                        { id: 'top', label: 'Top' },
+                        { id: 'bottom', label: 'Bottom' }
+                      ] as Array<{ id: CameraViewPreset; label: string; icon?: typeof RotateCcw }>
+                    ).map((preset) => {
+                      const active =
+                        activeCameraPreset === preset.id &&
+                        preset.id !== 'reset' &&
+                        preset.id !== 'fit';
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => handleCameraPresetClick(preset.id)}
+                          className={`min-h-[28px] px-2 py-0.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 transition-colors ${
+                            active
+                              ? 'bg-emerald-600 text-white'
+                              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          {preset.icon && (
+                            <RotateCcw className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                          )}
+                          <span>{preset.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {/* Camera Angle Presets */}
-                <div
-                  className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5"
-                  role="group"
-                  aria-label="Camera orientation presets"
-                >
-                  {(
-                    [
-                      { id: 'reset', label: 'Reset', icon: RotateCcw },
-                      { id: 'front', label: 'Front' },
-                      { id: 'back', label: 'Back' },
-                      { id: 'left', label: 'Left' },
-                      { id: 'right', label: 'Right' },
-                      { id: 'top', label: 'Top' },
-                      { id: 'bottom', label: 'Bottom' }
-                    ] as Array<{ id: CameraViewPreset; label: string; icon?: typeof RotateCcw }>
-                  ).map((preset) => {
-                    const active = activeCameraPreset === preset.id && preset.id !== 'reset';
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => handleCameraPresetClick(preset.id)}
-                        className={`min-h-[28px] px-2 py-0.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 transition-colors ${
-                          active
-                            ? 'bg-emerald-600 text-white'
-                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        {preset.icon && (
-                          <RotateCcw className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                        )}
-                        <span>{preset.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  disabled={!capabilities?.hasNamedStructures}
-                  onClick={() =>
-                    setRenderSettings((s) => ({ ...s, showLabels: !s.showLabels }))
-                  }
-                  className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border disabled:opacity-45 disabled:cursor-not-allowed ${
-                    renderSettings.showLabels && capabilities?.hasNamedStructures
-                      ? 'bg-emerald-600 text-white border-emerald-500'
-                      : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                  title={
-                    capabilities?.hasNamedStructures
-                      ? 'Toggle projected 3D node labels'
-                      : 'No named sub-structures in this 3D file'
-                  }
-                >
-                  <Tag className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Labels</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPinMode((v) => !v)}
-                  className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border ${
-                    pinMode
-                      ? 'bg-amber-600 text-white border-amber-500'
-                      : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <MapPin className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">
-                    {pinMode ? 'Click Model' : 'Pin Note'}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setLightingPopoverOpen((v) => !v)}
-                  className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border ${
-                    lightingPopoverOpen
-                      ? 'bg-emerald-600 text-white border-emerald-500'
-                      : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Scene</span>
-                </button>
-
-                {!rightPanelOpen && (
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => {
+                      setSectioning((prev) => ({ ...prev, active: !prev.active }));
                       setRightPanelOpen(true);
-                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-                        setLeftPanelOpen(false);
-                      }
+                      setRightTab('tools');
                     }}
-                    className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                    className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border ${
+                      sectioning.active
+                        ? 'bg-rose-600 text-white border-rose-500'
+                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title="Toggle real WebGL cutaway sectioning planes"
                   >
-                    <PanelRightOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span>Context</span>
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Section</span>
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRenderSettings((s) => ({ ...s, autoRotate: !s.autoRotate }))
+                    }
+                    className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border ${
+                      renderSettings.autoRotate
+                        ? 'bg-emerald-600 text-white border-emerald-500'
+                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title="Toggle turntable auto-rotation"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span className="hidden xl:inline">Rotate</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!capabilities?.hasNamedStructures}
+                    onClick={() =>
+                      setRenderSettings((s) => ({ ...s, showLabels: !s.showLabels }))
+                    }
+                    className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border disabled:opacity-45 disabled:cursor-not-allowed ${
+                      renderSettings.showLabels && capabilities?.hasNamedStructures
+                        ? 'bg-emerald-600 text-white border-emerald-500'
+                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                    title={
+                      capabilities?.hasNamedStructures
+                        ? 'Toggle projected 3D node labels'
+                        : capabilities?.unavailableReasons.labels ||
+                          'No named sub-structures in this 3D file'
+                    }
+                  >
+                    <Tag className="w-3.5 h-3.5" />
+                    <span className="hidden xl:inline">Labels</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPresentationMode(true)}
+                    className="min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                    title="Clean presentation mode (Shortcut: H)"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span className="hidden lg:inline">Present</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setLightingPopoverOpen((v) => !v)}
+                    className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border ${
+                      lightingPopoverOpen
+                        ? 'bg-emerald-600 text-white border-emerald-500'
+                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    <span className="hidden xl:inline">Scene</span>
+                  </button>
+
+                  {!rightPanelOpen && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRightPanelOpen(true);
+                        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                          setLeftPanelOpen(false);
+                        }
+                      }}
+                      className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                    >
+                      <PanelRightOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Tools &amp; Info</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Viewport Container */}
             <div className="relative flex-1 min-h-0 flex flex-col">
+              {presentationMode && (
+                <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700 text-xs text-slate-100 shadow-2xl">
+                  <button
+                    type="button"
+                    onClick={() => viewerRef.current?.setCameraPreset('fit')}
+                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 font-semibold"
+                    title="Fit model"
+                  >
+                    Fit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => viewerRef.current?.downloadScreenshot()}
+                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 font-semibold inline-flex items-center gap-1"
+                    title="Download PNG screenshot"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>PNG</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresentationMode(false)}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold inline-flex items-center gap-1"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    <span>Exit Presentation (Esc)</span>
+                  </button>
+                </div>
+              )}
+
               {resolvingBinary ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-300 p-6">
                   <Loader2 className="w-7 h-7 animate-spin text-emerald-400" />
@@ -1167,18 +1823,27 @@ export default function Academic3DExplorerModule({
                   hideBuiltInHeader
                   hideBuiltInSidebars
                   className="flex-1 min-h-0 border-0 rounded-none"
-                  selectedComponentId={selectedComponentId}
-                  onSelectComponent={setSelectedComponentId}
-                  isolatedComponentId={isolatedComponentId}
-                  onIsolateChange={setIsolatedComponentId}
+                  selectedComponentIds={selectedComponentIds}
+                  onSelectComponents={setSelectedComponentIds}
+                  isolatedComponentIds={isolatedComponentIds}
+                  onIsolateChangeMulti={setIsolatedComponentIds}
                   renderSettings={renderSettings}
                   onRenderSettingsChange={setRenderSettings}
                   onLoadingStateChange={setViewerLoading}
                   onComponentsChange={setComponents}
+                  onHierarchyChange={setHierarchyTree}
                   activePinId={activePinId}
                   onActivePinChange={setActivePinId}
                   pinMode={pinMode}
                   onPinModeChange={setPinMode}
+                  interactionTool={interactionTool}
+                  onInteractionToolChange={setInteractionTool}
+                  sectioning={sectioning}
+                  onSectioningChange={setSectioning}
+                  measurements={measurements}
+                  onMeasurementsChange={setMeasurements}
+                  onCoordinateSample={setCoordinateSample}
+                  presentationMode={presentationMode}
                   fullscreenTargetRef={workspaceRootRef}
                 />
               )}
@@ -1375,20 +2040,21 @@ export default function Academic3DExplorerModule({
             </div>
           </main>
 
-          {/* RIGHT PANEL: Structure Inspection, Academic Context & Asset Provenance */}
-          {rightPanelOpen && (
+          {/* RIGHT PANEL: Structure Inspection, Interactive Tools, Academic Context & Asset Provenance */}
+          {rightPanelOpen && !presentationMode && (
             <aside className="absolute inset-y-0 right-0 z-30 w-96 max-w-[92vw] lg:static lg:w-80 xl:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 shadow-2xl lg:shadow-none">
-              <div className="px-3.5 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+              <div className="px-3 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-1.5">
                 <div
                   role="tablist"
                   aria-label="Explorer context panels"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 overflow-x-auto"
                 >
                   {(
                     [
                       { id: 'inspect', label: 'Inspect', icon: Focus },
+                      { id: 'tools', label: 'Tools', icon: Wrench },
                       { id: 'academic', label: 'Academic', icon: GraduationCap },
-                      { id: 'info', label: 'Asset Info', icon: Info }
+                      { id: 'info', label: 'Info', icon: Info }
                     ] as const
                   ).map((tab) => {
                     const Icon = tab.icon;
@@ -1400,7 +2066,7 @@ export default function Academic3DExplorerModule({
                         type="button"
                         aria-selected={active}
                         onClick={() => setRightTab(tab.id)}
-                        className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                        className={`min-h-[32px] px-2 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors shrink-0 ${
                           active
                             ? 'bg-emerald-600 text-white'
                             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1416,7 +2082,7 @@ export default function Academic3DExplorerModule({
                 <button
                   type="button"
                   onClick={() => setRightPanelOpen(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white shrink-0"
                   aria-label="Collapse context panel"
                 >
                   <PanelRightClose className="w-4 h-4" />
@@ -1427,8 +2093,72 @@ export default function Academic3DExplorerModule({
                 {/* ---------- TAB 1: STRUCTURE INSPECTION & DOMAIN EXPLORATION ---------- */}
                 {rightTab === 'inspect' && (
                   <>
-                    {/* Selected Structure Card */}
-                    {selectedComponent && selectedInspection ? (
+                    {/* Multi-Structure Selection Summary */}
+                    {selectedComponentIds.length > 1 ? (
+                      <section className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/40 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              Multi-Structure Selection
+                            </p>
+                            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                              {selectedComponentIds.length} Structures Selected
+                            </h3>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">
+                              {selectedComponentsList
+                                .reduce((acc, c) => acc + c.triangleCount, 0)
+                                .toLocaleString()}{' '}
+                              combined tris
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedComponentIds([])}
+                            className="text-slate-400 hover:text-slate-800 dark:hover:text-white p-0.5"
+                            aria-label="Clear selection"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => viewerRef.current?.focusSelected()}
+                            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1"
+                          >
+                            <Focus className="w-3 h-3 text-emerald-600" />
+                            <span>Focus Group</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              viewerRef.current?.isolateComponents(selectedComponentIds)
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                          >
+                            Isolate Group
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              viewerRef.current?.setComponentsVisibility(selectedComponentIds, false)
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-200"
+                          >
+                            Hide Selected
+                          </button>
+                        </div>
+
+                        <ul className="space-y-1 max-h-36 overflow-y-auto pt-1 border-t border-emerald-500/20 text-[11px] text-slate-700 dark:text-slate-300">
+                          {selectedComponentsList.map((c) => (
+                            <li key={c.id} className="truncate">
+                              • {c.name}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : selectedComponent && selectedInspection ? (
                       <section className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/40 space-y-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -1445,10 +2175,16 @@ export default function Academic3DExplorerModule({
                                 ? ` · Material: ${selectedInspection.materialName}`
                                 : ''}
                             </p>
+                            {selectedComponent.boundsSize && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                                Raw bounds: {selectedComponent.boundsSize.join(' × ')}{' '}
+                                {capabilities?.unitLabel || 'model units'}
+                              </p>
+                            )}
                           </div>
                           <button
                             type="button"
-                            onClick={() => setSelectedComponentId(null)}
+                            onClick={() => setSelectedComponentIds([])}
                             className="text-slate-400 hover:text-slate-800 dark:hover:text-white p-0.5"
                             aria-label="Clear selected structure"
                           >
@@ -1470,14 +2206,14 @@ export default function Academic3DExplorerModule({
                               type="button"
                               onClick={() =>
                                 viewerRef.current?.isolateComponent(
-                                  isolatedComponentId === selectedComponent.id
+                                  isolatedComponentIds.includes(selectedComponent.id)
                                     ? null
                                     : selectedComponent.id
                                 )
                               }
                               className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
                             >
-                              {isolatedComponentId === selectedComponent.id
+                              {isolatedComponentIds.includes(selectedComponent.id)
                                 ? 'Restore All'
                                 : 'Isolate'}
                             </button>
@@ -1605,9 +2341,9 @@ export default function Academic3DExplorerModule({
                         </p>
                         <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
                           {components.length > 1
-                            ? 'Select a mesh in the 3D viewport or from the Structures panel to highlight, isolate, or inspect its node metadata and scientific role.'
+                            ? 'Select a mesh in the 3D viewport or from the Structures panel to highlight, multi-select (Shift+Click), isolate, or inspect its node metadata.'
                             : activeAsset.description ||
-                              'Use Solid, Wireframe, X-Ray, and camera angle presets above the viewport to inspect this unified 3D specimen.'}
+                              'Use Solid, Wireframe, X-Ray, Sectioning, Measurement, and camera presets to inspect this unified 3D specimen.'}
                         </p>
                       </section>
                     )}
@@ -1663,64 +2399,567 @@ export default function Academic3DExplorerModule({
                       </section>
                     )}
 
-                    {/* Saved 3D Pins List */}
+                    {/* Saved 3D Pins List with Visibility & Edit Support */}
                     <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                           <MapPin className="w-3.5 h-3.5 text-amber-500" />
                           <span>3D Annotation Pins ({activeAsset.annotations.length})</span>
                         </h3>
-                        <button
-                          type="button"
-                          onClick={() => setPinMode((v) => !v)}
-                          className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline"
-                        >
-                          {pinMode ? 'Cancel Pin' : '+ Add Pin'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {activeAsset.annotations.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRenderSettings((s) => ({
+                                  ...s,
+                                  showAnnotations: s.showAnnotations === false ? true : false
+                                }))
+                              }
+                              className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                              title="Toggle all 3D pin markers on viewport"
+                            >
+                              {renderSettings.showAnnotations === false ? 'Show Pins' : 'Hide Pins'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setPinMode((v) => !v)}
+                            className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline"
+                          >
+                            {pinMode ? 'Cancel Pin' : '+ Add Pin'}
+                          </button>
+                        </div>
                       </div>
 
                       {activeAsset.annotations.length === 0 ? (
                         <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
-                          No pins saved on this model yet. Enable &ldquo;Pin Note&rdquo; and click any point on the 3D surface to annotate key features.
+                          No pins saved on this model yet. Enable &ldquo;Pin&rdquo; and click any point on the 3D surface to annotate key features.
                         </p>
                       ) : (
                         <div className="space-y-1.5">
-                          {activeAsset.annotations.map((ann, idx) => (
+                          {activeAsset.annotations.map((ann, idx) => {
+                            const isEditing = editingPinId === ann.id;
+                            const isHidden = ann.visible === false;
+                            return (
+                              <div
+                                key={ann.id}
+                                className={`p-2.5 rounded-lg border transition-colors ${
+                                  activePinId === ann.id
+                                    ? 'bg-amber-500/10 border-amber-500/50'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                                }`}
+                              >
+                                {isEditing ? (
+                                  <form
+                                    onSubmit={async (ev) => {
+                                      ev.preventDefault();
+                                      if (!editPinLabel.trim()) return;
+                                      await handleUpdateAnnotation(ann.id, {
+                                        label: editPinLabel.trim(),
+                                        note: editPinNote.trim()
+                                      });
+                                      setEditingPinId(null);
+                                    }}
+                                    className="space-y-1.5"
+                                  >
+                                    <input
+                                      type="text"
+                                      required
+                                      value={editPinLabel}
+                                      onChange={(e) => setEditPinLabel(e.target.value)}
+                                      className="w-full px-2 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white"
+                                      placeholder="Pin title"
+                                    />
+                                    <textarea
+                                      rows={2}
+                                      value={editPinNote}
+                                      onChange={(e) => setEditPinNote(e.target.value)}
+                                      className="w-full px-2 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white"
+                                      placeholder="Notes..."
+                                    />
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingPinId(null)}
+                                        className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[11px] font-semibold"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="submit"
+                                        className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[11px] font-semibold inline-flex items-center gap-1"
+                                      >
+                                        <Check className="w-3 h-3" />
+                                        <span>Save</span>
+                                      </button>
+                                    </div>
+                                  </form>
+                                ) : (
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActivePinId(ann.id);
+                                        viewerRef.current?.focusPoint(ann.position);
+                                      }}
+                                      className={`min-w-0 flex-1 text-left ${
+                                        isHidden ? 'opacity-50' : ''
+                                      }`}
+                                    >
+                                      <p className="font-semibold text-slate-800 dark:text-slate-200">
+                                        {idx + 1}. {ann.label}
+                                      </p>
+                                      {ann.componentName && (
+                                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate">
+                                          Part: {ann.componentName}
+                                        </p>
+                                      )}
+                                      {ann.note && (
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                                          {ann.note}
+                                        </p>
+                                      )}
+                                    </button>
+                                    <div className="flex items-center gap-0.5 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void handleUpdateAnnotation(ann.id, { visible: isHidden })
+                                        }
+                                        className="p-1 text-slate-400 hover:text-slate-800 dark:hover:text-white"
+                                        title={isHidden ? 'Show pin in 3D' : 'Hide pin in 3D'}
+                                        aria-label={isHidden ? `Show ${ann.label}` : `Hide ${ann.label}`}
+                                      >
+                                        {isHidden ? (
+                                          <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+                                        ) : (
+                                          <Eye className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingPinId(ann.id);
+                                          setEditPinLabel(ann.label);
+                                          setEditPinNote(ann.note || '');
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400"
+                                        title="Edit annotation"
+                                        aria-label={`Edit ${ann.label}`}
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleRemoveAnnotation(ann.id)}
+                                        className="p-1 text-slate-400 hover:text-rose-500"
+                                        aria-label={`Delete pin ${ann.label}`}
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  </>
+                )}
+
+                {/* ---------- TAB 2: P3.6 INTERACTIVE MODEL TOOLS ---------- */}
+                {rightTab === 'tools' && (
+                  <>
+                    {/* 1. Sectioning & Cutaway (Real WebGL Clipping Planes) */}
+                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <Scissors className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Sectioning &amp; Cutaway</span>
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => viewerRef.current?.resetSectioning()}
+                            className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSectioning((prev) => ({ ...prev, active: !prev.active }))
+                            }
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${
+                              sectioning.active
+                                ? 'bg-rose-600 text-white'
+                                : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
+                            }`}
+                          >
+                            {sectioning.active ? 'Active' : 'Enable'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Slices geometry with real WebGL clipping planes. Combine X, Y, and Z planes simultaneously to inspect interior structures.
+                      </p>
+
+                      <label className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <span>Show Section Plane Guides</span>
+                        <input
+                          type="checkbox"
+                          checked={sectioning.showPlaneGuides}
+                          onChange={(e) =>
+                            setSectioning((prev) => ({
+                              ...prev,
+                              showPlaneGuides: e.target.checked
+                            }))
+                          }
+                          className="accent-emerald-600"
+                        />
+                      </label>
+
+                      <div className="space-y-2.5">
+                        {(
+                          [
+                            {
+                              axis: 'y' as const,
+                              label: 'Horizontal Plane (Y)',
+                              dot: 'bg-emerald-500'
+                            },
+                            {
+                              axis: 'x' as const,
+                              label: 'Sagittal Plane (X)',
+                              dot: 'bg-rose-500'
+                            },
+                            {
+                              axis: 'z' as const,
+                              label: 'Coronal Plane (Z)',
+                              dot: 'bg-sky-500'
+                            }
+                          ] as const
+                        ).map(({ axis, label, dot }) => {
+                          const plane = sectioning.planes[axis];
+                          return (
                             <div
-                              key={ann.id}
-                              className={`p-2 rounded-lg border flex items-start justify-between gap-2 transition-colors ${
-                                activePinId === ann.id
-                                  ? 'bg-amber-500/10 border-amber-500/50'
-                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
-                              }`}
+                              key={axis}
+                              className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={plane.enabled}
+                                    onChange={(e) =>
+                                      updateSectionAxis(axis, { enabled: e.target.checked })
+                                    }
+                                    className="accent-emerald-600"
+                                  />
+                                  <span className={`w-2 h-2 rounded-full ${dot}`} />
+                                  <span>{label}</span>
+                                </label>
+                                {plane.enabled && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateSectionAxis(axis, { inverted: !plane.inverted })
+                                    }
+                                    className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-300"
+                                  >
+                                    {plane.inverted ? 'Inverted' : 'Flip Cut'}
+                                  </button>
+                                )}
+                              </div>
+
+                              {plane.enabled && (
+                                <div className="space-y-1.5 pt-1">
+                                  <div className="space-y-0.5">
+                                    <div className="flex justify-between text-[11px] text-slate-500 tabular-nums">
+                                      <span>Cut Position</span>
+                                      <span>{Math.round(plane.offset * 100)}%</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min={-1}
+                                      max={1}
+                                      step={0.02}
+                                      value={plane.offset}
+                                      onChange={(e) =>
+                                        updateSectionAxis(axis, {
+                                          offset: Number(e.target.value)
+                                        })
+                                      }
+                                      className="w-full accent-emerald-600"
+                                    />
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+                                        <span>Tilt X</span>
+                                        <span>{plane.tiltXDeg}°</span>
+                                      </div>
+                                      <input
+                                        type="range"
+                                        min={-60}
+                                        max={60}
+                                        step={2}
+                                        value={plane.tiltXDeg}
+                                        onChange={(e) =>
+                                          updateSectionAxis(axis, {
+                                            tiltXDeg: Number(e.target.value)
+                                          })
+                                        }
+                                        className="w-full accent-emerald-600"
+                                      />
+                                    </div>
+                                    <div>
+                                      <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+                                        <span>Tilt Y</span>
+                                        <span>{plane.tiltYDeg}°</span>
+                                      </div>
+                                      <input
+                                        type="range"
+                                        min={-60}
+                                        max={60}
+                                        step={2}
+                                        value={plane.tiltYDeg}
+                                        onChange={(e) =>
+                                          updateSectionAxis(axis, {
+                                            tiltYDeg: Number(e.target.value)
+                                          })
+                                        }
+                                        className="w-full accent-emerald-600"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+
+                    {/* 2. Measurement & Coordinate Probe */}
+                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <Ruler className="w-3.5 h-3.5 text-sky-500" />
+                          <span>Measurement &amp; Coordinates</span>
+                        </h3>
+                        {(measurements.length > 0 || coordinateSample) && (
+                          <button
+                            type="button"
+                            onClick={() => viewerRef.current?.clearMeasurements()}
+                            className="text-[11px] font-semibold text-rose-500 hover:underline"
+                          >
+                            Clear All
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setInteractionTool((t) =>
+                              t === 'measure_distance' ? 'select' : 'measure_distance'
+                            )
+                          }
+                          className={`py-1.5 px-2 rounded-lg font-semibold border inline-flex items-center justify-center gap-1 ${
+                            interactionTool === 'measure_distance'
+                              ? 'bg-sky-600 text-white border-sky-600'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          <Ruler className="w-3.5 h-3.5" />
+                          <span>Distance</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setInteractionTool((t) =>
+                              t === 'measure_coords' ? 'select' : 'measure_coords'
+                            )
+                          }
+                          className={`py-1.5 px-2 rounded-lg font-semibold border inline-flex items-center justify-center gap-1 ${
+                            interactionTool === 'measure_coords'
+                              ? 'bg-sky-600 text-white border-sky-600'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+                          }`}
+                        >
+                          <Crosshair className="w-3.5 h-3.5" />
+                          <span>Coordinates</span>
+                        </button>
+                      </div>
+
+                      {capabilities && (
+                        <p className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                          {capabilities.unitCalibrationNote}
+                        </p>
+                      )}
+
+                      {coordinateSample && (
+                        <div className="p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/40 space-y-1 tabular-nums text-[11px]">
+                          <p className="font-bold text-sky-700 dark:text-sky-300">
+                            Coordinate Probe ({coordinateSample.unitLabel})
+                          </p>
+                          {coordinateSample.componentName && (
+                            <p className="text-slate-700 dark:text-slate-200 truncate">
+                              Surface: {coordinateSample.componentName}
+                            </p>
+                          )}
+                          <p className="text-slate-800 dark:text-slate-100">
+                            Raw: ({coordinateSample.pointRaw.join(', ')})
+                          </p>
+                          <p className="text-slate-500 dark:text-slate-400">
+                            Normalized: ({coordinateSample.pointLocal.join(', ')})
+                          </p>
+                        </div>
+                      )}
+
+                      {measurements.length > 0 && (
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                            Measurements ({measurements.length})
+                          </p>
+                          {measurements.map((m, idx) => (
+                            <div
+                              key={m.id}
+                              className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-2 tabular-nums"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-bold text-slate-900 dark:text-white">
+                                  #{measurements.length - idx}: {m.distanceRaw.toFixed(3)}{' '}
+                                  {m.unitLabel}
+                                </p>
+                                {(m.componentA || m.componentB) && (
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                    {m.componentA || 'Point A'} → {m.componentB || 'Point B'}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => viewerRef.current?.removeMeasurement(m.id)}
+                                className="p-1 text-slate-400 hover:text-rose-500 shrink-0"
+                                aria-label="Delete measurement"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    {/* 3. Visualization, Highlighting & Rotation Speed */}
+                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                      <h3 className="font-bold text-slate-900 dark:text-white">
+                        Rendering &amp; Motion Controls
+                      </h3>
+
+                      <label className="flex items-center justify-between text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <span>Highlight Selected Structures</span>
+                        <input
+                          type="checkbox"
+                          checked={renderSettings.highlightSelected !== false}
+                          onChange={(e) =>
+                            setRenderSettings((s) => ({
+                              ...s,
+                              highlightSelected: e.target.checked
+                            }))
+                          }
+                          className="accent-emerald-600"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <span>Turntable Auto-Rotate</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(renderSettings.autoRotate)}
+                          onChange={(e) =>
+                            setRenderSettings((s) => ({ ...s, autoRotate: e.target.checked }))
+                          }
+                          className="accent-emerald-600"
+                        />
+                      </label>
+
+                      {renderSettings.autoRotate && (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px] text-slate-500 tabular-nums">
+                            <span>Rotation Speed</span>
+                            <span>{(renderSettings.autoRotateSpeed ?? 1.5).toFixed(1)}×</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0.5}
+                            max={6}
+                            step={0.5}
+                            value={renderSettings.autoRotateSpeed ?? 1.5}
+                            onChange={(e) =>
+                              setRenderSettings((s) => ({
+                                ...s,
+                                autoRotateSpeed: Number(e.target.value)
+                              }))
+                            }
+                            className="w-full accent-emerald-600"
+                          />
+                        </div>
+                      )}
+                    </section>
+
+                    {/* 4. Saved Camera Views & Presentation */}
+                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                      <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <Bookmark className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Saved Camera Views &amp; Presentation</span>
+                      </h3>
+
+                      <form onSubmit={handleSaveCameraView} className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={newViewName}
+                          onChange={(e) => setNewViewName(e.target.value)}
+                          placeholder="Bookmark name (e.g. Anterior Valve)"
+                          className="min-w-0 flex-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                        />
+                        <button
+                          type="submit"
+                          disabled={viewerLoading.status !== 'ready'}
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 text-white text-xs font-semibold shrink-0"
+                        >
+                          Save
+                        </button>
+                      </form>
+
+                      {(activeAsset.savedViews?.length || 0) > 0 && (
+                        <div className="space-y-1">
+                          {activeAsset.savedViews!.map((v) => (
+                            <div
+                              key={v.id}
+                              className="flex items-center justify-between gap-1.5 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
                             >
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setActivePinId(ann.id);
-                                  viewerRef.current?.focusPoint(ann.position);
-                                }}
-                                className="min-w-0 flex-1 text-left"
+                                onClick={() =>
+                                  viewerRef.current?.applyCameraState(v.position, v.target)
+                                }
+                                className="min-w-0 flex-1 text-left font-semibold text-slate-800 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 truncate"
                               >
-                                <p className="font-semibold text-slate-800 dark:text-slate-200">
-                                  {idx + 1}. {ann.label}
-                                </p>
-                                {ann.componentName && (
-                                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 truncate">
-                                    Part: {ann.componentName}
-                                  </p>
-                                )}
-                                {ann.note && (
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                                    {ann.note}
-                                  </p>
-                                )}
+                                {v.name}
                               </button>
                               <button
                                 type="button"
-                                onClick={() => void handleRemoveAnnotation(ann.id)}
-                                className="p-1 text-slate-400 hover:text-rose-500 shrink-0"
-                                aria-label={`Delete pin ${ann.label}`}
+                                onClick={() => void handleRemoveSavedView(v.id)}
+                                className="p-1 text-slate-400 hover:text-rose-500"
+                                aria-label={`Delete view ${v.name}`}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1728,7 +2967,77 @@ export default function Academic3DExplorerModule({
                           ))}
                         </div>
                       )}
+
+                      <div className="grid grid-cols-2 gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => viewerRef.current?.downloadScreenshot()}
+                          className="py-1.5 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center justify-center gap-1"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Export PNG</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPresentationMode(true)}
+                          className="py-1.5 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center justify-center gap-1"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Presentation</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => viewerRef.current?.resetExploration()}
+                          className="col-span-2 py-1.5 px-2.5 rounded-lg bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center justify-center gap-1"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset Full Exploration State</span>
+                        </button>
+                      </div>
                     </section>
+
+                    {/* 5. Honest Model Tool Compatibility Summary */}
+                    {capabilities && (
+                      <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-[11px]">
+                        <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                          Tool Compatibility for This Asset
+                        </h3>
+                        <ul className="space-y-1 text-slate-600 dark:text-slate-400">
+                          <li>
+                            <strong className="text-slate-800 dark:text-slate-200">
+                              Camera, Modes, Sectioning, Measure &amp; Pins:
+                            </strong>{' '}
+                            {capabilities.hasLoadedGeometry
+                              ? 'Full WebGL geometry support'
+                              : 'Waiting for loaded mesh'}
+                          </li>
+                          <li>
+                            <strong className="text-slate-800 dark:text-slate-200">
+                              Multi-Select &amp; Isolation:
+                            </strong>{' '}
+                            {capabilities.supportsMultiSelect
+                              ? `Available (${capabilities.componentCount} meshes)`
+                              : capabilities.unavailableReasons.multiSelect}
+                          </li>
+                          <li>
+                            <strong className="text-slate-800 dark:text-slate-200">
+                              3D Part Labels:
+                            </strong>{' '}
+                            {capabilities.hasNamedStructures
+                              ? `Available (${capabilities.namedComponentCount} named nodes)`
+                              : capabilities.unavailableReasons.labels}
+                          </li>
+                          <li>
+                            <strong className="text-slate-800 dark:text-slate-200">
+                              Distance Units:
+                            </strong>{' '}
+                            {capabilities.isCalibrated
+                              ? capabilities.unitLabel
+                              : `${capabilities.unitLabel} (uncalibrated)`}
+                          </li>
+                        </ul>
+                      </section>
+                    )}
                   </>
                 )}
 
@@ -1875,16 +3184,29 @@ export default function Academic3DExplorerModule({
                               {(lnk.topicTitle ||
                                 lnk.subtopicTitle ||
                                 lnk.structureName ||
-                                lnk.experimentTitle) && (
+                                lnk.experimentTitle ||
+                                lnk.stepTitle) && (
                                 <p className="text-slate-600 dark:text-slate-400">
                                   {[
                                     lnk.topicTitle,
                                     lnk.subtopicTitle,
                                     lnk.structureName,
-                                    lnk.experimentTitle
+                                    lnk.experimentTitle,
+                                    lnk.stepTitle
                                   ]
                                     .filter(Boolean)
                                     .join(' → ')}
+                                </p>
+                              )}
+                              {(lnk.experimentRole || lnk.focusComponentName || lnk.setupNote) && (
+                                <p className="text-[11px] text-sky-700 dark:text-sky-300 leading-relaxed">
+                                  {[
+                                    lnk.experimentRole,
+                                    lnk.focusComponentName ? `Focus: ${lnk.focusComponentName}` : null,
+                                    lnk.setupNote
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
                                 </p>
                               )}
                               {lnk.learningObjective && (
@@ -2020,30 +3342,57 @@ export default function Academic3DExplorerModule({
 
                     {/* Related Practical Experiments */}
                     {academicContext.relatedExperiments.length > 0 && (
-                      <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
+                      <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                         <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                           <FlaskConical className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                           <span>Related Department Practicals</span>
                         </h3>
-                        <div className="space-y-1.5">
-                          {academicContext.relatedExperiments.map((exp) => (
-                            <button
-                              key={`${exp.moduleId}_${exp.id}`}
-                              type="button"
-                              onClick={() => navigateToModule(exp.moduleId, exp.tab)}
-                              className="w-full p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-left flex items-center justify-between gap-2"
-                            >
-                              <div className="min-w-0">
-                                <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                                  {exp.code} · {exp.title}
-                                </p>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  {exp.departmentLabel} Lab
-                                </p>
+                        <div className="space-y-2">
+                          {academicContext.relatedExperiments.map((exp, idx) => {
+                            const catEntry = getExperimentById(exp.id);
+                            const primaryApp = catEntry?.apparatusIds?.[0]
+                              ? getApparatusProfile(catEntry.apparatusIds[0])
+                              : null;
+                            return (
+                              <div
+                                key={`${exp.moduleId}_${exp.id}_${idx}`}
+                                className="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => navigateToModule(exp.moduleId, exp.tab)}
+                                  className="w-full p-2.5 hover:bg-slate-50 dark:hover:bg-slate-950/60 text-left flex items-center justify-between gap-2"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                      {exp.code} · {exp.title}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                      {exp.departmentLabel} Lab
+                                      {exp.roleLabel ? ` · ${exp.roleLabel}` : ''}
+                                      {exp.stepTitle ? ` · Step: ${exp.stepTitle}` : ''}
+                                    </p>
+                                    {exp.setupNote && (
+                                      <p className="text-[11px] text-emerald-700 dark:text-emerald-400 truncate mt-0.5">
+                                        {exp.setupNote}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                                </button>
+                                {primaryApp && (
+                                  <div className="px-2.5 py-2 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/50 text-[11px] space-y-0.5">
+                                    <p className="font-semibold text-slate-700 dark:text-slate-300">
+                                      Apparatus: {primaryApp.name}
+                                    </p>
+                                    <p className="text-slate-500 dark:text-slate-400 leading-snug">
+                                      {primaryApp.purpose}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
-                              <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-                            </button>
-                          ))}
+                            );
+                          })}
                         </div>
                       </section>
                     )}

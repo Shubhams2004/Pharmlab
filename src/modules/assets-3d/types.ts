@@ -76,6 +76,31 @@ export type Asset3DLibraryCollection =
   | 'recent_imported'
   | 'recent_viewed';
 
+export type ExperimentAssetRole =
+  | 'apparatus'
+  | 'setup'
+  | 'instrument'
+  | 'glassware'
+  | 'specimen'
+  | 'anatomy'
+  | 'molecule'
+  | 'manufacturing'
+  | 'component'
+  | 'reference';
+
+export const EXPERIMENT_ROLE_LABELS: Record<ExperimentAssetRole, string> = {
+  apparatus: 'Lab Apparatus',
+  setup: 'Experiment Setup',
+  instrument: 'Instrument',
+  glassware: 'Glassware',
+  specimen: 'Specimen',
+  anatomy: 'Anatomical Structure',
+  molecule: 'Molecular Structure',
+  manufacturing: 'Manufacturing Equipment',
+  component: 'Experimental Component',
+  reference: 'Reference Model'
+};
+
 export interface SyllabusAssociation {
   id: string;
   course: string;
@@ -93,6 +118,12 @@ export interface SyllabusAssociation {
   learningObjective?: string;
   experimentId?: string;
   experimentTitle?: string;
+  experimentTab?: string;
+  experimentRole?: ExperimentAssetRole;
+  stepId?: string;
+  stepTitle?: string;
+  setupNote?: string;
+  focusComponentName?: string;
   structureId?: string;
   structureName?: string;
 }
@@ -103,6 +134,16 @@ export interface Asset3DAnnotation {
   note?: string;
   componentName?: string;
   position: [number, number, number];
+  visible?: boolean;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface Asset3DSavedView {
+  id: string;
+  name: string;
+  position: [number, number, number];
+  target: [number, number, number];
   createdAt: number;
 }
 
@@ -135,6 +176,7 @@ export interface Asset3DItem {
   vertexCount?: number;
   triangleCount?: number;
   annotations: Asset3DAnnotation[];
+  savedViews?: Asset3DSavedView[];
   createdAt: number;
   updatedAt: number;
   lastOpenedAt?: number;
@@ -239,6 +281,8 @@ export type RenderVisualizationMode = 'solid' | 'wireframe' | 'xray';
 
 export type CameraViewPreset =
   | 'reset'
+  | 'fit'
+  | 'iso'
   | 'front'
   | 'back'
   | 'left'
@@ -246,17 +290,80 @@ export type CameraViewPreset =
   | 'top'
   | 'bottom';
 
+export type ViewerInteractionTool =
+  | 'select'
+  | 'multi_select'
+  | 'pin'
+  | 'measure_distance'
+  | 'measure_coords';
+
+export type SectionPlaneAxis = 'x' | 'y' | 'z';
+
+export interface SectionPlaneConfig {
+  enabled: boolean;
+  axis: SectionPlaneAxis;
+  /** Normalized offset along model bounds [-1, 1] */
+  offset: number;
+  inverted: boolean;
+  /** Tilt rotation in degrees [-60, 60] */
+  tiltXDeg: number;
+  tiltYDeg: number;
+}
+
+export interface SectioningState {
+  active: boolean;
+  showPlaneGuides: boolean;
+  planes: Record<SectionPlaneAxis, SectionPlaneConfig>;
+}
+
+export interface DistanceMeasurement {
+  id: string;
+  pointA: [number, number, number];
+  pointB: [number, number, number];
+  distanceLocal: number;
+  distanceRaw: number;
+  unitLabel: string;
+  isCalibrated: boolean;
+  componentA?: string;
+  componentB?: string;
+  createdAt: number;
+}
+
+export interface CoordinateSample {
+  pointLocal: [number, number, number];
+  pointRaw: [number, number, number];
+  unitLabel: string;
+  isCalibrated: boolean;
+  componentName?: string;
+}
+
 export interface Analyzed3DComponent {
   id: string;
   name: string;
   rawNodeName: string;
+  parentId?: string | null;
   parentName?: string;
+  hierarchyPath: string[];
+  depth: number;
   hasMeaningfulName: boolean;
   visible: boolean;
   vertexCount: number;
   triangleCount: number;
   materialName?: string;
   localCenter: [number, number, number];
+  boundsSize?: [number, number, number];
+}
+
+export interface SceneHierarchyNode {
+  id: string;
+  name: string;
+  rawName: string;
+  kind: 'group' | 'mesh';
+  hasMeaningfulName: boolean;
+  componentId?: string;
+  meshIds: string[];
+  depth: number;
+  children: SceneHierarchyNode[];
 }
 
 export interface ModelAnalysisSummary {
@@ -264,7 +371,11 @@ export interface ModelAnalysisSummary {
   vertexCount: number;
   triangleCount: number;
   dimensions?: [number, number, number];
+  normalizeScale?: number;
+  unitLabel?: string;
+  isCalibrated?: boolean;
   components: Analyzed3DComponent[];
+  hierarchy: SceneHierarchyNode[];
 }
 
 export interface ModelComponentNode {
@@ -285,6 +396,10 @@ export interface ViewerRenderSettings {
   showGrid: boolean;
   showAxes: boolean;
   showLabels: boolean;
+  showAnnotations?: boolean;
+  highlightSelected?: boolean;
+  autoRotate?: boolean;
+  autoRotateSpeed?: number;
   backgroundMode: 'slate_dark' | 'clinical_light';
 }
 

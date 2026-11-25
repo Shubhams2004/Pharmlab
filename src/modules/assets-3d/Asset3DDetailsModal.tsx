@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
+import { getRelatedExperimentsForAsset } from './experimentCatalog';
 import {
   Asset3DItem,
   BPHARM_DEPARTMENT_LABELS,
@@ -32,12 +33,24 @@ import {
 } from './types';
 
 function deptToModuleId(dept: SyllabusAssociation['departmentId']): string {
-  if (dept === 'general_pharmacy') return 'general_pharmacy';
-  if (dept === 'python') return 'python';
-  if (dept === 'anatomy' || dept === 'pharmacognosy' || dept === 'inorganic' || dept === 'psychology') {
-    return dept;
+  switch (dept) {
+    case 'anatomy':
+      return 'anatomy';
+    case 'pharmaceutics':
+    case 'industrial_pharmacy':
+      return 'general_pharmacy';
+    case 'pharmaceutical_chemistry':
+    case 'pharmaceutical_analysis':
+      return 'inorganic';
+    case 'pharmacognosy':
+      return 'pharmacognosy';
+    case 'clinical_pharmacy':
+      return 'psychology';
+    case 'biostatistics':
+      return 'python';
+    default:
+      return 'study_mode';
   }
-  return 'study_mode';
 }
 
 interface Asset3DDetailsModalProps {
@@ -101,13 +114,7 @@ export default function Asset3DDetailsModal({
     )
   );
 
-  const relatedExperiments = Array.from(
-    new Set(
-      asset.syllabusLinks
-        .map((l) => l.experimentTitle)
-        .filter((v): v is string => Boolean(v))
-    )
-  );
+  const relatedExperiments = getRelatedExperimentsForAsset(asset);
 
   const anatomyStructures = Array.from(
     new Set(
@@ -416,14 +423,30 @@ export default function Asset3DDetailsModal({
               )}
 
               {relatedExperiments.length > 0 && (
-                <div>
+                <div className="space-y-1.5">
                   <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
                     <FlaskConical className="w-3 h-3 text-emerald-600" />
                     <span>Related Practical Experiments</span>
                   </p>
-                  <p className="text-slate-800 dark:text-slate-200 mt-0.5">
-                    {relatedExperiments.join(' · ')}
-                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {relatedExperiments.map((exp) => (
+                      <button
+                        key={`${exp.moduleId}:${exp.id}:${exp.stepTitle || ''}`}
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          navigateToModule(exp.moduleId, exp.tab);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-left text-[11px] font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5"
+                      >
+                        <span className="text-emerald-700 dark:text-emerald-400">{exp.code}</span>
+                        <span>{exp.title}</span>
+                        {exp.stepTitle && (
+                          <span className="text-slate-500 dark:text-slate-400">· {exp.stepTitle}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -462,6 +485,13 @@ export default function Asset3DDetailsModal({
                           structureId: lnk.structureId
                         });
                         return;
+                      }
+                      if (lnk.experimentTab || lnk.experimentId || lnk.experimentTitle) {
+                        const mod = deptToModuleId(lnk.departmentId);
+                        if (mod !== 'study_mode') {
+                          navigateToModule(mod, lnk.experimentTab || null);
+                          return;
+                        }
                       }
                       if (lnk.topicId || lnk.subjectCode) {
                         openStudyMode({

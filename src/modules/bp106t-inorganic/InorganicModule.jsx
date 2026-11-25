@@ -3,8 +3,10 @@ import { FlaskConical, Droplet, RefreshCcw, Sliders, Info, BookmarkCheck, Shield
 import InorganicDiagrams from './InorganicDiagrams';
 import InorganicTheory from './InorganicTheory';
 import ResourceConnector from '../../components/ResourceConnector';
+import { usePersistedModuleState } from '../../components/usePersistedModuleState';
 import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import Experiment3DPanel from '../assets-3d/Experiment3DPanel';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 
 const INORGANIC_TABS = [
@@ -18,11 +20,14 @@ const INORGANIC_TABS = [
 
 export default function InorganicModule({ initialTab, navNonce }) {
   const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
-  const [activeTab, setActiveTab] = useState(initialTab || 'diagrams');
+  const [activeTab, setActiveTab] = usePersistedModuleState(
+    'inorganic:activeTab',
+    initialTab || 'diagrams'
+  );
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
-  }, [initialTab, navNonce]);
+  }, [initialTab, navNonce, setActiveTab]);
 
   useEffect(() => {
     const label = INORGANIC_TABS.find((t) => t.id === activeTab)?.label || null;
@@ -45,14 +50,14 @@ export default function InorganicModule({ initialTab, navNonce }) {
     }
   };
 
-  // Existing Burette Simulation State (preserved & extended for all 7 BP111P assays)
-  const [selectedAssayId, setSelectedAssayId] = useState('hcl_naoh');
-  const [titrantVolume, setTitrantVolume] = useState(0);
-  const [trials, setTrials] = useState([]);
+  // Existing Burette Simulation State (persisted across Explorer navigation)
+  const [selectedAssayId, setSelectedAssayId] = usePersistedModuleState('inorganic:selectedAssayId', 'hcl_naoh');
+  const [titrantVolume, setTitrantVolume] = usePersistedModuleState('inorganic:titrantVolume', 0);
+  const [trials, setTrials] = usePersistedModuleState('inorganic:trials', []);
 
   // Assay % Purity & Titrant Standardization State
-  const [assaySampleWt, setAssaySampleWt] = useState(0.5);
-  const [assayBuretteVol, setAssayBuretteVol] = useState(25.0);
+  const [assaySampleWt, setAssaySampleWt] = usePersistedModuleState('inorganic:assaySampleWt', 0.5);
+  const [assayBuretteVol, setAssayBuretteVol] = usePersistedModuleState('inorganic:assayBuretteVol', 25.0);
   const [assayTitrantFactor, setAssayTitrantFactor] = useState(1.0);
   const [stdTitrantKey, setStdTitrantKey] = useState('naoh_khp');
   const [stdPrimaryWtG, setStdPrimaryWtG] = useState(0.51);
@@ -64,15 +69,15 @@ export default function InorganicModule({ initialTab, navNonce }) {
   const [kiSampleWtG, setKiSampleWtG] = useState(5.0);
 
   // Exp 1: Limit Tests State
-  const [selectedLimitTest, setSelectedLimitTest] = useState('chloride');
-  const [limitSampleG, setLimitSampleG] = useState(1.0);
-  const [limitStandardMg, setLimitStandardMg] = useState(0.25);
-  const [limitComparison, setLimitComparison] = useState('pass');
+  const [selectedLimitTest, setSelectedLimitTest] = usePersistedModuleState('inorganic:selectedLimitTest', 'chloride');
+  const [limitSampleG, setLimitSampleG] = usePersistedModuleState('inorganic:limitSampleG', 1.0);
+  const [limitStandardMg, setLimitStandardMg] = usePersistedModuleState('inorganic:limitStandardMg', 0.25);
+  const [limitComparison, setLimitComparison] = usePersistedModuleState('inorganic:limitComparison', 'pass');
 
   // Exp 2: Inorganic Preparations State
-  const [selectedPrep, setSelectedPrep] = useState('alum');
-  const [actualYieldG, setActualYieldG] = useState(8.2);
-  const [theoreticalYieldG, setTheoreticalYieldG] = useState(10.0);
+  const [selectedPrep, setSelectedPrep] = usePersistedModuleState('inorganic:selectedPrep', 'alum');
+  const [actualYieldG, setActualYieldG] = usePersistedModuleState('inorganic:actualYieldG', 8.2);
+  const [theoreticalYieldG, setTheoreticalYieldG] = usePersistedModuleState('inorganic:theoreticalYieldG', 10.0);
 
   // Exp 3: Tests for Purity State
   const [bentoniteVolMl, setBentoniteVolMl] = useState(26.0);
@@ -790,11 +795,55 @@ export default function InorganicModule({ initialTab, navNonce }) {
         </div>
       )}
 
+      {['titration', 'limit_tests', 'preparations', 'purity'].includes(activeTab) && (
+        <Experiment3DPanel
+          department="inorganic"
+          subjectCode="BP106T"
+          experimentTab={activeTab}
+          experimentId={
+            activeTab === 'titration'
+              ? 'exp_inorg_titration'
+              : activeTab === 'limit_tests'
+              ? 'exp_inorg_limit_tests'
+              : activeTab === 'preparations'
+              ? 'exp_inorg_preparations'
+              : 'exp_inorg_purity'
+          }
+          activeStepId={
+            activeTab === 'titration'
+              ? selectedAssayId
+              : activeTab === 'limit_tests'
+              ? selectedLimitTest
+              : activeTab === 'preparations'
+              ? selectedPrep
+              : 'exp3a_bentonite'
+          }
+          activeStepTitle={
+            activeTab === 'titration'
+              ? activeAssay?.name
+              : activeTab === 'limit_tests'
+              ? limitTests[selectedLimitTest]?.title
+              : undefined
+          }
+          defaultSearchQuery={
+            activeTab === 'titration'
+              ? 'burette titration flask'
+              : activeTab === 'limit_tests'
+              ? selectedLimitTest === 'arsenic'
+                ? 'gutzeit apparatus arsenic'
+                : 'nessler cylinder glassware'
+              : 'inorganic laboratory glassware'
+          }
+        />
+      )}
+
       {activeTab !== 'diagrams' && (
         <ResourceConnector
           department="inorganic"
           subjectCode="BP106T"
           topic={activeTab === 'titration' ? 'burette' : 'nessler'}
+          experimentTab={activeTab}
+          hideExperiment3DPanel={['titration', 'limit_tests', 'preparations', 'purity'].includes(activeTab)}
           defaultSearchQuery={
             activeTab === 'titration'
               ? 'volumetric titration indicator'

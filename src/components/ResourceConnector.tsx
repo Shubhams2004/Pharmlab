@@ -35,6 +35,12 @@ import {
   VisualMediaItem
 } from '../modules/visual-library/types';
 import Asset3DConnector from '../modules/assets-3d/Asset3DConnector';
+import Experiment3DPanel from '../modules/assets-3d/Experiment3DPanel';
+import {
+  ExperimentStepSpec,
+  getExperimentById,
+  getExperimentForWorkspace
+} from '../modules/assets-3d/experimentCatalog';
 import {
   deleteVisual,
   getAllVisuals,
@@ -48,9 +54,14 @@ interface ResourceConnectorProps {
   topic?: string;
   experimentId?: string;
   experiment?: string;
+  experimentTab?: string;
+  experimentSteps?: ExperimentStepSpec[];
+  activeStepId?: string;
+  activeStepTitle?: string;
   equipment?: string;
   defaultSearchQuery?: string;
   title?: string;
+  hideExperiment3DPanel?: boolean;
 }
 
 export default function ResourceConnector({
@@ -60,9 +71,14 @@ export default function ResourceConnector({
   topic,
   experimentId,
   experiment,
+  experimentTab,
+  experimentSteps,
+  activeStepId,
+  activeStepTitle,
   equipment,
   defaultSearchQuery = '',
-  title = 'Linked Visuals & Textbook References'
+  title = 'Linked Visuals & Textbook References',
+  hideExperiment3DPanel = false
 }: ResourceConnectorProps) {
   const {
     openKnowledgeLibrary,
@@ -535,24 +551,45 @@ export default function ResourceConnector({
         </div>
       )}
 
-      <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-        <Asset3DConnector
-          workspaceDepartment={department}
-          subjectCode={subjectCode}
-          unitNo={unitNo}
-          topicTitle={topic}
-          experimentId={experimentId}
-          experimentTitle={experiment}
-          defaultSearchQuery={defaultSearchQuery || equipment || topic}
-          defaultCategory={equipment ? 'apparatus' : 'other'}
-          title="Linked 3D Models & Apparatus Foundation"
-          subtitle={
-            equipment
-              ? `Inspect or attach real GLB/glTF/STL apparatus models for ${equipment}`
-              : undefined
-          }
-        />
-      </div>
+      {!hideExperiment3DPanel && (
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+          {getExperimentById(experimentId) ||
+          getExperimentForWorkspace(department, experimentTab) ||
+          experimentId ||
+          experiment ? (
+            <Experiment3DPanel
+              department={department}
+              experimentId={experimentId}
+              experimentTitle={experiment}
+              experimentTab={experimentTab}
+              subjectCode={subjectCode}
+              unitNo={unitNo}
+              topicTitle={topic}
+              activeStepId={activeStepId}
+              activeStepTitle={activeStepTitle}
+              experimentSteps={experimentSteps}
+              defaultSearchQuery={defaultSearchQuery || equipment || topic}
+            />
+          ) : (
+            <Asset3DConnector
+              workspaceDepartment={department}
+              subjectCode={subjectCode}
+              unitNo={unitNo}
+              topicTitle={topic}
+              experimentId={experimentId}
+              experimentTitle={experiment}
+              defaultSearchQuery={defaultSearchQuery || equipment || topic}
+              defaultCategory={equipment ? 'apparatus' : 'other'}
+              title="Linked 3D Models & Apparatus Foundation"
+              subtitle={
+                equipment
+                  ? `Inspect or attach real GLB/glTF/STL apparatus models for ${equipment}`
+                  : undefined
+              }
+            />
+          )}
+        </div>
+      )}
 
       <ImageViewerModal
         item={viewerItem}

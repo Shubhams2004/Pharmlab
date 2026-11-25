@@ -17,10 +17,13 @@ import {
   getCustom3DCategories,
   isSameSyllabusAssociation
 } from './asset3dDb';
+import { ExperimentStepSpec } from './experimentCatalog';
 import {
   Asset3DItem,
   BPharmDepartmentId,
   Custom3DCategory,
+  EXPERIMENT_ROLE_LABELS,
+  ExperimentAssetRole,
   formatBytes,
   get3DCategoryLabel,
   getAsset3DAvailability,
@@ -28,7 +31,15 @@ import {
 } from './types';
 import Universal3DViewer from './Universal3DViewer';
 
-type LinkGranularity = 'subtopic' | 'topic' | 'objective' | 'unit' | 'subject' | 'experiment' | 'structure';
+type LinkGranularity =
+  | 'step'
+  | 'experiment'
+  | 'subtopic'
+  | 'topic'
+  | 'objective'
+  | 'unit'
+  | 'subject'
+  | 'structure';
 
 interface Asset3DLibraryPickerModalProps {
   isOpen: boolean;
@@ -50,6 +61,11 @@ interface Asset3DLibraryPickerModalProps {
   learningObjective?: string;
   experimentId?: string;
   experimentTitle?: string;
+  experimentTab?: string;
+  experimentSteps?: ExperimentStepSpec[];
+  selectedStepId?: string;
+  selectedStepTitle?: string;
+  defaultExperimentRole?: ExperimentAssetRole;
   structureId?: string;
   structureName?: string;
   linkedAssetIds?: string[];
@@ -75,6 +91,11 @@ export default function Asset3DLibraryPickerModal({
   learningObjective,
   experimentId,
   experimentTitle,
+  experimentTab,
+  experimentSteps = [],
+  selectedStepId,
+  selectedStepTitle,
+  defaultExperimentRole = 'apparatus',
   structureId,
   structureName,
   linkedAssetIds = []
@@ -86,23 +107,35 @@ export default function Asset3DLibraryPickerModal({
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const defaultGranularity: LinkGranularity = selectedSubtopic
-    ? 'subtopic'
-    : structureId
-    ? 'structure'
-    : experimentId || experimentTitle
-    ? 'experiment'
-    : topicId || topicTitle
-    ? 'topic'
-    : unitNo || unitId
-    ? 'unit'
-    : 'subject';
+  const defaultGranularity: LinkGranularity =
+    selectedStepId || selectedStepTitle
+      ? 'step'
+      : selectedSubtopic
+      ? 'subtopic'
+      : structureId
+      ? 'structure'
+      : experimentId || experimentTitle
+      ? 'experiment'
+      : topicId || topicTitle
+      ? 'topic'
+      : unitNo || unitId
+      ? 'unit'
+      : 'subject';
 
   const [granularity, setGranularity] = useState<LinkGranularity>(defaultGranularity);
   const [chosenSubtopic, setChosenSubtopic] = useState<string>(selectedSubtopic || subtopics[0] || '');
   const [chosenObjective, setChosenObjective] = useState<string>(
     learningObjective || subjectObjectives[0] || ''
   );
+  const [chosenStepId, setChosenStepId] = useState<string>(
+    selectedStepId || experimentSteps[0]?.id || ''
+  );
+  const [chosenStepTitle, setChosenStepTitle] = useState<string>(
+    selectedStepTitle || experimentSteps[0]?.title || ''
+  );
+  const [chosenRole, setChosenRole] = useState<ExperimentAssetRole>(defaultExperimentRole);
+  const [setupNote, setSetupNote] = useState('');
+  const [focusComponentName, setFocusComponentName] = useState('');
 
   // Lazy single-slot 3D preview inside modal before linking
   const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
@@ -130,6 +163,11 @@ export default function Asset3DLibraryPickerModal({
     setGranularity(defaultGranularity);
     setChosenSubtopic(selectedSubtopic || subtopics[0] || '');
     setChosenObjective(learningObjective || subjectObjectives[0] || '');
+    setChosenStepId(selectedStepId || experimentSteps[0]?.id || '');
+    setChosenStepTitle(selectedStepTitle || experimentSteps[0]?.title || '');
+    setChosenRole(defaultExperimentRole);
+    setSetupNote('');
+    setFocusComponentName('');
     setLoading(true);
     setCustomCats(getCustom3DCategories());
     getAll3DAssets()
@@ -143,6 +181,10 @@ export default function Asset3DLibraryPickerModal({
     subtopics,
     learningObjective,
     subjectObjectives,
+    selectedStepId,
+    selectedStepTitle,
+    experimentSteps,
+    defaultExperimentRole,
     clearPreview
   ]);
 
@@ -222,6 +264,25 @@ export default function Asset3DLibraryPickerModal({
           learningObjective: chosenObjective.trim() || undefined
         };
       }
+      if (granularity === 'step') {
+        const matchedStep = experimentSteps.find((s) => s.id === chosenStepId);
+        return {
+          ...base,
+          unitId,
+          unitNo,
+          unitTitle,
+          topicId,
+          topicTitle,
+          experimentId,
+          experimentTitle,
+          experimentTab,
+          experimentRole: chosenRole,
+          stepId: chosenStepId.trim() || undefined,
+          stepTitle: matchedStep?.title || chosenStepTitle.trim() || undefined,
+          setupNote: setupNote.trim() || undefined,
+          focusComponentName: focusComponentName.trim() || undefined
+        };
+      }
       if (granularity === 'experiment') {
         return {
           ...base,
@@ -231,7 +292,11 @@ export default function Asset3DLibraryPickerModal({
           topicId,
           topicTitle,
           experimentId,
-          experimentTitle
+          experimentTitle,
+          experimentTab,
+          experimentRole: chosenRole,
+          setupNote: setupNote.trim() || undefined,
+          focusComponentName: focusComponentName.trim() || undefined
         };
       }
       return {
@@ -261,6 +326,13 @@ export default function Asset3DLibraryPickerModal({
       chosenObjective,
       experimentId,
       experimentTitle,
+      experimentTab,
+      experimentSteps,
+      chosenStepId,
+      chosenStepTitle,
+      chosenRole,
+      setupNote,
+      focusComponentName,
       structureId,
       structureName
     ]
@@ -305,12 +377,20 @@ export default function Asset3DLibraryPickerModal({
   };
 
   const granularityOptions: Array<{ id: LinkGranularity; label: string; enabled: boolean }> = [
+    {
+      id: 'step',
+      label: 'Experiment Step',
+      enabled: Boolean(
+        (experimentId || experimentTitle) &&
+          (experimentSteps.length > 0 || selectedStepId || selectedStepTitle)
+      )
+    },
+    { id: 'experiment', label: 'Experiment', enabled: Boolean(experimentId || experimentTitle) },
     { id: 'subtopic', label: 'Subtopic', enabled: Boolean(topicId || topicTitle || subtopics.length > 0 || selectedSubtopic) },
     { id: 'topic', label: 'Topic', enabled: Boolean(topicId || topicTitle) },
     { id: 'objective', label: 'Objective', enabled: Boolean(subjectObjectives.length > 0 || learningObjective) },
     { id: 'unit', label: 'Unit', enabled: Boolean(unitNo || unitId) },
     { id: 'subject', label: 'Subject', enabled: Boolean(subjectCode) },
-    { id: 'experiment', label: 'Experiment', enabled: Boolean(experimentId || experimentTitle) },
     { id: 'structure', label: 'Anatomy Structure', enabled: Boolean(structureId || structureName) }
   ].filter((o) => o.enabled);
 
@@ -422,6 +502,71 @@ export default function Asset3DLibraryPickerModal({
                   )}
                 </div>
               )}
+
+              {(granularity === 'step' || granularity === 'experiment') && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {granularity === 'step' && (
+                    <div className="sm:col-span-2">
+                      {experimentSteps.length > 0 ? (
+                        <select
+                          aria-label="Choose experiment step to link"
+                          value={chosenStepId}
+                          onChange={(e) => {
+                            const nextId = e.target.value;
+                            setChosenStepId(nextId);
+                            const hit = experimentSteps.find((s) => s.id === nextId);
+                            setChosenStepTitle(hit?.title || '');
+                          }}
+                          className="w-full min-h-[36px] px-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                        >
+                          {experimentSteps.map((st) => (
+                            <option key={st.id} value={st.id}>
+                              {st.title}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={chosenStepTitle}
+                          onChange={(e) => setChosenStepTitle(e.target.value)}
+                          placeholder="Specify practical step..."
+                          className="w-full min-h-[36px] px-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  <select
+                    aria-label="Choose experimental asset role"
+                    value={chosenRole}
+                    onChange={(e) => setChosenRole(e.target.value as ExperimentAssetRole)}
+                    className="min-h-[36px] px-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                  >
+                    {(Object.keys(EXPERIMENT_ROLE_LABELS) as ExperimentAssetRole[]).map((roleKey) => (
+                      <option key={roleKey} value={roleKey}>
+                        Role: {EXPERIMENT_ROLE_LABELS[roleKey]}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="text"
+                    value={focusComponentName}
+                    onChange={(e) => setFocusComponentName(e.target.value)}
+                    placeholder="Focus part / mesh name (optional)"
+                    className="min-h-[36px] px-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                  />
+
+                  <input
+                    type="text"
+                    value={setupNote}
+                    onChange={(e) => setSetupNote(e.target.value)}
+                    placeholder="Setup / apparatus note (optional, e.g., Scrubs H2S before HgCl2 disc)"
+                    className="sm:col-span-2 min-h-[36px] px-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -508,6 +653,8 @@ export default function Asset3DLibraryPickerModal({
                 (granularity === defaultGranularity &&
                   granularity !== 'subtopic' &&
                   granularity !== 'objective' &&
+                  granularity !== 'step' &&
+                  granularity !== 'experiment' &&
                   linkedAssetIds.includes(item.id));
               const busy = linkingId === item.id;
               const canPreview = getAsset3DAvailability(item).canOpenViewer;

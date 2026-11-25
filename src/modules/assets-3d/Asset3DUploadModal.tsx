@@ -18,6 +18,8 @@ import {
   BPharmDepartmentId,
   Custom3DCategory,
   detectModelFormatFromName,
+  EXPERIMENT_ROLE_LABELS,
+  ExperimentAssetRole,
   formatBytes,
   SyllabusAssociation
 } from './types';
@@ -34,6 +36,12 @@ export interface Asset3DInitialContext {
   subtopicTitle?: string;
   experimentId?: string;
   experimentTitle?: string;
+  experimentTab?: string;
+  experimentRole?: ExperimentAssetRole;
+  stepId?: string;
+  stepTitle?: string;
+  setupNote?: string;
+  focusComponentName?: string;
   structureId?: string;
   structureName?: string;
   defaultTitle?: string;
@@ -90,6 +98,8 @@ export default function Asset3DUploadModal({
   const [selectedTopicId, setSelectedTopicId] = useState('');
   const [manualSubtopic, setManualSubtopic] = useState('');
   const [manualExperiment, setManualExperiment] = useState('');
+  const [experimentRole, setExperimentRole] = useState<ExperimentAssetRole>('apparatus');
+  const [setupNote, setSetupNote] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const [fetchProgress, setFetchProgress] = useState<string | null>(null);
@@ -120,6 +130,8 @@ export default function Asset3DUploadModal({
     setSelectedTopicId(initialContext?.topicId || '');
     setManualSubtopic(initialContext?.subtopicTitle || '');
     setManualExperiment(initialContext?.experimentTitle || '');
+    setExperimentRole(initialContext?.experimentRole || 'apparatus');
+    setSetupNote(initialContext?.setupNote || '');
     setCreator(initialContext?.defaultCreator || '');
     setSourceName(initialContext?.defaultSourceName || 'Local / User Upload');
     setSourceUrl(initialContext?.defaultSourceUrl || '');
@@ -355,6 +367,13 @@ export default function Asset3DUploadModal({
           subtopicTitle: manualSubtopic.trim() || initialContext?.subtopicTitle,
           experimentId: initialContext?.experimentId,
           experimentTitle: manualExperiment.trim() || initialContext?.experimentTitle,
+          experimentTab: initialContext?.experimentTab,
+          experimentRole:
+            initialContext?.experimentId || manualExperiment.trim() ? experimentRole : undefined,
+          stepId: initialContext?.stepId,
+          stepTitle: initialContext?.stepTitle,
+          setupNote: setupNote.trim() || undefined,
+          focusComponentName: initialContext?.focusComponentName,
           structureId: initialContext?.structureId,
           structureName: initialContext?.structureName
         });
@@ -713,7 +732,41 @@ export default function Asset3DUploadModal({
                 placeholder="Associated Lab Experiment (Optional)"
                 className="min-h-[38px] px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
               />
+
+              {(initialContext?.experimentId || manualExperiment.trim()) && (
+                <>
+                  <select
+                    aria-label="Experiment role for 3D model"
+                    value={experimentRole}
+                    onChange={(e) => setExperimentRole(e.target.value as ExperimentAssetRole)}
+                    className="min-h-[38px] px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                  >
+                    {(Object.keys(EXPERIMENT_ROLE_LABELS) as ExperimentAssetRole[]).map((roleKey) => (
+                      <option key={roleKey} value={roleKey}>
+                        Role: {EXPERIMENT_ROLE_LABELS[roleKey]}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="text"
+                    value={setupNote}
+                    onChange={(e) => setSetupNote(e.target.value)}
+                    placeholder={
+                      initialContext?.stepTitle
+                        ? `Step note (${initialContext.stepTitle})...`
+                        : 'Setup or apparatus role note (Optional)'
+                    }
+                    className="min-h-[38px] px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                  />
+                </>
+              )}
             </div>
+            {initialContext?.stepTitle && (
+              <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                Linked Practical Step: {initialContext.stepTitle}
+              </p>
+            )}
           </div>
 
           {/* Creator, Attribution & License */}

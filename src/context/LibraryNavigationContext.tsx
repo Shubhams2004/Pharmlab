@@ -69,6 +69,13 @@ export interface AcademicExplorerJumpTarget {
   subjectCode?: string | null;
   topicId?: string | null;
   structureName?: string | null;
+  experimentId?: string | null;
+  experimentTitle?: string | null;
+  experimentTab?: string | null;
+  stepId?: string | null;
+  stepTitle?: string | null;
+  focusComponentName?: string | null;
+  returnTab?: string | null;
   nonce: number;
 }
 

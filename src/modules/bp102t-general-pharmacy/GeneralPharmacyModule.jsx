@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { FlaskConical, Calculator, Scale, Droplet, CheckCircle2, BookOpen, Tag, Package } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
+import { usePersistedModuleState } from '../../components/usePersistedModuleState';
 import { DepartmentHeader, ResponsiveTableWrapper, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import Experiment3DPanel from '../assets-3d/Experiment3DPanel';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 
 const GENERAL_PHARMACY_TABS = [
@@ -27,11 +29,14 @@ const BP102_UNITS = [
 
 export default function GeneralPharmacyModule({ initialTab, navNonce }) {
   const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
-  const [activeTab, setActiveTab] = useState(initialTab || 'experiments');
+  const [activeTab, setActiveTab] = usePersistedModuleState(
+    'general_pharmacy:activeTab',
+    initialTab || 'experiments'
+  );
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
-  }, [initialTab, navNonce]);
+  }, [initialTab, navNonce, setActiveTab]);
 
   useEffect(() => {
     const label = GENERAL_PHARMACY_TABS.find((t) => t.id === activeTab)?.label || null;
@@ -64,10 +69,10 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
   const [targetAlcohol, setTargetAlcohol] = useState(25);
   const [finalVolumeMl, setFinalVolumeMl] = useState(500);
 
-  const [drugWeight, setDrugWeight] = useState(1.0);
-  const [displacementValue, setDisplacementValue] = useState(0.7);
-  const [suppositoryMouldSize, setSuppositoryMouldSize] = useState(2.0);
-  const [numSuppositories, setNumSuppositories] = useState(10);
+  const [drugWeight, setDrugWeight] = usePersistedModuleState('general_pharmacy:drugWeight', 1.0);
+  const [displacementValue, setDisplacementValue] = usePersistedModuleState('general_pharmacy:displacementValue', 0.7);
+  const [suppositoryMouldSize, setSuppositoryMouldSize] = usePersistedModuleState('general_pharmacy:suppositoryMouldSize', 2.0);
+  const [numSuppositories, setNumSuppositories] = usePersistedModuleState('general_pharmacy:numSuppositories', 10);
 
   const [isoDrugGrams, setIsoDrugGrams] = useState(1.0);
   const [isoVolumeMl, setIsoVolumeMl] = useState(100);
@@ -78,9 +83,9 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
   const [prescribedDose, setPrescribedDose] = useState(500);
 
   // New BP107P Compounding Workbench State
-  const [selectedPrepId, setSelectedPrepId] = useState('sol_ammonium');
-  const [batchFactor, setBatchFactor] = useState(1.0);
-  const [completedSteps, setCompletedSteps] = useState({});
+  const [selectedPrepId, setSelectedPrepId] = usePersistedModuleState('general_pharmacy:selectedPrepId', 'sol_ammonium');
+  const [batchFactor, setBatchFactor] = usePersistedModuleState('general_pharmacy:batchFactor', 1.0);
+  const [completedSteps, setCompletedSteps] = usePersistedModuleState('general_pharmacy:completedSteps', {});
 
   // Posology & Proof Spirit / Ratio Dilution State (BP102T Unit II)
   const [adultDoseMg, setAdultDoseMg] = useState(500);
@@ -940,9 +945,29 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
         </div>
       )}
 
+      {['experiments', 'suppository'].includes(activeTab) && (
+        <Experiment3DPanel
+          department="general_pharmacy"
+          subjectCode="BP102T"
+          experimentTab={activeTab}
+          experimentId={
+            activeTab === 'suppository' ? 'exp_pharm_suppository' : 'exp_pharm_compounding'
+          }
+          activeStepId={activeTab === 'suppository' ? 'mould_calibration' : selectedPrep.id}
+          activeStepTitle={activeTab === 'suppository' ? 'Mould Capacity & Displacement Value Calibration' : `${selectedPrep.code}: ${selectedPrep.name}`}
+          defaultSearchQuery={
+            activeTab === 'suppository'
+              ? 'suppository mould pharmaceutics'
+              : 'mortar pestle compounding glassware'
+          }
+        />
+      )}
+
       <ResourceConnector
         department="general_pharmacy"
         topic="titration"
+        experimentTab={activeTab}
+        hideExperiment3DPanel={['experiments', 'suppository'].includes(activeTab)}
         defaultSearchQuery={
           activeTab === 'posology_proof'
             ? 'posology pediatric proof spirit'

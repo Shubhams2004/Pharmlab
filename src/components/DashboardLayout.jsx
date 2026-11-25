@@ -6,14 +6,15 @@ import {
   PanelLeftOpen,
   Search,
   SlidersHorizontal,
-  MoreVertical
+  MoreVertical,
+  Sun,
+  Moon
 } from 'lucide-react';
 import {
   DEFAULT_TEXT_SIZE,
   MAX_TEXT_SIZE,
   MIN_TEXT_SIZE
 } from '../utils/studyWorkspace';
-import ThemeToggle from './ThemeToggle';
 import SubjectNavigation, { SUBJECT_NAV_ITEMS } from './SubjectNavigation';
 import { PWAInstallButton } from './PWAControls';
 
@@ -243,8 +244,6 @@ export default function DashboardLayout({
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <PWAInstallButton />
 
-            <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-
             <button
               type="button"
               onClick={onOpenPalette}
@@ -267,15 +266,15 @@ export default function DashboardLayout({
               <SlidersHorizontal className="w-4 h-4 text-slate-600 dark:text-slate-300" />
             </button>
 
-            {/* Three-dot Menu (Text Size Controls) */}
+            {/* Three-dot Menu (Theme & Text Size Controls) */}
             <div className="relative" ref={textMenuRef}>
               <button
                 type="button"
                 onClick={() => setTextMenuOpen((v) => !v)}
                 className="inline-flex items-center justify-center w-9 sm:w-10 h-9 sm:h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300 transition-colors shrink-0"
-                aria-label="More options and text size"
+                aria-label="More options, theme and text size"
                 aria-expanded={textMenuOpen}
-                title="Text size & display options"
+                title="Theme & text size options"
               >
                 <MoreVertical className="w-4 h-4 text-slate-600 dark:text-slate-300" />
               </button>
@@ -283,9 +282,57 @@ export default function DashboardLayout({
               {textMenuOpen && (
                 <div
                   role="menu"
-                  aria-label="Text size options"
-                  className="absolute right-0 top-full mt-2 z-50 w-56 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-3 space-y-2.5"
+                  aria-label="Display, theme and text size options"
+                  className="absolute right-0 top-full mt-2 z-50 w-60 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-3 space-y-3"
                 >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        Appearance
+                      </span>
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        {theme === 'dark' ? 'Dark' : 'Light'}
+                      </span>
+                    </div>
+                    <div
+                      role="group"
+                      aria-label="Color theme"
+                      className="grid grid-cols-2 gap-1.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (theme === 'dark') onToggleTheme?.();
+                        }}
+                        aria-pressed={theme !== 'dark'}
+                        className={`min-h-[36px] px-2.5 rounded-xl border text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                          theme !== 'dark'
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500/50'
+                        }`}
+                      >
+                        <Sun className="w-3.5 h-3.5" />
+                        <span>Light</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (theme !== 'dark') onToggleTheme?.();
+                        }}
+                        aria-pressed={theme === 'dark'}
+                        className={`min-h-[36px] px-2.5 rounded-xl border text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                          theme === 'dark'
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-emerald-500/50'
+                        }`}
+                      >
+                        <Moon className="w-3.5 h-3.5" />
+                        <span>Dark</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-200 dark:border-slate-800 pt-2.5 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                       Text Size
@@ -327,6 +374,7 @@ export default function DashboardLayout({
                     >
                       A+
                     </button>
+                  </div>
                   </div>
                 </div>
               )}

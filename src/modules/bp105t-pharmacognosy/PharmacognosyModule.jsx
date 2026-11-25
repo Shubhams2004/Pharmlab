@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Microscope, Leaf, FlaskConical, Ruler, BookOpen, Tag, ZoomIn } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
+import { usePersistedModuleState } from '../../components/usePersistedModuleState';
 import { BUILT_IN_VISUALS } from '../visual-library/builtInVisuals';
 import ImageViewerModal from '../visual-library/ImageViewerModal';
 import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import Experiment3DPanel from '../assets-3d/Experiment3DPanel';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 
 const BOTANICAL_PLATE = BUILT_IN_VISUALS.find((v) => v.id === 'builtin_botanical_microscopy') || null;
@@ -28,12 +30,15 @@ const COG_THEORY_UNITS = [
 
 export default function PharmacognosyModule({ initialTab, navNonce }) {
   const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
-  const [activeTab, setActiveTab] = useState(initialTab || 'leaf_constants');
+  const [activeTab, setActiveTab] = usePersistedModuleState(
+    'pharmacognosy:activeTab',
+    initialTab || 'leaf_constants'
+  );
   const [viewerItem, setViewerItem] = useState(null);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
-  }, [initialTab, navNonce]);
+  }, [initialTab, navNonce, setActiveTab]);
 
   useEffect(() => {
     const label = PHARMACOGNOSY_TABS.find((t) => t.id === activeTab)?.label || null;
@@ -56,24 +61,24 @@ export default function PharmacognosyModule({ initialTab, navNonce }) {
     }
   };
 
-  // Existing Exp 8 & 9 States
-  const [stomataCount, setStomataCount] = useState('');
-  const [epidermalCount, setEpidermalCount] = useState('');
-  const [stomatalIndexResult, setStomatalIndexResult] = useState(null);
+  // Existing Exp 8 & 9 States (persisted across Explorer round-trips)
+  const [stomataCount, setStomataCount] = usePersistedModuleState('pharmacognosy:stomataCount', '');
+  const [epidermalCount, setEpidermalCount] = usePersistedModuleState('pharmacognosy:epidermalCount', '');
+  const [stomatalIndexResult, setStomatalIndexResult] = usePersistedModuleState('pharmacognosy:stomatalIndexResult', null);
 
-  const [veinCount, setVeinCount] = useState('');
-  const [areaCount, setAreaCount] = useState('');
-  const [veinletResult, setVeinletResult] = useState(null);
+  const [veinCount, setVeinCount] = usePersistedModuleState('pharmacognosy:veinCount', '');
+  const [areaCount, setAreaCount] = usePersistedModuleState('pharmacognosy:areaCount', '');
+  const [veinletResult, setVeinletResult] = usePersistedModuleState('pharmacognosy:veinletResult', null);
 
   // Exp 8 & 9 extras
   const [stomatalNumArea, setStomatalNumArea] = useState(4);
   const [veinIsletCount, setVeinIsletCount] = useState(44);
 
   // Exp 1: Morphological Study of Unit V Plants (20 drugs)
-  const [plantFilter, setPlantFilter] = useState('All');
+  const [plantFilter, setPlantFilter] = usePersistedModuleState('pharmacognosy:plantFilter', 'All');
 
   // Exp 2-5: Powder Microscopy
-  const [selectedPowderExp, setSelectedPowderExp] = useState('exp2');
+  const [selectedPowderExp, setSelectedPowderExp] = usePersistedModuleState('pharmacognosy:selectedPowderExp', 'exp2');
 
   // Exp 6, 7, 10, 11: Physicochemical QC Calculators
   const [lodInitial, setLodInitial] = useState(5.0);
@@ -90,9 +95,9 @@ export default function PharmacognosyModule({ initialTab, navNonce }) {
   const [foreignMatterG, setForeignMatterG] = useState(0.75);
 
   // Exp 12: Eyepiece Micrometry
-  const [stageDivs, setStageDivs] = useState(3);
-  const [ocularDivs, setOcularDivs] = useState(20);
-  const [measuredOcularDivs, setMeasuredOcularDivs] = useState(16);
+  const [stageDivs, setStageDivs] = usePersistedModuleState('pharmacognosy:stageDivs', 3);
+  const [ocularDivs, setOcularDivs] = usePersistedModuleState('pharmacognosy:ocularDivs', 20);
+  const [measuredOcularDivs, setMeasuredOcularDivs] = usePersistedModuleState('pharmacognosy:measuredOcularDivs', 16);
 
   // Exp 13: Lycopodium Spore Method
   const [lycoN, setLycoN] = useState(24);
@@ -703,9 +708,47 @@ export default function PharmacognosyModule({ initialTab, navNonce }) {
         </div>
       )}
 
+      {['leaf_constants', 'morphology', 'powder', 'physicochemical'].includes(activeTab) && (
+        <Experiment3DPanel
+          department="pharmacognosy"
+          subjectCode="BP105T"
+          experimentTab={activeTab}
+          experimentId={
+            activeTab === 'leaf_constants'
+              ? 'exp_cog_leaf_micrometry'
+              : activeTab === 'powder'
+              ? 'exp_cog_powder'
+              : activeTab === 'morphology'
+              ? 'exp_cog_morphology'
+              : 'exp_cog_physicochemical'
+          }
+          activeStepId={
+            activeTab === 'powder'
+              ? selectedPowderExp
+              : activeTab === 'leaf_constants'
+              ? 'stomatal_index'
+              : activeTab === 'morphology'
+              ? 'unit5_plants'
+              : 'lod_swelling'
+          }
+          activeStepTitle={
+            activeTab === 'powder'
+              ? powderExperiments[selectedPowderExp]?.title
+              : undefined
+          }
+          defaultSearchQuery={
+            activeTab === 'physicochemical'
+              ? 'crucible measuring cylinder'
+              : 'compound microscope botanical cell'
+          }
+        />
+      )}
+
       <ResourceConnector
         department="pharmacognosy"
         topic={activeTab === 'morphology' ? 'stomata' : 'microscopy'}
+        experimentTab={activeTab}
+        hideExperiment3DPanel={['leaf_constants', 'morphology', 'powder', 'physicochemical'].includes(activeTab)}
         defaultSearchQuery={
           activeTab === 'morphology'
             ? 'Withania Ocimum Terminalia'
