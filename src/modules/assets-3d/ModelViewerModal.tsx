@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box,
+  Compass,
   Edit3,
   ExternalLink,
   GraduationCap,
@@ -13,6 +14,7 @@ import {
   Trash2,
   X
 } from 'lucide-react';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
 import Asset3DDeleteModal from './Asset3DDeleteModal';
 import Asset3DEditModal from './Asset3DEditModal';
@@ -50,6 +52,7 @@ export default function ModelViewerModal({
   onAssetUpdated,
   onAssetDeleted
 }: ModelViewerModalProps) {
+  const { openAcademicExplorer } = useLibraryNavigation();
   const [liveAsset, setLiveAsset] = useState<Asset3DItem | null>(asset);
   const [customCategories, setCustomCategories] = useState<Custom3DCategory[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
@@ -209,6 +212,19 @@ export default function ModelViewerModal({
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  openAcademicExplorer({ assetId: liveAsset.id });
+                }}
+                className="min-h-[36px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1.5"
+                title="Open full Academic 3D Explorer workspace"
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">3D Explorer</span>
+                <span className="sm:hidden">Explore</span>
+              </button>
               <button
                 type="button"
                 onClick={handleToggleFavorite}

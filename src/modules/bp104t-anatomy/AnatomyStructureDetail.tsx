@@ -649,8 +649,13 @@ export default function AnatomyStructureDetail({
           <Asset3DConnector
             departmentId="anatomy"
             subjectCode="BP104T"
+            subjectTitle="Human Anatomy and Physiology I"
+            unitNo="BP104T"
             structureId={structure.id}
             structureName={structure.name}
+            subtopics={structure.components.map((c) => c.name)}
+            linkedStructureIds={[structure.id, ...(structure.relatedStructureIds || [])]}
+            learningDomainMode="anatomy_physiology"
             defaultSearchQuery={structure.name}
             defaultCategory="anatomy"
             title="3D Anatomical Models"

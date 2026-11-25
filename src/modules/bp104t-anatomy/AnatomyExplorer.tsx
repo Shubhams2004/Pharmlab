@@ -17,6 +17,8 @@ import {
   ENGINE_TOPICS
 } from '../../data/academicEngineRegistry';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { getAll3DAssets } from '../assets-3d/asset3dDb';
+import { Asset3DItem } from '../assets-3d/types';
 import {
   AnatomicalCategoryId,
   AnatomicalStructureEntity,
@@ -65,6 +67,27 @@ export default function AnatomyExplorer({
   const [recentEntries, setRecentEntries] = useState<RecentStructureEntry[]>(() =>
     getRecentStructures()
   );
+  const [assets3d, setAssets3d] = useState<Asset3DItem[]>([]);
+
+  useEffect(() => {
+    getAll3DAssets()
+      .then((list) => setAssets3d(list))
+      .catch(() => {});
+  }, []);
+
+  const linked3dCountByStructure = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const a of assets3d) {
+      const seen = new Set<string>();
+      for (const l of a.syllabusLinks) {
+        if (l.structureId && !seen.has(l.structureId)) {
+          seen.add(l.structureId);
+          map[l.structureId] = (map[l.structureId] || 0) + 1;
+        }
+      }
+    }
+    return map;
+  }, [assets3d]);
 
   useEffect(() => {
     if (initialStructureId) {
@@ -395,6 +418,7 @@ export default function AnatomyExplorer({
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl divide-y divide-slate-200 dark:divide-slate-800 overflow-hidden">
           {filteredStructures.map((item) => {
             const hasVisual = item.visualIds.length > 0 || Boolean(item.anatomyDiagramKey);
+            const count3d = linked3dCountByStructure[item.id] || 0;
             return (
               <button
                 key={item.id}
@@ -425,6 +449,7 @@ export default function AnatomyExplorer({
                     <p className="text-xs text-slate-500 dark:text-slate-500">
                       {item.categories.map((c) => getCategoryLabel(c)).join(' · ')}
                       {hasVisual ? ' · Diagram / Plate linked' : ''}
+                      {count3d > 0 ? ` · ${count3d} 3D model${count3d === 1 ? '' : 's'}` : ''}
                     </p>
                   </div>
                 </div>
@@ -435,37 +460,44 @@ export default function AnatomyExplorer({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredStructures.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleOpenStructure(item.id)}
-              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-left flex flex-col justify-between space-y-3 transition-colors group"
-            >
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <span className="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
-                    #{String(item.catalogNumber).padStart(2, '0')}
-                  </span>
-                  <span className="truncate">{getCategoryLabel(item.primaryCategory)}</span>
+          {filteredStructures.map((item) => {
+            const count3d = linked3dCountByStructure[item.id] || 0;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleOpenStructure(item.id)}
+                className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-left flex flex-col justify-between space-y-3 transition-colors group"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                      #{String(item.catalogNumber).padStart(2, '0')}
+                    </span>
+                    <span className="truncate">{getCategoryLabel(item.primaryCategory)}</span>
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                    {item.name}
+                  </h3>
+                  {item.overview && (
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                      {item.overview}
+                    </p>
+                  )}
                 </div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
-                  {item.name}
-                </h3>
-                {item.overview && (
-                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                    {item.overview}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
-                <span className="truncate">
-                  {item.categories.length > 1 ? `+${item.categories.length - 1} cross-system` : 'View details'}
-                </span>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 shrink-0" />
-              </div>
-            </button>
-          ))}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="truncate">
+                    {count3d > 0
+                      ? `${count3d} 3D linked`
+                      : item.categories.length > 1
+                      ? `+${item.categories.length - 1} cross-system`
+                      : 'View details'}
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 shrink-0" />
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

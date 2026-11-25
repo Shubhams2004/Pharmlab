@@ -40,6 +40,7 @@ export const QUICK_INDEX = [
   { title: 'Scientific Resource Hub (PubMed, Europe PMC, OpenStax, Wikimedia)', sub: 'Discover Open-Access Papers, Textbooks, Reference Chapters & Scientific Visuals', module: 'resource_hub', tab: null, cat: 'Resource Hub', icon: Globe },
   { title: 'Academic Visual Learning Library & Atlas', sub: 'Interactive Diagrams, Structure Labels, Mechanisms, MCQs & Open-Access Search', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
   { title: 'Universal Scientific 3D Asset Engine', sub: 'Interactive GLB / glTF / STL Viewer, Part Isolation & Scientific 3D Repository Discovery', asset3dTab: 'library', cat: '3D Engine', icon: Box },
+  { title: 'Academic 3D Explorer (Interactive Scientific Workbench)', sub: 'Structure Inspection, X-Ray Mode, Camera Presets, Labels & Syllabus Context', module: 'explorer_3d', explorer3d: true, cat: '3D Explorer', icon: Compass },
   { title: 'Equipment & Apparatus Directory', sub: 'Compound Microscope, Gutzeit Apparatus, Nessler Cylinders & Lab Glassware', module: 'visual_library', category: 'equipment', tab: null, cat: 'Equipment', icon: Microscope },
   { title: 'Human Nephron & Glomerular Filtration (Visual Plate)', sub: 'Interactive Pins: Glomerulus, PCT, Loop of Henle, DCT & Collecting Duct', module: 'visual_library', visualId: 'builtin_nephron_anatomy', tab: null, cat: 'Anatomy', icon: Activity },
   { title: 'Diuretic Sites of Action Along the Nephron (Visual Plate)', sub: 'Pharmacology · Loop Diuretics, Thiazides, Acetazolamide & Spironolactone', module: 'visual_library', visualId: 'builtin_diuretic_pharmacology', tab: null, cat: 'Pharmacology', icon: FlaskConical },
@@ -94,6 +95,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     openReferenceCenter,
     openStudyMode,
     openAsset3DEngine,
+    openAcademicExplorer,
     openPythonStudio
   } = useLibraryNavigation();
   const [query, setQuery] = useState('');
@@ -250,8 +252,10 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
   const launchPick = (pick) => {
     if (pick.pythonStudio) {
       openPythonStudio();
+    } else if (pick.explorer3d) {
+      openAcademicExplorer();
     } else if (pick.asset3dId) {
-      openAsset3DEngine({ assetId: pick.asset3dId });
+      openAcademicExplorer({ assetId: pick.asset3dId });
     } else if (pick.asset3dTab) {
       openAsset3DEngine({ tab: pick.asset3dTab });
     } else if (pick.studyView) {

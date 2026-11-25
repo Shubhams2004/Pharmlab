@@ -21,6 +21,7 @@ import {
   FileText,
   GraduationCap,
   Box,
+  Compass,
   Terminal
 } from 'lucide-react';
 
@@ -33,6 +34,7 @@ export const SUBJECT_NAV_ITEMS = [
   { id: 'knowledge_library', label: 'Knowledge Library', group: 'Workspace', icon: Library, code: 'PDF Library' },
   { id: 'visual_library', label: 'Visual Library', group: 'Workspace', icon: Images, code: 'Scientific Atlas' },
   { id: 'assets_3d', label: '3D Asset Engine', group: 'Workspace', icon: Box, code: 'GLB / glTF / STL Viewer' },
+  { id: 'explorer_3d', label: 'Academic 3D Explorer', group: 'Workspace', icon: Compass, code: 'Interactive 3D Workbench' },
   { id: 'general_pharmacy', label: 'Pharmaceutics', group: 'Departments', icon: FlaskConical, code: 'BP102T / BP107P' },
   { id: 'anatomy', label: 'Anatomy & Physiology', group: 'Departments', icon: Activity, code: 'BP104T / BP109P' },
   { id: 'pharmacognosy', label: 'Pharmacognosy', group: 'Departments', icon: Microscope, code: 'BP105T / BP110P' },
@@ -189,6 +191,22 @@ export default function SubjectNavigation({
             <span className="flex items-center gap-2.5 truncate">
               <Box className="w-4 h-4 shrink-0" />
               <span className="truncate">3D Asset Engine</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSelectModule('explorer_3d')}
+            aria-current={activeModule === 'explorer_3d' ? 'page' : undefined}
+            className={`w-full min-h-[42px] flex items-center justify-between px-3 py-2 rounded-xl transition-colors whitespace-nowrap ${
+              activeModule === 'explorer_3d'
+                ? 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+            }`}
+          >
+            <span className="flex items-center gap-2.5 truncate">
+              <Compass className="w-4 h-4 shrink-0" />
+              <span className="truncate">Academic 3D Explorer</span>
             </span>
           </button>
 

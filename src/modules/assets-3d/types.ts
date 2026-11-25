@@ -80,13 +80,17 @@ export interface SyllabusAssociation {
   id: string;
   course: string;
   departmentId: BPharmDepartmentId;
+  syllabusId?: string;
   subjectCode?: string;
   subjectTitle?: string;
+  unitId?: string;
   unitNo?: string;
+  unitTitle?: string;
   topicId?: string;
   topicTitle?: string;
   subtopicId?: string;
   subtopicTitle?: string;
+  learningObjective?: string;
   experimentId?: string;
   experimentTitle?: string;
   structureId?: string;
@@ -231,6 +235,38 @@ export interface Discovered3DCandidate {
   tags: string[];
 }
 
+export type RenderVisualizationMode = 'solid' | 'wireframe' | 'xray';
+
+export type CameraViewPreset =
+  | 'reset'
+  | 'front'
+  | 'back'
+  | 'left'
+  | 'right'
+  | 'top'
+  | 'bottom';
+
+export interface Analyzed3DComponent {
+  id: string;
+  name: string;
+  rawNodeName: string;
+  parentName?: string;
+  hasMeaningfulName: boolean;
+  visible: boolean;
+  vertexCount: number;
+  triangleCount: number;
+  materialName?: string;
+  localCenter: [number, number, number];
+}
+
+export interface ModelAnalysisSummary {
+  componentCount: number;
+  vertexCount: number;
+  triangleCount: number;
+  dimensions?: [number, number, number];
+  components: Analyzed3DComponent[];
+}
+
 export interface ModelComponentNode {
   id: string;
   name: string;
@@ -244,6 +280,7 @@ export interface ViewerRenderSettings {
   environmentPreset: 'studio' | 'clinical_bright' | 'contrast_dark';
   keyLightIntensity: number;
   ambientIntensity: number;
+  renderMode: RenderVisualizationMode;
   wireframe: boolean;
   showGrid: boolean;
   showAxes: boolean;

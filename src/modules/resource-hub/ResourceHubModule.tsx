@@ -24,6 +24,8 @@ import {
   X
 } from 'lucide-react';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import Academic3DContentPanel from '../assets-3d/Academic3DContentPanel';
+import { mapWorkspaceDeptToBPharmDept } from '../assets-3d/types';
 import { deleteBook, getAllBooks } from '../knowledge-library/libraryDb';
 import { LibraryBookMeta } from '../knowledge-library/types';
 import { DiscoverySourceFilter } from '../visual-library/openAccessDiscovery';
@@ -490,17 +492,35 @@ export default function ResourceHubModule({
           <div className="flex items-center gap-2">
             <Compass className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <span>
-              Contextual Discovery Active: <strong>{activeContext.label}</strong> — saved or imported resources can attach directly to this subject.
+              Contextual Discovery Active: <strong>{activeContext.label}</strong> — saved or imported resources and 3D models can attach directly to this subject.
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setActiveContext(null)}
-            className="text-xs font-semibold hover:underline inline-flex items-center gap-1"
-          >
-            <X className="w-3.5 h-3.5" />
-            <span>Clear Context</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                openAsset3DEngine({
+                  tab: 'library',
+                  department: activeContext.departmentId
+                    ? mapWorkspaceDeptToBPharmDept(activeContext.departmentId)
+                    : undefined,
+                  query: activeContext.label
+                })
+              }
+              className="text-xs font-semibold hover:underline inline-flex items-center gap-1"
+            >
+              <Box className="w-3.5 h-3.5" />
+              <span>3D Models</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveContext(null)}
+              className="text-xs font-semibold hover:underline inline-flex items-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Clear Context</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -1268,6 +1288,27 @@ export default function ResourceHubModule({
               </select>
             </div>
           </section>
+
+          {activeContext && (
+            <Academic3DContentPanel
+              compact
+              departmentId={
+                activeContext.departmentId
+                  ? mapWorkspaceDeptToBPharmDept(activeContext.departmentId)
+                  : 'anatomy'
+              }
+              topicId={
+                activeContext.kind === 'topic' && activeContext.id.startsWith('study_topic:')
+                  ? activeContext.id.replace('study_topic:', '')
+                  : undefined
+              }
+              topicTitle={activeContext.label}
+              structureId={activeContext.structureId}
+              defaultSearchQuery={activeContext.label}
+              title={`3D Scientific Models for ${activeContext.label}`}
+              subtitle="Models linked directly to your active study context"
+            />
+          )}
 
           {filteredSavedRecords.length === 0 ? (
             <div className="py-12 px-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-center space-y-3">

@@ -43,7 +43,10 @@ import {
 
 interface ResourceConnectorProps {
   department: DepartmentId;
+  subjectCode?: string;
+  unitNo?: string;
   topic?: string;
+  experimentId?: string;
   experiment?: string;
   equipment?: string;
   defaultSearchQuery?: string;
@@ -52,7 +55,10 @@ interface ResourceConnectorProps {
 
 export default function ResourceConnector({
   department,
+  subjectCode,
+  unitNo,
   topic,
+  experimentId,
   experiment,
   equipment,
   defaultSearchQuery = '',
@@ -532,7 +538,10 @@ export default function ResourceConnector({
       <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
         <Asset3DConnector
           workspaceDepartment={department}
+          subjectCode={subjectCode}
+          unitNo={unitNo}
           topicTitle={topic}
+          experimentId={experimentId}
           experimentTitle={experiment}
           defaultSearchQuery={defaultSearchQuery || equipment || topic}
           defaultCategory={equipment ? 'apparatus' : 'other'}

@@ -4,6 +4,7 @@ import {
   Box,
   CheckCircle2,
   Clock,
+  Compass,
   Copy,
   Download,
   Edit3,
@@ -30,6 +31,7 @@ import {
   X
 } from 'lucide-react';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import { ANATOMY_CATALOG } from '../../data/anatomyCatalog';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 import { getAllSyllabi } from '../study-mode/studyDb';
 import { SyllabusProfile } from '../study-mode/types';
@@ -40,7 +42,7 @@ import Asset3DEditModal from './Asset3DEditModal';
 import Asset3DUploadModal, { Asset3DInitialContext } from './Asset3DUploadModal';
 import ModelViewerModal from './ModelViewerModal';
 import {
-  addSyllabusAssociation,
+  addSyllabusAssociationSafe,
   duplicate3DAssetReference,
   get3DStorageReport,
   getAll3DAssets,
@@ -48,7 +50,8 @@ import {
   getMerged3DCategoryOptions,
   removeSyllabusAssociation,
   saveCustom3DCategory,
-  toggle3DAssetFavorite
+  toggle3DAssetFavorite,
+  updateSyllabusAssociation
 } from './asset3dDb';
 import Asset3DImportModal from './Asset3DImportModal';
 import {
@@ -109,7 +112,8 @@ const DISCOVER_DOMAIN_PRESETS: Array<{
 ];
 
 export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
-  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
+  const { setWorkspaceSection, recordActivity, openAcademicExplorer, openStudyMode, navigateToModule } =
+    useLibraryNavigation();
 
   const [activeTab, setActiveTab] = useState<'library' | 'discover' | 'mapping'>('library');
   const [assets, setAssets] = useState<Asset3DItem[]>([]);
@@ -152,10 +156,14 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
   // Mapping state
   const [mapDept, setMapDept] = useState<BPharmDepartmentId>('anatomy');
   const [linkModalAsset, setLinkModalAsset] = useState<Asset3DItem | null>(null);
+  const [editingAssocId, setEditingAssocId] = useState<string | null>(null);
   const [linkSubjectCode, setLinkSubjectCode] = useState('');
+  const [linkUnitNo, setLinkUnitNo] = useState('');
   const [linkTopicId, setLinkTopicId] = useState('');
   const [linkSubtopic, setLinkSubtopic] = useState('');
+  const [linkObjective, setLinkObjective] = useState('');
   const [linkExperiment, setLinkExperiment] = useState('');
+  const [linkStructureId, setLinkStructureId] = useState('');
 
   // Viewer, Details, Edit, Delete, Upload modals + Feedback notice
   const [viewerAsset, setViewerAsset] = useState<Asset3DItem | null>(null);
@@ -537,6 +545,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
     () =>
       syllabi.flatMap((syl) =>
         syl.subjects.map((sub) => ({
+          syllabusId: syl.id,
           course: syl.course,
           subject: sub
         }))
@@ -544,42 +553,138 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
     [syllabi]
   );
 
+  const selectedLinkSubjectEntry = useMemo(
+    () => allSyllabusSubjects.find((s) => s.subject.code === linkSubjectCode) || null,
+    [allSyllabusSubjects, linkSubjectCode]
+  );
+
+  const linkUnits = useMemo(
+    () => selectedLinkSubjectEntry?.subject.units || [],
+    [selectedLinkSubjectEntry]
+  );
+
   const linkTopics = useMemo(() => {
-    const hit = allSyllabusSubjects.find((s) => s.subject.code === linkSubjectCode);
-    if (!hit) return [];
-    return hit.subject.units.flatMap((u) =>
-      u.topics.map((t) => ({ unitNo: u.unitNo, topic: t }))
+    if (!selectedLinkSubjectEntry) return [];
+    const filteredUnits = linkUnitNo
+      ? selectedLinkSubjectEntry.subject.units.filter((u) => u.unitNo === linkUnitNo)
+      : selectedLinkSubjectEntry.subject.units;
+    return filteredUnits.flatMap((u) =>
+      u.topics.map((t) => ({ unitId: u.id, unitNo: u.unitNo, unitTitle: u.title, topic: t }))
     );
-  }, [allSyllabusSubjects, linkSubjectCode]);
+  }, [selectedLinkSubjectEntry, linkUnitNo]);
+
+  const selectedLinkTopicEntry = useMemo(
+    () => linkTopics.find((t) => t.topic.id === linkTopicId) || null,
+    [linkTopics, linkTopicId]
+  );
+
+  const openLinkModal = useCallback((asset: Asset3DItem, existing?: SyllabusAssociation) => {
+    setLinkModalAsset(asset);
+    if (existing) {
+      setEditingAssocId(existing.id);
+      setMapDept(existing.departmentId);
+      setLinkSubjectCode(existing.subjectCode || '');
+      setLinkUnitNo(existing.unitNo || '');
+      setLinkTopicId(existing.topicId || '');
+      setLinkSubtopic(existing.subtopicTitle || '');
+      setLinkObjective(existing.learningObjective || '');
+      setLinkExperiment(existing.experimentTitle || '');
+      setLinkStructureId(existing.structureId || '');
+    } else {
+      setEditingAssocId(null);
+      setMapDept(asset.departments[0] || 'anatomy');
+      setLinkSubjectCode('');
+      setLinkUnitNo('');
+      setLinkTopicId('');
+      setLinkSubtopic('');
+      setLinkObjective('');
+      setLinkExperiment('');
+      setLinkStructureId('');
+    }
+  }, []);
 
   const handleSaveSyllabusLink = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!linkModalAsset) return;
-    const subMatch = allSyllabusSubjects.find((s) => s.subject.code === linkSubjectCode);
-    const topMatch = linkTopics.find((t) => t.topic.id === linkTopicId);
-    const assoc: SyllabusAssociation = {
-      id: `assoc_${Date.now()}`,
-      course: subMatch?.course || 'B.Pharm',
-      departmentId: mapDept,
-      subjectCode: subMatch?.subject.code,
-      subjectTitle: subMatch?.subject.title,
-      unitNo: topMatch?.unitNo,
-      topicId: topMatch?.topic.id,
-      topicTitle: topMatch?.topic.title,
-      subtopicTitle: linkSubtopic.trim() || undefined,
-      experimentTitle: linkExperiment.trim() || undefined
-    };
-    const updated = await addSyllabusAssociation(linkModalAsset.id, assoc);
-    if (updated) {
-      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-      setToast({
-        type: 'info',
-        msg: `Linked "${updated.name}" to ${BPHARM_DEPARTMENT_LABELS[mapDept]}.`
+    const subMatch = selectedLinkSubjectEntry;
+    const unitMatch =
+      linkUnits.find((u) => u.unitNo === linkUnitNo) ||
+      (selectedLinkTopicEntry
+        ? linkUnits.find((u) => u.unitNo === selectedLinkTopicEntry.unitNo)
+        : undefined);
+    const topMatch = selectedLinkTopicEntry;
+    const structMatch = linkStructureId
+      ? ANATOMY_CATALOG.find((st) => st.id === linkStructureId)
+      : undefined;
+
+    if (editingAssocId) {
+      const updated = await updateSyllabusAssociation(linkModalAsset.id, editingAssocId, {
+        course: subMatch?.course || 'B.Pharm',
+        syllabusId: subMatch?.syllabusId,
+        departmentId: mapDept,
+        subjectCode: subMatch?.subject.code,
+        subjectTitle: subMatch?.subject.title,
+        unitId: unitMatch?.id || topMatch?.unitId,
+        unitNo: unitMatch?.unitNo || topMatch?.unitNo,
+        unitTitle: unitMatch?.title || topMatch?.unitTitle,
+        topicId: topMatch?.topic.id,
+        topicTitle: topMatch?.topic.title,
+        subtopicTitle: linkSubtopic.trim() || undefined,
+        learningObjective: linkObjective.trim() || undefined,
+        experimentTitle: linkExperiment.trim() || undefined,
+        structureId: structMatch?.id,
+        structureName: structMatch?.name
       });
+      if (updated) {
+        setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+        setToast({
+          type: 'info',
+          msg: `Updated syllabus link on "${updated.name}".`
+        });
+      }
+    } else {
+      const assoc: SyllabusAssociation = {
+        id: `assoc_${Date.now()}`,
+        course: subMatch?.course || 'B.Pharm',
+        syllabusId: subMatch?.syllabusId,
+        departmentId: mapDept,
+        subjectCode: subMatch?.subject.code,
+        subjectTitle: subMatch?.subject.title,
+        unitId: unitMatch?.id || topMatch?.unitId,
+        unitNo: unitMatch?.unitNo || topMatch?.unitNo,
+        unitTitle: unitMatch?.title || topMatch?.unitTitle,
+        topicId: topMatch?.topic.id,
+        topicTitle: topMatch?.topic.title,
+        subtopicTitle: linkSubtopic.trim() || undefined,
+        learningObjective: linkObjective.trim() || undefined,
+        experimentTitle: linkExperiment.trim() || undefined,
+        structureId: structMatch?.id,
+        structureName: structMatch?.name
+      };
+      const res = await addSyllabusAssociationSafe(linkModalAsset.id, assoc);
+      if (res.duplicate) {
+        setToast({
+          type: 'warning',
+          msg: `"${linkModalAsset.name}" is already linked to that exact curriculum target.`
+        });
+      } else if (res.asset) {
+        setAssets((prev) => prev.map((a) => (a.id === res.asset!.id ? res.asset! : a)));
+        setToast({
+          type: 'info',
+          msg: `Linked "${res.asset.name}" to ${
+            topMatch?.topic.title || subMatch?.subject.code || BPHARM_DEPARTMENT_LABELS[mapDept]
+          }.`
+        });
+      }
     }
+
     setLinkModalAsset(null);
+    setEditingAssocId(null);
+    setLinkUnitNo('');
     setLinkSubtopic('');
+    setLinkObjective('');
     setLinkExperiment('');
+    setLinkStructureId('');
   };
 
   const totalBytes = useMemo(
@@ -605,6 +710,14 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => openAcademicExplorer()}
+              className="min-h-[42px] px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-slate-800 dark:text-slate-100 text-xs sm:text-sm font-semibold inline-flex items-center gap-2 whitespace-nowrap"
+            >
+              <Compass className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Open 3D Explorer</span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -1199,13 +1312,26 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                         </button>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleOpenViewer(item)}
-                        className="min-h-[34px] px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
-                      >
-                        {availability.canOpenViewer ? 'Inspect 3D' : 'Open Details'}
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {availability.canOpenViewer && (
+                          <button
+                            type="button"
+                            onClick={() => openAcademicExplorer({ assetId: item.id })}
+                            className="min-h-[34px] px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1"
+                            title="Open in Academic 3D Explorer workbench"
+                          >
+                            <Compass className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>Explore</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenViewer(item)}
+                          className="min-h-[34px] px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
+                        >
+                          {availability.canOpenViewer ? 'Inspect 3D' : 'Open Details'}
+                        </button>
+                      </div>
                     </div>
                   </article>
                 );
@@ -1334,6 +1460,17 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                      {availability.canOpenViewer && (
+                        <button
+                          type="button"
+                          onClick={() => openAcademicExplorer({ assetId: item.id })}
+                          className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1"
+                          title="Open in Academic 3D Explorer workbench"
+                        >
+                          <Compass className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <span>Explore</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleOpenViewer(item)}
@@ -1876,7 +2013,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => setLinkModalAsset(item)}
+                            onClick={() => openLinkModal(item)}
                             className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1"
                           >
                             <Link2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -1899,17 +2036,46 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                               key={lnk.id}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300"
                             >
-                              <span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (lnk.structureId) {
+                                    navigateToModule('anatomy', 'explorer', {
+                                      structureId: lnk.structureId
+                                    });
+                                  } else if (lnk.topicId || lnk.subjectCode) {
+                                    openStudyMode({
+                                      syllabusId: lnk.syllabusId ?? null,
+                                      subjectCode: lnk.subjectCode ?? null,
+                                      topicId: lnk.topicId ?? null,
+                                      view: 'study'
+                                    });
+                                  }
+                                }}
+                                className="hover:text-emerald-700 dark:hover:text-emerald-400 text-left"
+                                title="Jump to linked Study Mode topic or Anatomy structure"
+                              >
                                 {[
                                   lnk.subjectCode,
                                   lnk.unitNo,
                                   lnk.topicTitle,
+                                  lnk.subtopicTitle,
+                                  lnk.learningObjective,
                                   lnk.experimentTitle,
                                   lnk.structureName
                                 ]
                                   .filter(Boolean)
                                   .join(' · ') || lnk.course}
-                              </span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openLinkModal(item, lnk)}
+                                className="text-slate-400 hover:text-emerald-600"
+                                aria-label="Edit syllabus link"
+                                title="Edit syllabus link"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
                               <button
                                 type="button"
                                 onClick={async () => {
@@ -1922,6 +2088,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                                 }}
                                 className="text-slate-400 hover:text-rose-500"
                                 aria-label="Remove syllabus link"
+                                title="Remove link (keeps 3D asset)"
                               >
                                 <X className="w-3 h-3" />
                               </button>
@@ -1980,93 +2147,218 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
       {/* Link Asset to Syllabus Topic Modal */}
       {linkModalAsset && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4 overflow-y-auto"
           role="dialog"
           aria-modal="true"
-          onClick={() => setLinkModalAsset(null)}
+          onClick={() => {
+            setLinkModalAsset(null);
+            setEditingAssocId(null);
+          }}
         >
           <form
             onSubmit={handleSaveSyllabusLink}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4 shadow-2xl"
+            className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4 shadow-2xl my-auto"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Link &ldquo;{linkModalAsset.name}&rdquo; to Syllabus
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white truncate">
+                {editingAssocId ? 'Edit Syllabus Link on' : 'Link'} &ldquo;{linkModalAsset.name}
+                &rdquo;
               </h3>
               <button
                 type="button"
-                onClick={() => setLinkModalAsset(null)}
-                className="text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                onClick={() => {
+                  setLinkModalAsset(null);
+                  setEditingAssocId(null);
+                }}
+                className="text-slate-400 hover:text-slate-900 dark:hover:text-white shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
-              <select
-                value={mapDept}
-                onChange={(e) => setMapDept(e.target.value as BPharmDepartmentId)}
-                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-              >
-                {ALL_BPHARM_DEPARTMENTS.map((d) => (
-                  <option key={d} value={d}>
-                    {BPHARM_DEPARTMENT_LABELS[d]}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                  Department / Domain
+                </label>
+                <select
+                  value={mapDept}
+                  onChange={(e) => setMapDept(e.target.value as BPharmDepartmentId)}
+                  className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                >
+                  {ALL_BPHARM_DEPARTMENTS.map((d) => (
+                    <option key={d} value={d}>
+                      {BPHARM_DEPARTMENT_LABELS[d]}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              <select
-                value={linkSubjectCode}
-                onChange={(e) => {
-                  setLinkSubjectCode(e.target.value);
-                  setLinkTopicId('');
-                }}
-                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-              >
-                <option value="">Select Subject (Optional)</option>
-                {allSyllabusSubjects.map((s) => (
-                  <option key={s.subject.code} value={s.subject.code}>
-                    {s.subject.code} · {s.subject.title}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                  Subject
+                </label>
+                <select
+                  value={linkSubjectCode}
+                  onChange={(e) => {
+                    setLinkSubjectCode(e.target.value);
+                    setLinkUnitNo('');
+                    setLinkTopicId('');
+                  }}
+                  className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                >
+                  <option value="">Select Subject (Optional)</option>
+                  {allSyllabusSubjects.map((s) => (
+                    <option key={s.subject.code} value={s.subject.code}>
+                      {s.subject.code} · {s.subject.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              <select
-                value={linkTopicId}
-                onChange={(e) => setLinkTopicId(e.target.value)}
-                disabled={linkTopics.length === 0}
-                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-50"
-              >
-                <option value="">Select Unit &amp; Topic (Optional)</option>
-                {linkTopics.map((t) => (
-                  <option key={t.topic.id} value={t.topic.id}>
-                    {t.unitNo} · {t.topic.title}
-                  </option>
-                ))}
-              </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                    Unit
+                  </label>
+                  <select
+                    value={linkUnitNo}
+                    onChange={(e) => {
+                      setLinkUnitNo(e.target.value);
+                      setLinkTopicId('');
+                    }}
+                    disabled={linkUnits.length === 0}
+                    className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-50"
+                  >
+                    <option value="">All / Subject-Wide</option>
+                    {linkUnits.map((u) => (
+                      <option key={u.id} value={u.unitNo}>
+                        {u.unitNo} · {u.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <input
-                type="text"
-                value={linkSubtopic}
-                onChange={(e) => setLinkSubtopic(e.target.value)}
-                placeholder="Subtopic name (Optional)"
-                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-              />
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                    Topic
+                  </label>
+                  <select
+                    value={linkTopicId}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      setLinkTopicId(nextId);
+                      const found = linkTopics.find((t) => t.topic.id === nextId);
+                      if (found && !linkUnitNo) setLinkUnitNo(found.unitNo);
+                    }}
+                    disabled={linkTopics.length === 0}
+                    className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white disabled:opacity-50"
+                  >
+                    <option value="">Unit-Wide / All Topics</option>
+                    {linkTopics.map((t) => (
+                      <option key={t.topic.id} value={t.topic.id}>
+                        {t.unitNo} · {t.topic.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-              <input
-                type="text"
-                value={linkExperiment}
-                onChange={(e) => setLinkExperiment(e.target.value)}
-                placeholder="Associated Lab Experiment (e.g. Exp 1a: Gutzeit Arsenic Apparatus)"
-                className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-              />
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                  Subtopic (Optional)
+                </label>
+                {selectedLinkTopicEntry && selectedLinkTopicEntry.topic.subtopics.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {selectedLinkTopicEntry.topic.subtopics.map((st) => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => setLinkSubtopic((prev) => (prev === st.title ? '' : st.title))}
+                        className={`px-2 py-0.5 rounded-md border text-[11px] ${
+                          linkSubtopic === st.title
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {st.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={linkSubtopic}
+                  onChange={(e) => setLinkSubtopic(e.target.value)}
+                  placeholder="Subtopic name or pick chip above (Optional)"
+                  className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                  Learning Objective (Optional)
+                </label>
+                {selectedLinkSubjectEntry && selectedLinkSubjectEntry.subject.objectives.length > 0 && (
+                  <select
+                    value={
+                      selectedLinkSubjectEntry.subject.objectives.includes(linkObjective)
+                        ? linkObjective
+                        : ''
+                    }
+                    onChange={(e) => {
+                      if (e.target.value) setLinkObjective(e.target.value);
+                    }}
+                    className="w-full min-h-[36px] px-3 mb-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  >
+                    <option value="">Pick Subject Objective (Optional)</option>
+                    {selectedLinkSubjectEntry.subject.objectives.map((obj, idx) => (
+                      <option key={idx} value={obj}>
+                        {obj}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <input
+                  type="text"
+                  value={linkObjective}
+                  onChange={(e) => setLinkObjective(e.target.value)}
+                  placeholder="Custom learning objective / competency (Optional)"
+                  className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <input
+                  type="text"
+                  value={linkExperiment}
+                  onChange={(e) => setLinkExperiment(e.target.value)}
+                  placeholder="Lab Experiment (Optional)"
+                  className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                />
+                <select
+                  value={linkStructureId}
+                  onChange={(e) => setLinkStructureId(e.target.value)}
+                  className="w-full min-h-[38px] px-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                >
+                  <option value="">Anatomy Structure (Optional)</option>
+                  {ANATOMY_CATALOG.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setLinkModalAsset(null)}
+                onClick={() => {
+                  setLinkModalAsset(null);
+                  setEditingAssocId(null);
+                }}
                 className="px-3 py-1.5 text-xs text-slate-500"
               >
                 Cancel
@@ -2075,7 +2367,7 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
                 type="submit"
                 className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold"
               >
-                Save Association
+                {editingAssocId ? 'Update Association' : 'Save Association'}
               </button>
             </div>
           </form>
@@ -2132,8 +2424,11 @@ export default function Assets3DModule({ jumpTarget }: Assets3DModuleProps) {
         onDuplicateReference={(item) => void handleDuplicateReference(item)}
         onLinkTopic={(item) => {
           setDetailsAsset(null);
-          setLinkModalAsset(item);
-          setMapDept(item.departments[0] || 'anatomy');
+          openLinkModal(item);
+        }}
+        onEditAssociation={(item, assoc) => {
+          setDetailsAsset(null);
+          openLinkModal(item, assoc);
         }}
         onUnlinkAssociation={async (assetId, assocId) => {
           const updated = await removeSyllabusAssociation(assetId, assocId);

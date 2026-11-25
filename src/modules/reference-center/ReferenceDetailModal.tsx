@@ -15,6 +15,8 @@ import {
   Upload,
   X
 } from 'lucide-react';
+import Academic3DContentPanel from '../assets-3d/Academic3DContentPanel';
+import { BPharmDepartmentId } from '../assets-3d/types';
 import { LibraryBookMeta, ProcessingProgress } from '../knowledge-library/types';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
 import { ACADEMIC_TOPIC_TREE, createTopicConnection, ENTITY_TYPE_LABELS } from './academicTopics';
@@ -1024,6 +1026,48 @@ export default function ReferenceDetailModal({
                   ))
                 )}
               </div>
+
+              {/* Linked & Contextual 3D Scientific Models */}
+              {(() => {
+                const subLower = (reference.subject || '').toLowerCase();
+                const inferredDept: BPharmDepartmentId = subLower.includes('anat')
+                  ? 'anatomy'
+                  : subLower.includes('inorg') || subLower.includes('chem') || subLower.includes('analysis')
+                  ? 'inorganic'
+                  : subLower.includes('cognosy') || subLower.includes('botany')
+                  ? 'pharmacognosy'
+                  : 'general_pharmacy';
+                const inferredSubjectCode = subLower.includes('bp104') || subLower.includes('anatomy')
+                  ? 'BP104T'
+                  : subLower.includes('bp106') || subLower.includes('inorg')
+                  ? 'BP106T'
+                  : subLower.includes('bp102') || subLower.includes('pharmaceutics')
+                  ? 'BP102T'
+                  : undefined;
+                const topicConn = reference.academicConnections.find((c) => c.entityType === 'topic');
+                const expConn = reference.academicConnections.find(
+                  (c) => c.entityType === 'experiment' || c.entityType === 'apparatus'
+                );
+                const anatConn = reference.academicConnections.find((c) => c.entityType === 'anatomy');
+
+                return (
+                  <Academic3DContentPanel
+                    compact
+                    departmentId={inferredDept}
+                    subjectCode={inferredSubjectCode}
+                    subjectTitle={reference.subject}
+                    topicTitle={topicConn?.label}
+                    experimentTitle={expConn?.label}
+                    structureId={anatConn?.entityId}
+                    structureName={anatConn?.label}
+                    defaultSearchQuery={
+                      anatConn?.label || topicConn?.label || expConn?.label || reference.title
+                    }
+                    title="Connected 3D Scientific Models"
+                    subtitle={`3D models aligned with ${reference.subject || reference.title}`}
+                  />
+                );
+              })()}
             </div>
           )}
         </div>

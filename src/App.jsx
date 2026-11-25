@@ -14,6 +14,7 @@ import PharmacognosyModule from './modules/bp105t-pharmacognosy/PharmacognosyMod
 import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
 import Assets3DModule from './modules/assets-3d/Assets3DModule';
+import Academic3DExplorerModule from './modules/assets-3d/Academic3DExplorerModule';
 import ReferenceCenterModule from './modules/reference-center/ReferenceCenterModule';
 import ResourceHubModule from './modules/resource-hub/ResourceHubModule';
 import StudyModeModule from './modules/study-mode/StudyModeModule';
@@ -95,6 +96,15 @@ export default function App() {
     nonce: 0
   });
   const [studioReturnModule, setStudioReturnModule] = useState('dashboard');
+  const [explorer3dJump, setExplorer3dJump] = useState({
+    assetId: null,
+    subjectCode: null,
+    topicId: null,
+    structureName: null,
+    nonce: 0
+  });
+  const [explorerReturnModule, setExplorerReturnModule] = useState('assets_3d');
+  const explorerReturnScrollRef = React.useRef(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -194,6 +204,20 @@ export default function App() {
         return;
       }
 
+      if (moduleId === 'explorer_3d') {
+        if (typeof window !== 'undefined') {
+          explorerReturnScrollRef.current = window.scrollY || 0;
+        }
+        setActiveModule((prev) => {
+          if (prev && prev !== 'explorer_3d') {
+            setExplorerReturnModule(prev);
+          }
+          return 'explorer_3d';
+        });
+        setWorkspaceSectionState({ section: null, detail: null });
+        return;
+      }
+
       const nextStructureId = opts?.structureId ?? null;
       setActiveModule(moduleId);
       setNavTarget((prev) => ({
@@ -215,6 +239,7 @@ export default function App() {
         moduleId !== 'knowledge_library' &&
         moduleId !== 'visual_library' &&
         moduleId !== 'assets_3d' &&
+        moduleId !== 'explorer_3d' &&
         moduleId !== 'resource_hub' &&
         moduleId !== 'reference_center' &&
         moduleId !== 'python_studio'
@@ -365,10 +390,28 @@ export default function App() {
     [navigateTo]
   );
 
+  const openAcademicExplorer = useCallback(
+    (opts = {}) => {
+      setExplorer3dJump((prev) => ({
+        assetId: opts.assetId ?? null,
+        subjectCode: opts.subjectCode ?? null,
+        topicId: opts.topicId ?? null,
+        structureName: opts.structureName ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('explorer_3d');
+    },
+    [navigateTo]
+  );
+
   const handleOpenRecentItem = useCallback(
     (item) => {
       if (item.kind === 'model_3d' && item.asset3dId) {
-        openAsset3DEngine({ assetId: item.asset3dId });
+        if (item.moduleId === 'explorer_3d') {
+          openAcademicExplorer({ assetId: item.asset3dId });
+        } else {
+          openAsset3DEngine({ assetId: item.asset3dId });
+        }
         return;
       }
       if (item.kind === 'study_topic' && item.topicId) {
@@ -397,7 +440,14 @@ export default function App() {
       }
       navigateTo(item.moduleId, item.tab ?? null);
     },
-    [navigateTo, openKnowledgeLibrary, openVisualLibrary, openStudyMode, openAsset3DEngine]
+    [
+      navigateTo,
+      openKnowledgeLibrary,
+      openVisualLibrary,
+      openStudyMode,
+      openAsset3DEngine,
+      openAcademicExplorer
+    ]
   );
 
   const handleClearRecent = useCallback(() => {
@@ -421,6 +471,7 @@ export default function App() {
       openReferenceCenter,
       openStudyMode,
       openAsset3DEngine,
+      openAcademicExplorer,
       openPythonStudio,
       navigateToModule: navigateTo,
       setWorkspaceSection,
@@ -438,6 +489,7 @@ export default function App() {
       openReferenceCenter,
       openStudyMode,
       openAsset3DEngine,
+      openAcademicExplorer,
       openPythonStudio,
       navigateTo,
       setWorkspaceSection,
@@ -473,6 +525,39 @@ export default function App() {
         <PythonStudioWorkspace
           jumpTarget={pythonStudioJump}
           onExitStudio={() => setActiveModule(studioReturnModule || 'dashboard')}
+        />
+        <OfflineIndicator />
+      </LibraryNavigationContext.Provider>
+    );
+  }
+
+  if (activeModule === 'explorer_3d') {
+    const returnLabels = {
+      study_mode: 'Back to Study Mode',
+      syllabus: 'Back to Syllabus',
+      anatomy: 'Back to Anatomy',
+      assets_3d: 'Back to 3D Library',
+      reference_center: 'Back to References',
+      resource_hub: 'Back to Resource Hub',
+      inorganic: 'Back to Inorganic Lab',
+      pharmacognosy: 'Back to Pharmacognosy',
+      general_pharmacy: 'Back to General Pharmacy'
+    };
+    const explorerReturnLabel = returnLabels[explorerReturnModule] || 'Back to Module';
+    return (
+      <LibraryNavigationContext.Provider value={libraryContextValue}>
+        <Academic3DExplorerModule
+          jumpTarget={explorer3dJump}
+          returnLabel={explorerReturnLabel}
+          onExitExplorer={() => {
+            const targetScroll = explorerReturnScrollRef.current || 0;
+            setActiveModule(explorerReturnModule || 'assets_3d');
+            if (typeof window !== 'undefined') {
+              requestAnimationFrame(() => {
+                window.scrollTo({ top: targetScroll, behavior: 'auto' });
+              });
+            }
+          }}
         />
         <OfflineIndicator />
       </LibraryNavigationContext.Provider>

@@ -15,6 +15,7 @@ import {
   Predefined3DCategory,
   SyllabusAssociation
 } from './types';
+import { ANATOMY_CATALOG } from '../../data/anatomyCatalog';
 import { MAX_DIRECT_IMPORT_BYTES } from './providers/utils';
 
 const DB_NAME = 'pharmlab_3d_assets_v1';
@@ -383,20 +384,140 @@ export async function remove3DAssetAnnotation(
   });
 }
 
+function normAssocText(s?: string | null): string {
+  return (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function sameAssocSlot(idA?: string, titleA?: string, idB?: string, titleB?: string): boolean {
+  const aId = normAssocText(idA);
+  const bId = normAssocText(idB);
+  if (aId && bId) return aId === bId;
+  const aTitle = normAssocText(titleA);
+  const bTitle = normAssocText(titleB);
+  if (!aId && !aTitle && !bId && !bTitle) return true;
+  return (aId || aTitle) === (bId || bTitle);
+}
+
+function sameUnitSlot(a: SyllabusAssociation, b: SyllabusAssociation): boolean {
+  const aId = normAssocText(a.unitId);
+  const bId = normAssocText(b.unitId);
+  if (aId && bId) return aId === bId;
+  const aNo = normAssocText(a.unitNo);
+  const bNo = normAssocText(b.unitNo);
+  if (aNo && bNo) return aNo === bNo;
+  return sameAssocSlot(a.unitId || a.unitNo, a.unitTitle, b.unitId || b.unitNo, b.unitTitle);
+}
+
+export function getSyllabusAssociationFingerprint(association: SyllabusAssociation): string {
+  return [
+    normAssocText(association.course) || 'b.pharm',
+    normAssocText(association.departmentId),
+    normAssocText(association.subjectCode) || normAssocText(association.subjectTitle),
+    normAssocText(association.unitNo) || normAssocText(association.unitId) || normAssocText(association.unitTitle),
+    normAssocText(association.topicId) || normAssocText(association.topicTitle),
+    normAssocText(association.subtopicId) || normAssocText(association.subtopicTitle),
+    normAssocText(association.learningObjective),
+    normAssocText(association.experimentId) || normAssocText(association.experimentTitle),
+    normAssocText(association.structureId) || normAssocText(association.structureName)
+  ].join('|');
+}
+
+export function isSameSyllabusAssociation(
+  a: SyllabusAssociation,
+  b: SyllabusAssociation
+): boolean {
+  return (
+    (normAssocText(a.course) || 'b.pharm') === (normAssocText(b.course) || 'b.pharm') &&
+    normAssocText(a.departmentId) === normAssocText(b.departmentId) &&
+    sameAssocSlot(a.subjectCode, a.subjectTitle, b.subjectCode, b.subjectTitle) &&
+    sameUnitSlot(a, b) &&
+    sameAssocSlot(a.topicId, a.topicTitle, b.topicId, b.topicTitle) &&
+    sameAssocSlot(a.subtopicId, a.subtopicTitle, b.subtopicId, b.subtopicTitle) &&
+    normAssocText(a.learningObjective) === normAssocText(b.learningObjective) &&
+    sameAssocSlot(a.experimentId, a.experimentTitle, b.experimentId, b.experimentTitle) &&
+    sameAssocSlot(a.structureId, a.structureName, b.structureId, b.structureName)
+  );
+}
+
+export async function addSyllabusAssociationSafe(
+  assetId: string,
+  association: SyllabusAssociation
+): Promise<{ asset: Asset3DItem | null; added: boolean; duplicate: boolean }> {
+  const existing = await get3DAssetById(assetId);
+  if (!existing) return { asset: null, added: false, duplicate: false };
+
+  const currentLinks = existing.syllabusLinks || [];
+  const exactIdHit = currentLinks.find((l) => l.id === association.id);
+  const semanticDup = currentLinks.find(
+    (l) => l.id !== association.id && isSameSyllabusAssociation(l, association)
+  );
+
+  if (semanticDup) {
+    return { asset: existing, added: false, duplicate: true };
+  }
+
+  const nextLinks = exactIdHit
+    ? currentLinks.map((l) => (l.id === association.id ? association : l))
+    : [association, ...currentLinks];
+
+  const departments = Array.from(
+    new Set<BPharmDepartmentId>([...(existing.departments || []), association.departmentId])
+  );
+  const updated = await update3DAssetMeta(assetId, {
+    departments,
+    syllabusLinks: nextLinks
+  });
+
+  return {
+    asset: updated,
+    added: !exactIdHit,
+    duplicate: false
+  };
+}
+
 export async function addSyllabusAssociation(
   assetId: string,
   association: SyllabusAssociation
 ): Promise<Asset3DItem | null> {
+  const res = await addSyllabusAssociationSafe(assetId, association);
+  return res.asset;
+}
+
+export async function updateSyllabusAssociation(
+  assetId: string,
+  associationId: string,
+  patch: Partial<SyllabusAssociation>
+): Promise<{ asset: Asset3DItem | null; updated: boolean; duplicate: boolean }> {
   const existing = await get3DAssetById(assetId);
-  if (!existing) return null;
-  const deduped = (existing.syllabusLinks || []).filter((l) => l.id !== association.id);
-  const departments = Array.from(
-    new Set<BPharmDepartmentId>([...(existing.departments || []), association.departmentId])
+  if (!existing) return { asset: null, updated: false, duplicate: false };
+
+  const currentLinks = existing.syllabusLinks || [];
+  const target = currentLinks.find((l) => l.id === associationId);
+  if (!target) return { asset: existing, updated: false, duplicate: false };
+
+  const nextLink: SyllabusAssociation = {
+    ...target,
+    ...patch,
+    id: target.id
+  };
+
+  const semanticDup = currentLinks.find(
+    (l) => l.id !== associationId && isSameSyllabusAssociation(l, nextLink)
   );
-  return update3DAssetMeta(assetId, {
+  if (semanticDup) {
+    return { asset: existing, updated: false, duplicate: true };
+  }
+
+  const nextLinks = currentLinks.map((l) => (l.id === associationId ? nextLink : l));
+  const departments = Array.from(
+    new Set<BPharmDepartmentId>([...(existing.departments || []), nextLink.departmentId])
+  );
+  const saved = await update3DAssetMeta(assetId, {
     departments,
-    syllabusLinks: [association, ...deduped]
+    syllabusLinks: nextLinks
   });
+
+  return { asset: saved, updated: Boolean(saved), duplicate: false };
 }
 
 export async function removeSyllabusAssociation(
@@ -589,16 +710,381 @@ export async function delete3DAsset(assetId: string): Promise<void> {
   await transactionDone(tx);
 }
 
-export async function get3DAssetsForContext(ctx: {
+export type CurriculumMatchLevel =
+  | 'subtopic'
+  | 'objective'
+  | 'topic'
+  | 'unit'
+  | 'experiment'
+  | 'structure'
+  | 'subject';
+
+export interface Curriculum3DContextQuery {
+  course?: string;
   departmentId?: BPharmDepartmentId;
+  syllabusId?: string;
   subjectCode?: string;
+  subjectTitle?: string;
+  unitId?: string;
+  unitNo?: string;
+  unitTitle?: string;
   topicId?: string;
-  structureId?: string;
+  topicTitle?: string;
+  subtopicId?: string;
+  subtopicTitle?: string;
+  learningObjective?: string;
   experimentId?: string;
+  experimentTitle?: string;
+  structureId?: string;
+  linkedStructureIds?: string[];
   query?: string;
-}): Promise<Asset3DItem[]> {
+  strictDirectOnly?: boolean;
+}
+
+export interface Curriculum3DMatch {
+  asset: Asset3DItem;
+  matchSource: 'direct_link' | 'verified_context';
+  matchLevel: CurriculumMatchLevel;
+  matchingLinkIds: string[];
+  matchedSubtopics: string[];
+  matchReasons: string[];
+  score: number;
+}
+
+export interface Related3DModelMatch {
+  asset: Asset3DItem;
+  reasons: string[];
+  primaryReason: string;
+  score: number;
+}
+
+export function matchCurriculumAssetsSync(
+  allAssets: Asset3DItem[],
+  ctx: Curriculum3DContextQuery
+): {
+  directLinks: Curriculum3DMatch[];
+  verifiedContextualMatches: Curriculum3DMatch[];
+} {
+  if (!allAssets.length) return { directLinks: [], verifiedContextualMatches: [] };
+
+  const normSubjectCode = normAssocText(ctx.subjectCode);
+  const normUnitId = normAssocText(ctx.unitId);
+  const normUnitNo = normAssocText(ctx.unitNo);
+  const normTopicId = normAssocText(ctx.topicId);
+  const normTopicTitle = normAssocText(ctx.topicTitle);
+  const normSubtopicId = normAssocText(ctx.subtopicId);
+  const normSubtopicTitle = normAssocText(ctx.subtopicTitle);
+  const normObjective = normAssocText(ctx.learningObjective);
+  const normExpId = normAssocText(ctx.experimentId);
+  const normExpTitle = normAssocText(ctx.experimentTitle);
+  const normStructureId = normAssocText(ctx.structureId);
+  const linkedStructSet = new Set(
+    (ctx.linkedStructureIds || []).map((id) => normAssocText(id)).filter(Boolean)
+  );
+
+  const isTopicScopedQuery = Boolean(normTopicId || normTopicTitle);
+  const isUnitScopedQuery = Boolean((normUnitId || normUnitNo) && !isTopicScopedQuery);
+  const isSubjectOnlyQuery = Boolean(
+    normSubjectCode && !isTopicScopedQuery && !isUnitScopedQuery && !normExpId && !normExpTitle
+  );
+
+  const directLinks: Curriculum3DMatch[] = [];
+  const verifiedContextualMatches: Curriculum3DMatch[] = [];
+
+  for (const asset of allAssets) {
+    let directScore = 0;
+    let contextualScore = 0;
+    let bestDirectLevel: CurriculumMatchLevel | null = null;
+    let bestContextLevel: CurriculumMatchLevel | null = null;
+    const directLinkIds: string[] = [];
+    const contextLinkIds: string[] = [];
+    const matchedSubtopics = new Set<string>();
+    const directReasons: string[] = [];
+    const contextReasons: string[] = [];
+
+    for (const lnk of asset.syllabusLinks || []) {
+      const lnkSubject = normAssocText(lnk.subjectCode);
+      const subjectMatches = Boolean(normSubjectCode && lnkSubject === normSubjectCode);
+      const subjectCompatible = !lnkSubject || !normSubjectCode || lnkSubject === normSubjectCode;
+
+      const lnkStructure = normAssocText(lnk.structureId);
+      const structureDirectHit = Boolean(normStructureId && lnkStructure === normStructureId);
+      const linkedStructContextHit = Boolean(
+        !ctx.strictDirectOnly && lnkStructure && linkedStructSet.has(lnkStructure)
+      );
+
+      const lnkExpId = normAssocText(lnk.experimentId);
+      const lnkExpTitle = normAssocText(lnk.experimentTitle);
+      const expDirectHit = Boolean(
+        (normExpId && lnkExpId === normExpId) ||
+          (normExpTitle && lnkExpTitle && lnkExpTitle === normExpTitle)
+      );
+
+      const lnkTopicId = normAssocText(lnk.topicId);
+      const lnkTopicTitle = normAssocText(lnk.topicTitle);
+      const topicDirectHit = Boolean(
+        subjectCompatible &&
+          ((normTopicId && lnkTopicId === normTopicId) ||
+            (normTopicTitle && lnkTopicTitle && lnkTopicTitle === normTopicTitle))
+      );
+
+      const lnkSubId = normAssocText(lnk.subtopicId);
+      const lnkSubTitle = normAssocText(lnk.subtopicTitle);
+      const subtopicDirectHit = Boolean(
+        subjectCompatible &&
+          (normSubtopicId || normSubtopicTitle) &&
+          ((normSubtopicId && lnkSubId === normSubtopicId) ||
+            (normSubtopicTitle && lnkSubTitle && lnkSubTitle === normSubtopicTitle))
+      );
+
+      const lnkObjective = normAssocText(lnk.learningObjective);
+      const objectiveDirectHit = Boolean(
+        subjectCompatible && normObjective && lnkObjective === normObjective
+      );
+
+      const lnkUnitId = normAssocText(lnk.unitId);
+      const lnkUnitNo = normAssocText(lnk.unitNo);
+      const unitMatches = Boolean(
+        subjectCompatible &&
+          ((normUnitId && lnkUnitId === normUnitId) ||
+            (normUnitNo && lnkUnitNo && lnkUnitNo === normUnitNo))
+      );
+
+      // Guard: if querying a specific topic and the link explicitly specifies a DIFFERENT topic, do not match by unit/subject
+      const pointsToDifferentTopic = Boolean(
+        isTopicScopedQuery &&
+          (lnkTopicId || lnkTopicTitle) &&
+          !topicDirectHit
+      );
+
+      if (subtopicDirectHit) {
+        directScore = Math.max(directScore, 100);
+        bestDirectLevel = 'subtopic';
+        directLinkIds.push(lnk.id);
+        if (lnk.subtopicTitle) matchedSubtopics.add(lnk.subtopicTitle);
+        directReasons.push(`Linked to subtopic: ${lnk.subtopicTitle || lnk.subtopicId}`);
+      } else if (objectiveDirectHit) {
+        directScore = Math.max(directScore, 95);
+        if (!bestDirectLevel) bestDirectLevel = 'objective';
+        directLinkIds.push(lnk.id);
+        directReasons.push(`Linked to objective: ${lnk.learningObjective}`);
+      } else if (structureDirectHit) {
+        directScore = Math.max(directScore, 92);
+        if (!bestDirectLevel) bestDirectLevel = 'structure';
+        directLinkIds.push(lnk.id);
+        if (lnk.subtopicTitle) matchedSubtopics.add(lnk.subtopicTitle);
+        directReasons.push(`Linked to structure: ${lnk.structureName || lnk.structureId}`);
+      } else if (topicDirectHit) {
+        directScore = Math.max(directScore, 88);
+        if (!bestDirectLevel) bestDirectLevel = 'topic';
+        directLinkIds.push(lnk.id);
+        if (lnk.subtopicTitle) matchedSubtopics.add(lnk.subtopicTitle);
+        directReasons.push(
+          lnk.subtopicTitle
+            ? `Linked to topic (${lnk.subtopicTitle})`
+            : `Linked to topic: ${lnk.topicTitle || lnk.topicId}`
+        );
+      } else if (expDirectHit) {
+        directScore = Math.max(directScore, 84);
+        if (!bestDirectLevel) bestDirectLevel = 'experiment';
+        directLinkIds.push(lnk.id);
+        directReasons.push(`Linked to experiment: ${lnk.experimentTitle || lnk.experimentId}`);
+      } else if (unitMatches && isUnitScopedQuery) {
+        directScore = Math.max(directScore, 76);
+        if (!bestDirectLevel) bestDirectLevel = 'unit';
+        directLinkIds.push(lnk.id);
+        if (lnk.subtopicTitle) matchedSubtopics.add(lnk.subtopicTitle);
+        directReasons.push(
+          lnk.topicTitle
+            ? `Linked in ${lnk.unitNo || 'Unit'}: ${lnk.topicTitle}`
+            : `Linked to ${lnk.unitNo || lnk.unitTitle || 'Unit'}`
+        );
+      } else if (subjectMatches && isSubjectOnlyQuery) {
+        directScore = Math.max(directScore, 68);
+        if (!bestDirectLevel) bestDirectLevel = 'subject';
+        directLinkIds.push(lnk.id);
+        if (lnk.subtopicTitle) matchedSubtopics.add(lnk.subtopicTitle);
+        directReasons.push(
+          lnk.topicTitle
+            ? `Linked in ${lnk.subjectCode}: ${lnk.topicTitle}`
+            : `Linked to ${lnk.subjectCode}`
+        );
+      } else if (!ctx.strictDirectOnly && !pointsToDifferentTopic) {
+        if (linkedStructContextHit) {
+          const catEntity = ANATOMY_CATALOG.find((e) => normAssocText(e.id) === lnkStructure);
+          contextualScore = Math.max(contextualScore, 62);
+          if (!bestContextLevel) bestContextLevel = 'structure';
+          contextLinkIds.push(lnk.id);
+          contextReasons.push(
+            `Syllabus anatomical structure: ${catEntity?.name || lnk.structureName || lnk.structureId}`
+          );
+        } else if (unitMatches && !lnkTopicId && !lnkTopicTitle && isTopicScopedQuery) {
+          contextualScore = Math.max(contextualScore, 52);
+          if (!bestContextLevel) bestContextLevel = 'unit';
+          contextLinkIds.push(lnk.id);
+          contextReasons.push(`Unit-level asset for ${lnk.unitNo || lnk.unitTitle || 'this unit'}`);
+        }
+      }
+    }
+
+    if (directScore > 0 && bestDirectLevel) {
+      directLinks.push({
+        asset,
+        matchSource: 'direct_link',
+        matchLevel: bestDirectLevel,
+        matchingLinkIds: Array.from(new Set(directLinkIds)),
+        matchedSubtopics: Array.from(matchedSubtopics),
+        matchReasons: Array.from(new Set(directReasons)),
+        score: directScore
+      });
+    } else if (contextualScore > 0 && bestContextLevel) {
+      verifiedContextualMatches.push({
+        asset,
+        matchSource: 'verified_context',
+        matchLevel: bestContextLevel,
+        matchingLinkIds: Array.from(new Set(contextLinkIds)),
+        matchedSubtopics: Array.from(matchedSubtopics),
+        matchReasons: Array.from(new Set(contextReasons)),
+        score: contextualScore
+      });
+    }
+  }
+
+  directLinks.sort((a, b) => b.score - a.score || (b.asset.updatedAt || 0) - (a.asset.updatedAt || 0));
+  verifiedContextualMatches.sort(
+    (a, b) => b.score - a.score || (b.asset.updatedAt || 0) - (a.asset.updatedAt || 0)
+  );
+
+  return { directLinks, verifiedContextualMatches };
+}
+
+export async function getCurriculum3DMatches(ctx: Curriculum3DContextQuery): Promise<{
+  directLinks: Curriculum3DMatch[];
+  verifiedContextualMatches: Curriculum3DMatch[];
+}> {
+  const all = await getAll3DAssets();
+  return matchCurriculumAssetsSync(all, ctx);
+}
+
+export function getRelated3DModels(
+  asset: Asset3DItem,
+  allAssets: Asset3DItem[],
+  maxResults = 6
+): Related3DModelMatch[] {
+  const targetLinks = asset.syllabusLinks || [];
+  const targetSubjects = new Set(
+    targetLinks.map((l) => normAssocText(l.subjectCode)).filter(Boolean)
+  );
+  const targetTopics = new Set(
+    targetLinks.map((l) => normAssocText(l.topicId || l.topicTitle)).filter(Boolean)
+  );
+  const targetUnits = new Set(
+    targetLinks
+      .map((l) =>
+        l.subjectCode && (l.unitId || l.unitNo)
+          ? `${normAssocText(l.subjectCode)}::${normAssocText(l.unitId || l.unitNo)}`
+          : ''
+      )
+      .filter(Boolean)
+  );
+  const targetExperiments = new Set(
+    targetLinks.map((l) => normAssocText(l.experimentId || l.experimentTitle)).filter(Boolean)
+  );
+  const targetStructIds = new Set(
+    targetLinks.map((l) => normAssocText(l.structureId)).filter(Boolean)
+  );
+
+  const relatedStructMap = new Map<string, string>();
+  for (const sId of targetStructIds) {
+    const entity = ANATOMY_CATALOG.find((e) => normAssocText(e.id) === sId);
+    if (entity) {
+      for (const relId of entity.relatedStructureIds || []) {
+        relatedStructMap.set(normAssocText(relId), entity.name);
+      }
+    }
+  }
+
+  const results: Related3DModelMatch[] = [];
+
+  for (const other of allAssets) {
+    if (other.id === asset.id) continue;
+    let score = 0;
+    const reasons: string[] = [];
+
+    for (const lnk of other.syllabusLinks || []) {
+      const tKey = normAssocText(lnk.topicId || lnk.topicTitle);
+      if (tKey && targetTopics.has(tKey)) {
+        score += 32;
+        reasons.push(`Same syllabus topic: ${lnk.topicTitle || lnk.topicId}`);
+      }
+
+      const sKey = normAssocText(lnk.subjectCode);
+      const uKey =
+        lnk.subjectCode && (lnk.unitId || lnk.unitNo)
+          ? `${normAssocText(lnk.subjectCode)}::${normAssocText(lnk.unitId || lnk.unitNo)}`
+          : '';
+      if (uKey && targetUnits.has(uKey)) {
+        score += 22;
+        reasons.push(`Same curriculum unit: ${lnk.subjectCode} ${lnk.unitNo || ''}`.trim());
+      } else if (sKey && targetSubjects.has(sKey)) {
+        score += 14;
+        reasons.push(`Same subject: ${lnk.subjectCode}`);
+      }
+
+      const oStruct = normAssocText(lnk.structureId);
+      if (oStruct && targetStructIds.has(oStruct)) {
+        score += 28;
+        reasons.push(`Same anatomical structure: ${lnk.structureName || lnk.structureId}`);
+      } else if (oStruct && relatedStructMap.has(oStruct)) {
+        score += 22;
+        reasons.push(`Anatomically related to ${relatedStructMap.get(oStruct)}`);
+      }
+
+      const oExp = normAssocText(lnk.experimentId || lnk.experimentTitle);
+      if (oExp && targetExperiments.has(oExp)) {
+        score += 24;
+        reasons.push(`Same practical: ${lnk.experimentTitle || lnk.experimentId}`);
+      }
+    }
+
+    if (other.category === asset.category && asset.category !== 'other') {
+      score += 6;
+      reasons.push(`Same category: ${get3DCategoryLabel(asset.category)}`);
+    }
+
+    const dedupedReasons = Array.from(new Set(reasons));
+    if (score > 0 && dedupedReasons.length > 0) {
+      results.push({
+        asset: other,
+        reasons: dedupedReasons,
+        primaryReason: dedupedReasons[0],
+        score
+      });
+    }
+  }
+
+  return results
+    .sort((a, b) => b.score - a.score || (b.asset.updatedAt || 0) - (a.asset.updatedAt || 0))
+    .slice(0, maxResults);
+}
+
+export async function get3DAssetsForContext(
+  ctx: Curriculum3DContextQuery
+): Promise<Asset3DItem[]> {
   const all = await getAll3DAssets();
   if (all.length === 0) return [];
+
+  const { directLinks, verifiedContextualMatches } = matchCurriculumAssetsSync(all, ctx);
+  const mergedMap = new Map<string, { asset: Asset3DItem; score: number }>();
+
+  for (const m of directLinks) {
+    mergedMap.set(m.asset.id, { asset: m.asset, score: m.score });
+  }
+  for (const m of verifiedContextualMatches) {
+    if (!mergedMap.has(m.asset.id)) {
+      mergedMap.set(m.asset.id, { asset: m.asset, score: m.score });
+    }
+  }
 
   const qTokens = (ctx.query || '')
     .toLowerCase()
@@ -606,52 +1092,34 @@ export async function get3DAssetsForContext(ctx: {
     .map((t) => t.trim())
     .filter((t) => t.length >= 3);
 
-  const scored = all
-    .map((asset) => {
-      let score = 0;
+  if (qTokens.length > 0 && !ctx.strictDirectOnly) {
+    for (const asset of all) {
+      if (mergedMap.has(asset.id)) continue;
+      if (
+        ctx.subjectCode &&
+        asset.syllabusLinks.length > 0 &&
+        !asset.syllabusLinks.some(
+          (l) => !l.subjectCode || normAssocText(l.subjectCode) === normAssocText(ctx.subjectCode)
+        )
+      ) {
+        continue;
+      }
+      const hay = `${asset.name} ${asset.tags.join(' ')} ${asset.syllabusLinks
+        .map((l) => `${l.topicTitle || ''} ${l.subtopicTitle || ''} ${l.structureName || ''} ${l.experimentTitle || ''}`)
+        .join(' ')}`.toLowerCase();
+      let tokenHits = 0;
+      for (const tok of qTokens) {
+        if (hay.includes(tok)) tokenHits += 1;
+      }
+      if (tokenHits >= 2 || (qTokens.length === 1 && tokenHits === 1)) {
+        mergedMap.set(asset.id, { asset, score: tokenHits * 6 });
+      }
+    }
+  }
 
-      if (ctx.structureId) {
-        if (asset.syllabusLinks.some((l) => l.structureId === ctx.structureId)) score += 20;
-      }
-      if (ctx.topicId) {
-        if (asset.syllabusLinks.some((l) => l.topicId === ctx.topicId)) score += 18;
-      }
-      if (ctx.experimentId) {
-        if (asset.syllabusLinks.some((l) => l.experimentId === ctx.experimentId)) score += 16;
-      }
-      if (ctx.subjectCode) {
-        if (
-          asset.syllabusLinks.some(
-            (l) => l.subjectCode?.toLowerCase() === ctx.subjectCode?.toLowerCase()
-          )
-        ) {
-          score += 10;
-        }
-      }
-      if (ctx.departmentId) {
-        if (
-          asset.departments.includes(ctx.departmentId) ||
-          asset.syllabusLinks.some((l) => l.departmentId === ctx.departmentId)
-        ) {
-          score += 5;
-        }
-      }
-
-      if (qTokens.length > 0) {
-        const hay = `${asset.name} ${asset.description} ${asset.tags.join(' ')} ${asset.syllabusLinks
-          .map((l) => `${l.topicTitle || ''} ${l.structureName || ''} ${l.experimentTitle || ''}`)
-          .join(' ')}`.toLowerCase();
-        for (const tok of qTokens) {
-          if (hay.includes(tok)) score += 4;
-        }
-      }
-
-      return { asset, score };
-    })
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-  return scored.map((entry) => entry.asset);
+  return Array.from(mergedMap.values())
+    .sort((a, b) => b.score - a.score || (b.asset.updatedAt || 0) - (a.asset.updatedAt || 0))
+    .map((entry) => entry.asset);
 }
 
 export async function get3DStorageReport(): Promise<Asset3DStorageReport> {

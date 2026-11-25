@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   BookOpen,
+  Box,
   Download,
   ExternalLink,
   FileText,
@@ -17,6 +18,10 @@ import {
   SYLLABUS_COURSES,
   SyllabusCourse
 } from '../../data/bpharmSem1Syllabus';
+import Academic3DContentPanel from '../assets-3d/Academic3DContentPanel';
+import { getAll3DAssets, matchCurriculumAssetsSync } from '../assets-3d/asset3dDb';
+import { Asset3DItem, BPharmDepartmentId } from '../assets-3d/types';
+import { LearningDomainMode } from '../study-mode/types';
 import {
   getAllBooks,
   getBookFile,
@@ -28,6 +33,34 @@ import { LibraryBookMeta } from '../knowledge-library/types';
 
 const SYLLABUS_PDF_URL = '/syllabus/bpharm-sem1-syllabus.pdf';
 const SYLLABUS_BOOK_TITLE = 'B.Pharm Semester I Syllabus (Official PDF)';
+const SYLLABUS_POS_KEY = 'pharmlab_syllabus_pos_v1';
+
+function getCourse3DMeta(courseCode: string): {
+  departmentId: BPharmDepartmentId;
+  learningDomainMode: LearningDomainMode;
+  isAbstract: boolean;
+} {
+  const code = courseCode.toUpperCase();
+  if (code.includes('104') || code.includes('110')) {
+    return { departmentId: 'anatomy', learningDomainMode: 'anatomy_physiology', isAbstract: false };
+  }
+  if (code.includes('102') || code.includes('108')) {
+    return { departmentId: 'general_pharmacy', learningDomainMode: 'pharmaceutics', isAbstract: false };
+  }
+  if (code.includes('106') || code.includes('111')) {
+    return { departmentId: 'inorganic', learningDomainMode: 'chemistry_analysis', isAbstract: false };
+  }
+  if (code.includes('105') || code.includes('109')) {
+    return { departmentId: 'pharmacognosy', learningDomainMode: 'pharmacognosy', isAbstract: false };
+  }
+  if (code.includes('103')) {
+    return { departmentId: 'psychology', learningDomainMode: 'psychology_comm', isAbstract: true };
+  }
+  if (code.includes('101') || code.includes('107')) {
+    return { departmentId: 'python', learningDomainMode: 'computing_pk', isAbstract: true };
+  }
+  return { departmentId: 'general_pharmacy', learningDomainMode: 'general', isAbstract: false };
+}
 
 function courseMatchesQuery(course: SyllabusCourse, query: string): boolean {
   const q = query.trim().toLowerCase();
@@ -84,9 +117,24 @@ function courseMatchesQuery(course: SyllabusCourse, query: string): boolean {
 export default function SyllabusModule() {
   const { setWorkspaceSection, openStudyMode } = useLibraryNavigation();
 
+  const savedPos = useMemo(() => {
+    try {
+      if (typeof sessionStorage === 'undefined') return null;
+      const raw = sessionStorage.getItem(SYLLABUS_POS_KEY);
+      return raw ? (JSON.parse(raw) as { selectedCode?: string; searchQuery?: string }) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const [viewMode, setViewMode] = useState<'structured' | 'pdf'>('structured');
-  const [selectedCode, setSelectedCode] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCode, setSelectedCode] = useState<string>(savedPos?.selectedCode || 'ALL');
+  const [searchQuery, setSearchQuery] = useState(savedPos?.searchQuery || '');
+
+  // P3.5 3D Asset links (metadata only until toggled open)
+  const [assets3d, setAssets3d] = useState<Asset3DItem[]>([]);
+  const [expandedCourse3D, setExpandedCourse3D] = useState<Record<string, boolean>>({});
+  const [expandedUnit3D, setExpandedUnit3D] = useState<Record<string, boolean>>({});
 
   // Original PDF Viewer state
   const [syllabusBook, setSyllabusBook] = useState<LibraryBookMeta | null>(null);
@@ -97,6 +145,28 @@ export default function SyllabusModule() {
   const [pdfJumpNonce, setPdfJumpNonce] = useState<number>(0);
 
   const courseRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  const refresh3DAssets = useCallback(async () => {
+    try {
+      const list = await getAll3DAssets();
+      setAssets3d(list);
+    } catch {
+      // ignore IndexedDB error in SSR
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh3DAssets();
+  }, [refresh3DAssets]);
+
+  useEffect(() => {
+    try {
+      if (typeof sessionStorage === 'undefined') return;
+      sessionStorage.setItem(SYLLABUS_POS_KEY, JSON.stringify({ selectedCode, searchQuery }));
+    } catch {
+      // ignore storage errors
+    }
+  }, [selectedCode, searchQuery]);
 
   useEffect(() => {
     setWorkspaceSection(
@@ -434,54 +504,105 @@ export default function SyllabusModule() {
         </div>
       ) : (
         <div className="space-y-8">
-          {filteredCourses.map((course) => (
-            <article
-              key={course.courseCode}
-              ref={(el) => {
-                courseRefs.current[course.courseCode] = el;
-              }}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none scroll-mt-20"
-            >
-              {/* Top Course Banner */}
-              <div className="px-5 py-4 bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-md bg-emerald-600 text-white text-xs font-bold tracking-wide">
-                      {course.courseCode}
-                    </span>
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                      {course.courseType} · {course.credit}{' '}
-                      {course.credit === '1' ? 'Credit' : 'Credits'} · Max. Hours: {course.maxHours}
-                    </span>
+          {filteredCourses.map((course) => {
+            const meta3d = getCourse3DMeta(course.courseCode);
+            const course3dRes = matchCurriculumAssetsSync(assets3d, {
+              departmentId: meta3d.departmentId,
+              subjectCode: course.courseCode,
+              course: 'B.Pharm',
+              learningDomainMode: meta3d.learningDomainMode
+            });
+            const course3dCount =
+              course3dRes.directLinks.length + course3dRes.verifiedContextualMatches.length;
+            const course3dOpen = Boolean(expandedCourse3D[course.courseCode]);
+
+            return (
+              <article
+                key={course.courseCode}
+                ref={(el) => {
+                  courseRefs.current[course.courseCode] = el;
+                }}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm dark:shadow-none scroll-mt-20"
+              >
+                {/* Top Course Banner */}
+                <div className="px-5 py-4 bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-md bg-emerald-600 text-white text-xs font-bold tracking-wide">
+                        {course.courseCode}
+                      </span>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        {course.courseType} · {course.credit}{' '}
+                        {course.credit === '1' ? 'Credit' : 'Credits'} · Max. Hours: {course.maxHours}
+                      </span>
+                    </div>
+                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mt-1">
+                      {course.courseTitle}
+                    </h2>
                   </div>
-                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mt-1">
-                    {course.courseTitle}
-                  </h2>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {(!meta3d.isAbstract || course3dCount > 0) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedCourse3D((prev) => ({
+                            ...prev,
+                            [course.courseCode]: !course3dOpen
+                          }))
+                        }
+                        className={`min-h-[36px] px-3 py-1.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                          course3dOpen
+                            ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-800 dark:text-emerald-300'
+                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 text-slate-700 dark:text-slate-200'
+                        }`}
+                      >
+                        <Box className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>
+                          {course3dCount > 0 ? `3D Models (${course3dCount})` : 'Course 3D'}
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openStudyMode({ subjectCode: course.courseCode })}
+                      className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                    >
+                      <GraduationCap className="w-3.5 h-3.5" />
+                      <span>Study in Study Mode</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openOriginalPdfAtPage(course.pdfStartPage)}
+                      className="min-h-[36px] px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 text-xs font-semibold text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>
+                        PDF Pages {course.docPageStart}–{course.docPageEnd}
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => openStudyMode({ subjectCode: course.courseCode })}
-                    className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
-                  >
-                    <GraduationCap className="w-3.5 h-3.5" />
-                    <span>Study in Study Mode</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openOriginalPdfAtPage(course.pdfStartPage)}
-                    className="min-h-[36px] px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 text-xs font-semibold text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>
-                      PDF Pages {course.docPageStart}–{course.docPageEnd}
-                    </span>
-                  </button>
-                </div>
-              </div>
+                {course3dOpen && (
+                  <div className="px-5 pt-4">
+                    <Academic3DContentPanel
+                      compact
+                      departmentId={meta3d.departmentId}
+                      course="B.Pharm"
+                      subjectCode={course.courseCode}
+                      subjectTitle={course.courseTitle}
+                      subjectObjectives={course.objectives}
+                      learningDomainMode={meta3d.learningDomainMode}
+                      title={`${course.courseCode} Curriculum 3D Models`}
+                      subtitle={course.courseTitle}
+                      preloadedAssets={assets3d}
+                      onAssetsMutated={() => void refresh3DAssets()}
+                    />
+                  </div>
+                )}
 
-              <div className="p-5 sm:p-6 space-y-6">
+                <div className="p-5 sm:p-6 space-y-6">
                 {/* Course Metadata Grid Table (Matches PDF Header Table) */}
                 <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
                   <table className="w-full text-center border-collapse text-xs sm:text-sm">
@@ -627,42 +748,95 @@ export default function SyllabusModule() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800 align-top">
-                          {course.units.map((unit) => (
-                            <tr key={unit.unitNo}>
-                              <td className="py-3.5 px-3.5 text-center font-bold text-slate-900 dark:text-white border-r border-slate-200 dark:border-slate-800">
-                                {unit.unitNo}
-                              </td>
-                              <td className="py-3.5 px-4 border-r border-slate-200 dark:border-slate-800 space-y-3 text-slate-700 dark:text-slate-300 leading-relaxed">
-                                {unit.title && (
-                                  <p className="font-bold text-slate-900 dark:text-white">
-                                    {unit.title}
-                                  </p>
-                                )}
-                                {unit.sections.map((sec, sIdx) => (
-                                  <div key={sIdx} className="space-y-1.5">
-                                    {sec.heading && (
-                                      <p className="font-bold text-slate-900 dark:text-white">
-                                        {sec.heading}
-                                      </p>
-                                    )}
-                                    {sec.paragraphs?.map((para, pIdx) => (
-                                      <p key={pIdx}>{para}</p>
-                                    ))}
-                                    {sec.bullets && (
-                                      <ul className="list-disc pl-5 space-y-1">
-                                        {sec.bullets.map((b, bIdx) => (
-                                          <li key={bIdx}>{b}</li>
-                                        ))}
-                                      </ul>
-                                    )}
-                                  </div>
-                                ))}
-                              </td>
-                              <td className="py-3.5 px-3.5 text-center font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
-                                {unit.lectures}
-                              </td>
-                            </tr>
-                          ))}
+                          {course.units.map((unit) => {
+                            const unitKey = `${course.courseCode}_${unit.unitNo}`;
+                            const unitMatch = matchCurriculumAssetsSync(assets3d, {
+                              departmentId: meta3d.departmentId,
+                              subjectCode: course.courseCode,
+                              unitNo: unit.unitNo,
+                              unitTitle: unit.title,
+                              learningDomainMode: meta3d.learningDomainMode
+                            });
+                            const unitDirectCount = unitMatch.directLinks.length;
+                            const unitOpen = Boolean(expandedUnit3D[unitKey]);
+
+                            return (
+                              <tr key={unit.unitNo}>
+                                <td className="py-3.5 px-3.5 text-center font-bold text-slate-900 dark:text-white border-r border-slate-200 dark:border-slate-800">
+                                  <div>{unit.unitNo}</div>
+                                  {(!meta3d.isAbstract || unitDirectCount > 0) && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setExpandedUnit3D((prev) => ({
+                                          ...prev,
+                                          [unitKey]: !unitOpen
+                                        }))
+                                      }
+                                      className={`mt-2 px-2 py-0.5 rounded text-[11px] font-semibold inline-flex items-center gap-1 ${
+                                        unitOpen
+                                          ? 'bg-emerald-600 text-white'
+                                          : unitDirectCount > 0
+                                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-emerald-700'
+                                      }`}
+                                      title="Toggle unit 3D models"
+                                    >
+                                      <Box className="w-3 h-3" />
+                                      <span>{unitDirectCount > 0 ? `3D (${unitDirectCount})` : '3D'}</span>
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="py-3.5 px-4 border-r border-slate-200 dark:border-slate-800 space-y-3 text-slate-700 dark:text-slate-300 leading-relaxed">
+                                  {unit.title && (
+                                    <p className="font-bold text-slate-900 dark:text-white">
+                                      {unit.title}
+                                    </p>
+                                  )}
+                                  {unit.sections.map((sec, sIdx) => (
+                                    <div key={sIdx} className="space-y-1.5">
+                                      {sec.heading && (
+                                        <p className="font-bold text-slate-900 dark:text-white">
+                                          {sec.heading}
+                                        </p>
+                                      )}
+                                      {sec.paragraphs?.map((para, pIdx) => (
+                                        <p key={pIdx}>{para}</p>
+                                      ))}
+                                      {sec.bullets && (
+                                        <ul className="list-disc pl-5 space-y-1">
+                                          {sec.bullets.map((b, bIdx) => (
+                                            <li key={bIdx}>{b}</li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {unitOpen && (
+                                    <div className="pt-2">
+                                      <Academic3DContentPanel
+                                        compact
+                                        departmentId={meta3d.departmentId}
+                                        course="B.Pharm"
+                                        subjectCode={course.courseCode}
+                                        subjectTitle={course.courseTitle}
+                                        unitNo={unit.unitNo}
+                                        unitTitle={unit.title}
+                                        learningDomainMode={meta3d.learningDomainMode}
+                                        title={`${course.courseCode} · ${unit.unitNo} 3D Models`}
+                                        subtitle={unit.title || course.courseTitle}
+                                        preloadedAssets={assets3d}
+                                        onAssetsMutated={() => void refresh3DAssets()}
+                                      />
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3.5 px-3.5 text-center font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                                  {unit.lectures}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -744,7 +918,8 @@ export default function SyllabusModule() {
                 </section>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

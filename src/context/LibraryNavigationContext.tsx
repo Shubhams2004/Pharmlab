@@ -64,6 +64,14 @@ export interface PythonStudioJumpTarget {
   nonce: number;
 }
 
+export interface AcademicExplorerJumpTarget {
+  assetId?: string | null;
+  subjectCode?: string | null;
+  topicId?: string | null;
+  structureName?: string | null;
+  nonce: number;
+}
+
 interface LibraryNavigationContextValue {
   openKnowledgeLibrary: (opts?: Omit<KnowledgeJumpTarget, 'nonce'>) => void;
   openVisualLibrary: (opts?: Omit<VisualJumpTarget, 'nonce'>) => void;
@@ -71,6 +79,7 @@ interface LibraryNavigationContextValue {
   openReferenceCenter: (opts?: Omit<ReferenceJumpTarget, 'nonce'>) => void;
   openStudyMode: (opts?: Omit<StudyModeJumpTarget, 'nonce'>) => void;
   openAsset3DEngine: (opts?: Omit<Asset3DJumpTarget, 'nonce'>) => void;
+  openAcademicExplorer: (opts?: Omit<AcademicExplorerJumpTarget, 'nonce'>) => void;
   openPythonStudio: (opts?: Omit<PythonStudioJumpTarget, 'nonce'>) => void;
   navigateToModule: (
     moduleId: string,
@@ -95,6 +104,7 @@ export const LibraryNavigationContext = createContext<LibraryNavigationContextVa
   openReferenceCenter: noop,
   openStudyMode: noop,
   openAsset3DEngine: noop,
+  openAcademicExplorer: noop,
   openPythonStudio: noop,
   navigateToModule: noop,
   setWorkspaceSection: noop,

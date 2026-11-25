@@ -793,6 +793,7 @@ export default function InorganicModule({ initialTab, navNonce }) {
       {activeTab !== 'diagrams' && (
         <ResourceConnector
           department="inorganic"
+          subjectCode="BP106T"
           topic={activeTab === 'titration' ? 'burette' : 'nessler'}
           defaultSearchQuery={
             activeTab === 'titration'

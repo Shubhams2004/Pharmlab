@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Box,
   Calendar,
+  Compass,
   Copy,
   Edit3,
   ExternalLink,
@@ -17,6 +18,7 @@ import {
   Trash2,
   X
 } from 'lucide-react';
+import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
 import {
   Asset3DItem,
@@ -25,8 +27,18 @@ import {
   formatBytes,
   get3DCategoryLabel,
   getAsset3DAvailability,
-  IMPORT_STATUS_3D_LABELS
+  IMPORT_STATUS_3D_LABELS,
+  SyllabusAssociation
 } from './types';
+
+function deptToModuleId(dept: SyllabusAssociation['departmentId']): string {
+  if (dept === 'general_pharmacy') return 'general_pharmacy';
+  if (dept === 'python') return 'python';
+  if (dept === 'anatomy' || dept === 'pharmacognosy' || dept === 'inorganic' || dept === 'psychology') {
+    return dept;
+  }
+  return 'study_mode';
+}
 
 interface Asset3DDetailsModalProps {
   asset: Asset3DItem | null;
@@ -37,6 +49,7 @@ interface Asset3DDetailsModalProps {
   onEdit: (asset: Asset3DItem) => void;
   onDuplicateReference: (asset: Asset3DItem) => void;
   onLinkTopic: (asset: Asset3DItem) => void;
+  onEditAssociation?: (asset: Asset3DItem, assoc: SyllabusAssociation) => void;
   onUnlinkAssociation?: (assetId: string, assocId: string) => void;
   onRequestDelete: (asset: Asset3DItem) => void;
 }
@@ -65,9 +78,11 @@ export default function Asset3DDetailsModal({
   onEdit,
   onDuplicateReference,
   onLinkTopic,
+  onEditAssociation,
   onUnlinkAssociation,
   onRequestDelete
 }: Asset3DDetailsModalProps) {
+  const { openAcademicExplorer, openStudyMode, navigateToModule } = useLibraryNavigation();
   if (!asset) return null;
 
   const availability = getAsset3DAvailability(asset);
@@ -185,22 +200,38 @@ export default function Asset3DDetailsModal({
                 )}
               </div>
 
-              <button
-                type="button"
-                disabled={!availability.canOpenViewer}
-                onClick={() => {
-                  onClose();
-                  onOpenViewer(asset);
-                }}
-                className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold inline-flex items-center justify-center gap-2"
-              >
-                <Box className="w-4 h-4" />
-                <span>
-                  {availability.canOpenViewer
-                    ? 'Open in Universal 3D Viewer'
-                    : 'No Local Binary or Direct 3D URL'}
-                </span>
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={!availability.canOpenViewer}
+                  onClick={() => {
+                    onClose();
+                    openAcademicExplorer({ assetId: asset.id });
+                  }}
+                  className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold inline-flex items-center justify-center gap-2"
+                >
+                  <Compass className="w-4 h-4" />
+                  <span>
+                    {availability.canOpenViewer
+                      ? 'Open in Academic 3D Explorer'
+                      : 'No Local Binary or Direct 3D URL'}
+                  </span>
+                </button>
+
+                {availability.canOpenViewer && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenViewer(asset);
+                    }}
+                    className="w-full min-h-[38px] px-4 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-slate-800 dark:text-slate-100 text-xs font-semibold inline-flex items-center justify-center gap-2"
+                  >
+                    <Box className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Quick Inspect in Modal Viewer</span>
+                  </button>
+                )}
+              </div>
 
               {!availability.canOpenViewer && (
                 <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
@@ -408,34 +439,89 @@ export default function Asset3DDetailsModal({
               )}
 
               {asset.syllabusLinks.length > 0 ? (
-                <div className="space-y-1.5 max-h-36 overflow-y-auto pt-1">
-                  {asset.syllabusLinks.map((lnk) => (
-                    <div
-                      key={lnk.id}
-                      className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                          {[lnk.subjectCode, lnk.unitNo, lnk.topicTitle, lnk.subtopicTitle]
-                            .filter(Boolean)
-                            .join(' · ') ||
-                            lnk.experimentTitle ||
-                            lnk.structureName ||
-                            BPHARM_DEPARTMENT_LABELS[lnk.departmentId]}
-                        </p>
-                      </div>
-                      {onUnlinkAssociation && (
+                <div className="space-y-1.5 max-h-44 overflow-y-auto pt-1">
+                  {asset.syllabusLinks.map((lnk) => {
+                    const labelText =
+                      [
+                        lnk.subjectCode,
+                        lnk.unitNo,
+                        lnk.unitTitle,
+                        lnk.topicTitle,
+                        lnk.subtopicTitle
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') ||
+                      lnk.experimentTitle ||
+                      lnk.structureName ||
+                      BPHARM_DEPARTMENT_LABELS[lnk.departmentId];
+
+                    const handleJump = () => {
+                      onClose();
+                      if (lnk.structureId) {
+                        navigateToModule('anatomy', 'explorer', {
+                          structureId: lnk.structureId
+                        });
+                        return;
+                      }
+                      if (lnk.topicId || lnk.subjectCode) {
+                        openStudyMode({
+                          syllabusId: lnk.syllabusId ?? null,
+                          subjectCode: lnk.subjectCode ?? null,
+                          topicId: lnk.topicId ?? null,
+                          view: 'study'
+                        });
+                        return;
+                      }
+                      navigateToModule(deptToModuleId(lnk.departmentId));
+                    };
+
+                    return (
+                      <div
+                        key={lnk.id}
+                        className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+                      >
                         <button
                           type="button"
-                          onClick={() => onUnlinkAssociation(asset.id, lnk.id)}
-                          className="text-slate-400 hover:text-rose-500 shrink-0"
-                          aria-label="Unlink association"
+                          onClick={handleJump}
+                          className="min-w-0 flex-1 text-left hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors"
+                          title="Open linked curriculum context"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                            {labelText}
+                          </p>
+                          {(lnk.learningObjective || lnk.experimentTitle) && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                              {lnk.learningObjective || lnk.experimentTitle}
+                            </p>
+                          )}
                         </button>
-                      )}
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {onEditAssociation && (
+                            <button
+                              type="button"
+                              onClick={() => onEditAssociation(asset, lnk)}
+                              className="p-1 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400"
+                              aria-label="Edit curriculum link"
+                              title="Edit curriculum link"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {onUnlinkAssociation && (
+                            <button
+                              type="button"
+                              onClick={() => onUnlinkAssociation(asset.id, lnk.id)}
+                              className="p-1 text-slate-400 hover:text-rose-500"
+                              aria-label="Unlink association"
+                              title="Remove link (keeps 3D asset in library)"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-slate-500 dark:text-slate-400">

@@ -58,6 +58,7 @@ export default function Dashboard({
     openReferenceCenter,
     openStudyMode,
     openAsset3DEngine,
+    openAcademicExplorer,
     openPythonStudio
   } = useLibraryNavigation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -662,9 +663,15 @@ export default function Dashboard({
             },
             {
               label: '3D Asset Engine',
-              sub: 'Interactive 3D Models',
+              sub: '3D Library & Discovery',
               icon: Box,
               action: () => openAsset3DEngine()
+            },
+            {
+              label: '3D Explorer',
+              sub: 'Interactive Scientific Workbench',
+              icon: Compass,
+              action: () => openAcademicExplorer()
             },
             {
               label: 'Reference Center',

@@ -81,6 +81,7 @@ interface TopicWorkspaceProps {
   examQuestions: ExamQuestionItem[];
   examPapers: ExamQuestionPaper[];
   onOpenSubjectExamPrep: () => void;
+  onAssets3DMutated?: () => void;
 }
 
 const SECTION_LABELS: Record<StudySectionKey, string> = {
@@ -130,7 +131,8 @@ export default function TopicWorkspace({
   onProgressUpdated,
   examQuestions,
   examPapers,
-  onOpenSubjectExamPrep
+  onOpenSubjectExamPrep,
+  onAssets3DMutated
 }: TopicWorkspaceProps) {
   const {
     openKnowledgeLibrary,
@@ -141,7 +143,51 @@ export default function TopicWorkspace({
     navigateToModule
   } = useLibraryNavigation();
 
-  const [activeTab, setActiveTab] = useState<'learn' | 'resources' | 'exam' | 'notes'>('learn');
+  const [activeTab, setActiveTab] = useState<'learn' | 'resources' | 'exam' | 'notes'>(() => {
+    try {
+      if (typeof sessionStorage === 'undefined') return 'learn';
+      const raw = sessionStorage.getItem(`pharmlab_study_tab_${topic.id}`);
+      if (raw === 'learn' || raw === 'resources' || raw === 'exam' || raw === 'notes') {
+        return raw;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return 'learn';
+  });
+
+  useEffect(() => {
+    try {
+      if (typeof sessionStorage === 'undefined') return;
+      const saved = sessionStorage.getItem(`pharmlab_study_tab_${topic.id}`);
+      if (saved === 'learn' || saved === 'resources' || saved === 'exam' || saved === 'notes') {
+        setActiveTab(saved);
+      } else {
+        setActiveTab('learn');
+      }
+    } catch {
+      setActiveTab('learn');
+    }
+  }, [topic.id]);
+
+  const handleSetActiveTab = useCallback(
+    (nextTab: 'learn' | 'resources' | 'exam' | 'notes') => {
+      setActiveTab(nextTab);
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(`pharmlab_study_tab_${topic.id}`, nextTab);
+        }
+      } catch {
+        // ignore storage errors
+      }
+    },
+    [topic.id]
+  );
+
+  const subtopicTitles = useMemo(
+    () => topic.subtopics.map((st) => st.title).filter(Boolean),
+    [topic.subtopics]
+  );
   const [acquiring, setAcquiring] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<StudyWorkflowStep[]>([]);
   const [customQuery, setCustomQuery] = useState('');
@@ -682,7 +728,7 @@ export default function TopicWorkspace({
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setActiveTab(t.id as typeof activeTab)}
+                onClick={() => handleSetActiveTab(t.id as typeof activeTab)}
                 className={`min-h-[40px] px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                   activeTab === t.id
                     ? 'bg-emerald-600 text-white'
@@ -982,15 +1028,26 @@ export default function TopicWorkspace({
 
             <Asset3DConnector
               workspaceDepartment={topic.departmentId}
+              syllabusId={syllabus.id}
+              course={syllabus.course}
               subjectCode={subject.code}
               subjectTitle={subject.title}
+              unitId={topic.unitId}
               unitNo={topic.unitNo}
+              unitTitle={topic.unitTitle}
               topicId={topic.id}
               topicTitle={topic.title}
+              subtopics={subtopicTitles}
+              subjectObjectives={subject.objectives}
+              learningDomainMode={topic.domainMode}
+              linkedStructureIds={topic.linkedStructureIds}
+              structureId={linkedStructures[0]?.id}
+              structureName={linkedStructures[0]?.name}
               defaultSearchQuery={topic.title}
               defaultCategory={topic.departmentId === 'anatomy' ? 'anatomy' : 'other'}
               title="3D Scientific Models"
               subtitle={`GLB / glTF / STL assets linked to ${topic.title}`}
+              onAssetsMutated={onAssets3DMutated}
             />
           </aside>
         </div>
@@ -1049,15 +1106,26 @@ export default function TopicWorkspace({
 
           <Asset3DConnector
             workspaceDepartment={topic.departmentId}
+            syllabusId={syllabus.id}
+            course={syllabus.course}
             subjectCode={subject.code}
             subjectTitle={subject.title}
+            unitId={topic.unitId}
             unitNo={topic.unitNo}
+            unitTitle={topic.unitTitle}
             topicId={topic.id}
             topicTitle={topic.title}
+            subtopics={subtopicTitles}
+            subjectObjectives={subject.objectives}
+            learningDomainMode={topic.domainMode}
+            linkedStructureIds={topic.linkedStructureIds}
+            structureId={linkedStructures[0]?.id}
+            structureName={linkedStructures[0]?.name}
             defaultSearchQuery={topic.title}
             defaultCategory={topic.departmentId === 'anatomy' ? 'anatomy' : 'other'}
             title="Topic 3D Scientific Models"
             subtitle={`Attach or inspect interactive 3D models for ${subject.code} · ${topic.title}`}
+            onAssetsMutated={onAssets3DMutated}
           />
 
           {showManualForm && (

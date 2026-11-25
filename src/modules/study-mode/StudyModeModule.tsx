@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Bookmark,
   BookOpen,
+  Box,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -19,6 +20,9 @@ import {
   StudyModeJumpTarget,
   useLibraryNavigation
 } from '../../context/LibraryNavigationContext';
+import Academic3DContentPanel from '../assets-3d/Academic3DContentPanel';
+import { getAll3DAssets, matchCurriculumAssetsSync } from '../assets-3d/asset3dDb';
+import { Asset3DItem, mapWorkspaceDeptToBPharmDept } from '../assets-3d/types';
 import { CURATED_REFERENCE_QUESTIONS } from './examEngine';
 import ExamPrepWorkspace from './ExamPrepWorkspace';
 import {
@@ -57,22 +61,54 @@ const SYLLABUS_STATUS_TEXT: Record<SyllabusVerificationStatus, string> = {
   unverified_syllabus: 'Unverified Draft'
 };
 
+const STUDY_POS_STORAGE_KEY = 'pharmlab_study_pos_v1';
+
+interface SavedStudyPos {
+  syllabusId?: string;
+  subjectCode?: string;
+  topicId?: string;
+  viewMode?: 'study' | 'exam';
+  expandedSubjects?: Record<string, boolean>;
+}
+
+function readSavedStudyPos(): SavedStudyPos | null {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(STUDY_POS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as SavedStudyPos) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function StudyModeModule({ jumpTarget }: StudyModeModuleProps) {
   const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
 
-  const [syllabi, setSyllabi] = useState<SyllabusProfile[]>([]);
-  const [activeSyllabusId, setActiveSylId] = useState<string>(getActiveSyllabusId());
-  const [viewMode, setViewMode] = useState<'study' | 'exam'>('study');
+  const initialPos = useMemo(() => {
+    if (jumpTarget?.nonce && jumpTarget.nonce > 0) return null;
+    return readSavedStudyPos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const [selectedSubjectCode, setSelectedSubjectCode] = useState<string>('BP104T');
-  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
-  const [expandedSubjects, setExpandedSubjects] = useState<Record<string, boolean>>({
-    BP104T: true
-  });
+  const [syllabi, setSyllabi] = useState<SyllabusProfile[]>([]);
+  const [activeSyllabusId, setActiveSylId] = useState<string>(
+    initialPos?.syllabusId || getActiveSyllabusId()
+  );
+  const [viewMode, setViewMode] = useState<'study' | 'exam'>(initialPos?.viewMode || 'study');
+
+  const [selectedSubjectCode, setSelectedSubjectCode] = useState<string>(
+    initialPos?.subjectCode || 'BP104T'
+  );
+  const [selectedTopicId, setSelectedTopicId] = useState<string>(initialPos?.topicId || '');
+  const [expandedSubjects, setExpandedSubjects] = useState<Record<string, boolean>>(
+    initialPos?.expandedSubjects || { BP104T: true }
+  );
 
   const [progressMap, setProgressMap] = useState<Record<string, TopicStudyProgress>>({});
   const [papers, setPapers] = useState<ExamQuestionPaper[]>([]);
   const [storedQuestions, setStoredQuestions] = useState<ExamQuestionItem[]>([]);
+  const [assets3d, setAssets3d] = useState<Asset3DItem[]>([]);
+  const [showSubject3DPanel, setShowSubject3DPanel] = useState(false);
   const [lastStudied, setLastStudied] = useState(() => getLastStudiedTopicSummary());
 
   const [outlineOpen, setOutlineOpen] = useState(true);
@@ -81,23 +117,52 @@ export default function StudyModeModule({ jumpTarget }: StudyModeModuleProps) {
   const [onlyBookmarked, setOnlyBookmarked] = useState(false);
   const [acquireModalOpen, setAcquireModalOpen] = useState(false);
 
+  const refresh3DAssets = useCallback(async () => {
+    try {
+      const list = await getAll3DAssets();
+      setAssets3d(list);
+    } catch {
+      // ignore IndexedDB unavailable in SSR
+    }
+  }, []);
+
   const loadAllData = useCallback(async () => {
-    const [loadedSyllabi, loadedProgress, loadedPapers, loadedQs] = await Promise.all([
+    const [loadedSyllabi, loadedProgress, loadedPapers, loadedQs, loaded3d] = await Promise.all([
       getAllSyllabi(),
       getAllTopicProgress(),
       getAllQuestionPapers(),
-      getAllStoredQuestions()
+      getAllStoredQuestions(),
+      getAll3DAssets().catch(() => [] as Asset3DItem[])
     ]);
     setSyllabi(loadedSyllabi);
     setProgressMap(loadedProgress);
     setPapers(loadedPapers);
     setStoredQuestions(loadedQs);
+    setAssets3d(loaded3d);
     setLastStudied(getLastStudiedTopicSummary());
   }, []);
 
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
+
+  useEffect(() => {
+    try {
+      if (typeof sessionStorage === 'undefined' || !selectedTopicId) return;
+      sessionStorage.setItem(
+        STUDY_POS_STORAGE_KEY,
+        JSON.stringify({
+          syllabusId: activeSyllabusId,
+          subjectCode: selectedSubjectCode,
+          topicId: selectedTopicId,
+          viewMode,
+          expandedSubjects
+        } satisfies SavedStudyPos)
+      );
+    } catch {
+      // ignore storage quota
+    }
+  }, [activeSyllabusId, selectedSubjectCode, selectedTopicId, viewMode, expandedSubjects]);
 
   const activeSyllabus = useMemo(
     () =>
@@ -279,6 +344,52 @@ export default function StudyModeModule({ jumpTarget }: StudyModeModuleProps) {
     return { total, completed, bookmarked };
   }, [activeSyllabus, progressMap]);
 
+  // Compute 3D link counts per topic and active subject without fabricating links
+  const topic3DCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (!activeSyllabus || assets3d.length === 0) return counts;
+    for (const s of activeSyllabus.subjects) {
+      const deptId = mapWorkspaceDeptToBPharmDept(s.departmentId);
+      for (const u of s.units) {
+        for (const t of u.topics) {
+          const res = matchCurriculumAssetsSync(assets3d, {
+            departmentId: deptId,
+            syllabusId: activeSyllabus.id,
+            subjectCode: s.code,
+            unitId: u.id,
+            unitNo: u.unitNo,
+            topicId: t.id,
+            topicTitle: t.title,
+            linkedStructureIds: t.linkedStructureIds,
+            learningDomainMode: t.domainMode,
+            strictDirectOnly: true
+          });
+          if (res.directLinks.length > 0) {
+            counts[t.id] = res.directLinks.length;
+          }
+        }
+      }
+    }
+    return counts;
+  }, [activeSyllabus, assets3d]);
+
+  const activeSubject3DMatches = useMemo(() => {
+    if (!activeSubject || !activeSyllabus || assets3d.length === 0) {
+      return { directLinks: [], verifiedContextualMatches: [] };
+    }
+    const firstTopic = activeSubject.units[0]?.topics[0];
+    return matchCurriculumAssetsSync(assets3d, {
+      departmentId: mapWorkspaceDeptToBPharmDept(activeSubject.departmentId),
+      syllabusId: activeSyllabus.id,
+      subjectCode: activeSubject.code,
+      learningDomainMode: firstTopic?.domainMode
+    });
+  }, [activeSubject, activeSyllabus, assets3d]);
+
+  useEffect(() => {
+    setShowSubject3DPanel(false);
+  }, [activeSubject?.code]);
+
   if (!activeSyllabus) {
     return (
       <div className="p-8 text-center text-sm text-slate-600 dark:text-slate-400">
@@ -382,6 +493,7 @@ export default function StudyModeModule({ jumpTarget }: StudyModeModuleProps) {
                       {unit.topics.map((topic) => {
                         const isSelected = activeTopic?.id === topic.id && viewMode === 'study';
                         const p = progressMap[topic.id];
+                        const count3d = topic3DCounts[topic.id] || 0;
                         return (
                           <button
                             key={topic.id}
@@ -395,6 +507,18 @@ export default function StudyModeModule({ jumpTarget }: StudyModeModuleProps) {
                           >
                             <span className="leading-snug line-clamp-2">{topic.title}</span>
                             <span className="flex items-center gap-1 shrink-0 pt-0.5">
+                              {count3d > 0 && (
+                                <span
+                                  className={`text-[10px] font-bold px-1 rounded ${
+                                    isSelected
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                  }`}
+                                  title={`${count3d} linked 3D model${count3d === 1 ? '' : 's'}`}
+                                >
+                                  3D
+                                </span>
+                              )}
                               {p?.bookmarked && (
                                 <Bookmark
                                   className={`w-3 h-3 fill-current ${
@@ -560,7 +684,51 @@ export default function StudyModeModule({ jumpTarget }: StudyModeModuleProps) {
         )}
 
         {/* Active Learning or Exam Intelligence Area */}
-        <div className={outlineOpen ? 'lg:col-span-8 xl:col-span-9' : 'lg:col-span-12'}>
+        <div className={outlineOpen ? 'lg:col-span-8 xl:col-span-9 space-y-4' : 'lg:col-span-12 space-y-4'}>
+          {viewMode === 'study' &&
+            activeSubject &&
+            (activeSubject3DMatches.directLinks.length > 0 ||
+              activeSubject3DMatches.verifiedContextualMatches.length > 0) && (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowSubject3DPanel((v) => !v)}
+                  className="w-full px-4 py-2.5 flex items-center justify-between gap-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-950"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Box className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>
+                      {activeSubject.code} Subject &amp; Unit 3D Models (
+                      {activeSubject3DMatches.directLinks.length +
+                        activeSubject3DMatches.verifiedContextualMatches.length}
+                      )
+                    </span>
+                  </span>
+                  <span className="text-emerald-700 dark:text-emerald-400">
+                    {showSubject3DPanel ? 'Hide' : 'Show Subject 3D'}
+                  </span>
+                </button>
+                {showSubject3DPanel && (
+                  <div className="p-3 border-t border-slate-200 dark:border-slate-800">
+                    <Academic3DContentPanel
+                      compact
+                      workspaceDepartment={activeSubject.departmentId}
+                      syllabusId={activeSyllabus.id}
+                      course={activeSyllabus.course}
+                      subjectCode={activeSubject.code}
+                      subjectTitle={activeSubject.title}
+                      subjectObjectives={activeSubject.objectives}
+                      learningDomainMode={activeTopic?.domainMode}
+                      title={`${activeSubject.code} Subject-Wide 3D Assets`}
+                      subtitle={activeSubject.title}
+                      preloadedAssets={assets3d}
+                      onAssetsMutated={() => void refresh3DAssets()}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
           {viewMode === 'exam' ? (
             <ExamPrepWorkspace
               syllabus={activeSyllabus}
@@ -582,6 +750,7 @@ export default function StudyModeModule({ jumpTarget }: StudyModeModuleProps) {
               examQuestions={allExamQuestions}
               examPapers={papers}
               onOpenSubjectExamPrep={() => setViewMode('exam')}
+              onAssets3DMutated={() => void refresh3DAssets()}
             />
           ) : (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 text-center">
