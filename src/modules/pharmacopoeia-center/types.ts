@@ -10,6 +10,23 @@ export type ContentAccessType =
   | 'restricted'
   | 'unknown';
 
+export type PharmacopoeiaAvailabilityStatus =
+  | 'official_locally_available'
+  | 'imported_user_pdf'
+  | 'publicly_accessible'
+  | 'external_official_reference'
+  | 'subscription_restricted'
+  | 'unavailable';
+
+export const AVAILABILITY_STATUS_LABELS: Record<PharmacopoeiaAvailabilityStatus, string> = {
+  official_locally_available: 'Official content locally available',
+  imported_user_pdf: 'Imported user-owned PDF',
+  publicly_accessible: 'Publicly accessible content',
+  external_official_reference: 'External official reference',
+  subscription_restricted: 'Subscription-restricted reference',
+  unavailable: 'Information unavailable'
+};
+
 export type SearchSupportType =
   | 'official_public_portal'
   | 'local_imported_pdf'
@@ -49,6 +66,23 @@ export type StandardCategoryId =
   | 'excipients'
   | 'impurities_elemental'
   | 'quality_guidance';
+
+export type KnowledgeEntityKind =
+  | 'drug_substance'
+  | 'excipient'
+  | 'dosage_form'
+  | 'analytical_test'
+  | 'standard_concept'
+  | 'crude_drug';
+
+export const KNOWLEDGE_KIND_LABELS: Record<KnowledgeEntityKind, string> = {
+  drug_substance: 'Drug / API',
+  excipient: 'Excipient / Vehicle',
+  dosage_form: 'Dosage Form / Preparation',
+  analytical_test: 'Analytical Test / Assay',
+  standard_concept: 'Quality Standard / Impurity Concept',
+  crude_drug: 'Botanical / Crude Drug'
+};
 
 export interface OfficialAccessLink {
   id: string;
@@ -171,6 +205,7 @@ export interface RecentlyAccessedEntry {
 export interface PharmacopoeiaUserStore {
   bookmarkedIds: string[];
   recentlyAccessed: RecentlyAccessedEntry[];
+  recentSearches: string[];
   notesByEntryId: Record<string, string>;
   comparisonNotesByKey: Record<string, string>;
   customLinks: UserSavedLink[];
@@ -197,11 +232,135 @@ export interface UnifiedPharmacopoeiaSearchResult {
   relevanceScore: number;
 }
 
+export interface LabConnectionRef {
+  label: string;
+  kind: 'module' | 'experiment' | 'visual';
+  moduleId?: string;
+  tab?: string;
+  experimentId?: string;
+  visualId?: string;
+  description: string;
+}
+
+export interface AcademicTopicLinkRef {
+  subjectCode: string;
+  subjectTitle: string;
+  topicTitle: string;
+  syllabusId?: string;
+  topicId?: string;
+}
+
+export interface SubstanceWorkspaceRecord {
+  id: string;
+  name: string;
+  kind: KnowledgeEntityKind;
+  synonyms: string[];
+  categoryLabel: string;
+  dataSourceOrigin: string;
+  overview: string;
+  chemicalInfo?: {
+    formula?: string;
+    chemicalName?: string;
+    functionalGroups?: string;
+    physicalNotes?: string;
+  };
+  identification?: string[];
+  assayInfo?: {
+    methodName: string;
+    titrantOrTechnique: string;
+    indicator?: string;
+    formulaNote?: string;
+    educationalExplanation: string;
+  };
+  analyticalMethods?: string[];
+  qualityControl?: string[];
+  impurities?: string[];
+  pharmaceuticalApplications?: string[];
+  relevantPharmacopoeiaIds: string[];
+  relatedTestIds?: string[];
+  textbookKeywords: string[];
+  academicLinks: AcademicTopicLinkRef[];
+  labConnections: LabConnectionRef[];
+}
+
+export interface EducationalTestModule {
+  id: string;
+  testName: string;
+  categoryId: AnalyticalTestCategoryId;
+  aliases: string[];
+  dataSourceOrigin: string;
+  purpose: string;
+  scientificPrinciple: string;
+  whatItMeasures: string;
+  chemicalOrPhysicalProcess: string;
+  instrumentsAndApparatus: string[];
+  educationalProcedure: string[];
+  calculationSection?: {
+    formulaLabel: string;
+    formulaExpression: string;
+    variablesNote: string;
+    exampleSummary: string;
+  };
+  resultInterpretation: string;
+  commonErrors: string[];
+  linkedPharmacopoeiaIds: string[];
+  textbookKeywords: string[];
+  labConnections: LabConnectionRef[];
+  academicLinks: AcademicTopicLinkRef[];
+}
+
+export interface TextbookPdfHit {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  authors?: string;
+  department: string;
+  pageNumber: number;
+  snippet: string;
+  isPharmacopoeiaLinked: boolean;
+  linkedEntryAbbreviation?: string;
+}
+
+export interface SeededTextbookMatch {
+  id: string;
+  title: string;
+  authors?: string;
+  subject: string;
+  collectionType: string;
+  accessLabel: string;
+  description: string;
+  externalUrl?: string;
+}
+
+export interface AcademicTopicSearchHit {
+  id: string;
+  subjectCode: string;
+  subjectTitle: string;
+  topicTitle: string;
+  summary: string;
+  syllabusId?: string;
+  topicId?: string;
+  sourceLabel: string;
+}
+
+export interface UnifiedKnowledgeSearchResponse {
+  query: string;
+  textbookPdfHits: TextbookPdfHit[];
+  seededTextbooks: SeededTextbookMatch[];
+  substances: SubstanceWorkspaceRecord[];
+  analyticalTests: EducationalTestModule[];
+  academicTopics: AcademicTopicSearchHit[];
+  pharmacopoeiaResults: UnifiedPharmacopoeiaSearchResult[];
+  hasAnyImportedBooks: boolean;
+  totalHits: number;
+}
+
 export type PharmacopoeiaWorkspaceTab =
   | 'dashboard'
-  | 'directory'
   | 'search'
+  | 'analytical_lab'
   | 'compare'
+  | 'directory'
   | 'official_sources'
   | 'bookmarks'
   | 'editions';
@@ -209,6 +368,8 @@ export type PharmacopoeiaWorkspaceTab =
 export interface PharmacopoeiaCenterJumpTarget {
   tab?: PharmacopoeiaWorkspaceTab | null;
   entryId?: string | null;
+  substanceId?: string | null;
+  testId?: string | null;
   query?: string | null;
   department?: PharmacopoeiaDepartmentKey | null;
   nonce: number;

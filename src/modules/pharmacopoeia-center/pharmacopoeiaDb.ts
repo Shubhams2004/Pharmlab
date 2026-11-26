@@ -16,6 +16,7 @@ const LOCAL_FALLBACK_KEY = 'pharmlab_pharmacopoeia_center_fallback_v1';
 export const DEFAULT_PHARMACOPOEIA_USER_STORE: PharmacopoeiaUserStore = {
   bookmarkedIds: [],
   recentlyAccessed: [],
+  recentSearches: [],
   notesByEntryId: {},
   comparisonNotesByKey: {},
   customLinks: [],
@@ -108,6 +109,9 @@ export function normalizeUserStore(raw: Partial<PharmacopoeiaUserStore> | null |
   return {
     bookmarkedIds: Array.isArray(raw.bookmarkedIds) ? raw.bookmarkedIds.filter(Boolean) : [...base.bookmarkedIds],
     recentlyAccessed: Array.isArray(raw.recentlyAccessed) ? raw.recentlyAccessed : [],
+    recentSearches: Array.isArray(raw.recentSearches)
+      ? raw.recentSearches.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).slice(0, 12)
+      : [],
     notesByEntryId:
       raw.notesByEntryId && typeof raw.notesByEntryId === 'object' ? { ...raw.notesByEntryId } : {},
     comparisonNotesByKey:
@@ -184,6 +188,21 @@ export function recordAccessInStore(
   return {
     ...store,
     recentlyAccessed: [{ entryId, accessedAt: now }, ...filtered].slice(0, 12)
+  };
+}
+
+export function recordSearchInStore(
+  store: PharmacopoeiaUserStore,
+  rawQuery: string
+): PharmacopoeiaUserStore {
+  const trimmed = rawQuery.trim();
+  if (trimmed.length < 2) return store;
+  const deduped = store.recentSearches.filter(
+    (q) => q.toLowerCase() !== trimmed.toLowerCase()
+  );
+  return {
+    ...store,
+    recentSearches: [trimmed, ...deduped].slice(0, 10)
   };
 }
 

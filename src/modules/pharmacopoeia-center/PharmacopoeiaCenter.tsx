@@ -7,6 +7,7 @@ import {
   Globe,
   LayoutDashboard,
   Loader2,
+  Microscope,
   Scale,
   Search
 } from 'lucide-react';
@@ -16,6 +17,8 @@ import { LibraryBookMeta } from '../knowledge-library/types';
 import { getAllPharmacopoeiaProfiles, getAllReferences } from '../reference-center/referenceDb';
 import { PharmacopoeiaProfileMeta, ReferenceItem } from '../reference-center/types';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
+import AnalyticalLearningView from './AnalyticalLearningView';
+import { SUBSTANCE_KNOWLEDGE_BASE } from './knowledgeIndex';
 import OfficialSourceViewer from './OfficialSourceViewer';
 import PharmacopoeiaAcademicLinks from './PharmacopoeiaAcademicLinks';
 import PharmacopoeiaBookmarks from './PharmacopoeiaBookmarks';
@@ -30,6 +33,7 @@ import {
   deleteEditionRecordInStore,
   loadPharmacopoeiaUserStore,
   recordAccessInStore,
+  recordSearchInStore,
   recordSourceCheckInStore,
   savePharmacopoeiaUserStore,
   toggleBookmarkInStore,
@@ -42,6 +46,7 @@ import {
 import PharmacopoeiaDetail from './PharmacopoeiaDetail';
 import PharmacopoeiaDirectory from './PharmacopoeiaDirectory';
 import PharmacopoeiaSearch from './PharmacopoeiaSearch';
+import SubstanceKnowledgeWorkspace from './SubstanceKnowledgeWorkspace';
 import {
   EditionAmendmentRecord,
   PharmacopoeiaAcademicLink,
@@ -62,13 +67,14 @@ const NAV_TABS: Array<{
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'directory', label: 'Directory', icon: Scale },
+  { id: 'dashboard', label: 'Knowledge Workspace', icon: LayoutDashboard },
   { id: 'search', label: 'Unified Search', icon: Search },
-  { id: 'compare', label: 'Compare', icon: GitCompare },
+  { id: 'analytical_lab', label: 'Analytical Learning', icon: Microscope },
+  { id: 'compare', label: 'Compare Compendia', icon: GitCompare },
+  { id: 'directory', label: 'Directory', icon: Scale },
   { id: 'official_sources', label: 'Official Sources', icon: Globe },
-  { id: 'bookmarks', label: 'Bookmarks & Collections', icon: Bookmark },
-  { id: 'editions', label: 'Editions & Academic Links', icon: CalendarClock }
+  { id: 'bookmarks', label: 'Bookmarks', icon: Bookmark },
+  { id: 'editions', label: 'Editions & Syllabus', icon: CalendarClock }
 ];
 
 export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterProps) {
@@ -76,7 +82,14 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
 
   const [activeTab, setActiveTab] = useState<PharmacopoeiaWorkspaceTab>('dashboard');
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
-  const [compareIds, setCompareIds] = useState<string[]>(['pc_ip', 'pc_bp', 'pc_usp_nf']);
+  const [selectedSubstanceId, setSelectedSubstanceId] = useState<string | null>(null);
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
+  const [compareIds, setCompareIds] = useState<string[]>([
+    'pc_ip',
+    'pc_bp',
+    'pc_usp_nf',
+    'pc_ph_eur'
+  ]);
   const [searchSeedQuery, setSearchSeedQuery] = useState('');
   const [searchSeedDepartment, setSearchSeedDepartment] = useState<
     PharmacopoeiaDepartmentKey | 'all'
@@ -117,23 +130,39 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
   // Handle jump target navigation
   useEffect(() => {
     if (!jumpTarget || jumpTarget.nonce === 0) return;
-    if (jumpTarget.entryId) {
+    if (jumpTarget.substanceId) {
+      setSelectedSubstanceId(jumpTarget.substanceId);
+      setSelectedEntryId(null);
+      setSelectedTestId(null);
+    } else if (jumpTarget.testId) {
+      setSelectedTestId(jumpTarget.testId);
+      setSelectedSubstanceId(null);
+      setSelectedEntryId(null);
+      setActiveTab('analytical_lab');
+    } else if (jumpTarget.entryId) {
       setSelectedEntryId(jumpTarget.entryId);
+      setSelectedSubstanceId(null);
+      setSelectedTestId(null);
     } else if (jumpTarget.tab) {
       setSelectedEntryId(null);
+      setSelectedSubstanceId(null);
+      setSelectedTestId(null);
       setActiveTab(jumpTarget.tab);
     }
+
     if (jumpTarget.query) {
       setSearchSeedQuery(jumpTarget.query);
-      if (!jumpTarget.entryId) {
+      if (!jumpTarget.entryId && !jumpTarget.substanceId && !jumpTarget.testId) {
         setSelectedEntryId(null);
+        setSelectedSubstanceId(null);
         setActiveTab('search');
       }
     }
     if (jumpTarget.department) {
       setSearchSeedDepartment(jumpTarget.department);
-      if (!jumpTarget.entryId && !jumpTarget.tab) {
+      if (!jumpTarget.entryId && !jumpTarget.tab && !jumpTarget.substanceId) {
         setSelectedEntryId(null);
+        setSelectedSubstanceId(null);
         setActiveTab('search');
       }
     }
@@ -144,15 +173,22 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
     [selectedEntryId]
   );
 
+  const selectedSubstance = useMemo(
+    () => SUBSTANCE_KNOWLEDGE_BASE.find((s) => s.id === selectedSubstanceId) || null,
+    [selectedSubstanceId]
+  );
+
   // Sync breadcrumbs with DashboardLayout
   useEffect(() => {
-    if (selectedEntry) {
-      setWorkspaceSection('Pharmacopoeia Center', selectedEntry.abbreviation);
+    if (selectedSubstance) {
+      setWorkspaceSection('Pharmaceutical Knowledge Workspace', selectedSubstance.name);
+    } else if (selectedEntry) {
+      setWorkspaceSection('Pharmaceutical Knowledge Workspace', selectedEntry.abbreviation);
     } else {
-      const tabLabel = NAV_TABS.find((t) => t.id === activeTab)?.label || 'Dashboard';
-      setWorkspaceSection('Pharmacopoeia Center', tabLabel);
+      const tabLabel = NAV_TABS.find((t) => t.id === activeTab)?.label || 'Knowledge Workspace';
+      setWorkspaceSection('Pharmaceutical Knowledge Workspace', tabLabel);
     }
-  }, [selectedEntry, activeTab, setWorkspaceSection]);
+  }, [selectedSubstance, selectedEntry, activeTab, setWorkspaceSection]);
 
   const persistStore = useCallback(async (next: PharmacopoeiaUserStore) => {
     setUserStore(next);
@@ -161,6 +197,8 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
 
   const handleSelectEntry = useCallback(
     async (entryId: string) => {
+      setSelectedSubstanceId(null);
+      setSelectedTestId(null);
       setSelectedEntryId(entryId);
       const entry = PHARMACOPOEIA_DIRECTORY.find((e) => e.id === entryId);
       if (entry) {
@@ -176,6 +214,42 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
       await persistStore(next);
     },
     [userStore, persistStore, recordActivity]
+  );
+
+  const handleSelectSubstance = useCallback(
+    (substanceId: string) => {
+      setSelectedEntryId(null);
+      setSelectedTestId(null);
+      setSelectedSubstanceId(substanceId);
+      const sub = SUBSTANCE_KNOWLEDGE_BASE.find((s) => s.id === substanceId);
+      if (sub) {
+        recordActivity({
+          key: `pharma_sub_${sub.id}`,
+          kind: 'reference',
+          moduleId: 'pharmacopoeia_center',
+          title: sub.name,
+          subtitle: sub.categoryLabel
+        });
+      }
+    },
+    [recordActivity]
+  );
+
+  const handleSelectAnalyticalTest = useCallback((testId: string) => {
+    setSelectedEntryId(null);
+    setSelectedSubstanceId(null);
+    setSelectedTestId(testId);
+    setActiveTab('analytical_lab');
+  }, []);
+
+  const handleRecordSearch = useCallback(
+    async (q: string) => {
+      const next = recordSearchInStore(userStore, q);
+      if (next !== userStore) {
+        await persistStore(next);
+      }
+    },
+    [userStore, persistStore]
   );
 
   const handleToggleBookmark = useCallback(
@@ -301,6 +375,7 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
   const handleAddToCompare = useCallback((entryId: string) => {
     setCompareIds((prev) => (prev.includes(entryId) ? prev : [...prev, entryId]));
     setSelectedEntryId(null);
+    setSelectedSubstanceId(null);
     setActiveTab('compare');
   }, []);
 
@@ -309,6 +384,7 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
       setSearchSeedQuery(query);
       setSearchSeedDepartment(department);
       setSelectedEntryId(null);
+      setSelectedSubstanceId(null);
       setActiveTab('search');
     },
     []
@@ -321,30 +397,32 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Pharmacopoeia Reference Center
+              Pharmaceutical Knowledge &amp; Pharmacopoeia Workspace
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Official pharmacopoeias, standards directory, source verification, side-by-side comparison &amp; curriculum links
+              Drug &amp; excipient knowledge, textbook-first PDF retrieval, practical analytical learning, Study Mode links &amp; pharmacopoeia standards
             </p>
           </div>
           <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
-            7 Pharmacopoeias · 1 Drug Reference Book
+            {SUBSTANCE_KNOWLEDGE_BASE.length} Knowledge Topics · {books.length} Local PDF(s) · 7 Pharmacopoeias
           </span>
         </div>
 
         <nav
-          aria-label="Pharmacopoeia Center sections"
+          aria-label="Pharmaceutical Knowledge Workspace sections"
           className="flex items-center gap-1 overflow-x-auto p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl"
         >
           {NAV_TABS.map((tab) => {
             const Icon = tab.icon;
-            const active = !selectedEntry && activeTab === tab.id;
+            const active = !selectedEntry && !selectedSubstance && activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => {
                   setSelectedEntryId(null);
+                  setSelectedSubstanceId(null);
+                  if (tab.id !== 'analytical_lab') setSelectedTestId(null);
                   setActiveTab(tab.id);
                 }}
                 className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
@@ -364,8 +442,18 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
       {loading ? (
         <div className="py-16 flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400">
           <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
-          <span>Loading Pharmacopoeia Reference Center...</span>
+          <span>Loading Pharmaceutical Knowledge Workspace...</span>
         </div>
+      ) : selectedSubstance ? (
+        <SubstanceKnowledgeWorkspace
+          substance={selectedSubstance}
+          books={books}
+          referenceItems={referenceItems}
+          referenceProfiles={referenceProfiles}
+          onBack={() => setSelectedSubstanceId(null)}
+          onOpenPharmacopoeiaEntry={handleSelectEntry}
+          onOpenAnalyticalTest={handleSelectAnalyticalTest}
+        />
       ) : selectedEntry ? (
         <PharmacopoeiaDetail
           entry={selectedEntry}
@@ -387,21 +475,18 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
         <PharmacopoeiaDashboard
           userStore={userStore}
           books={books}
+          referenceItems={referenceItems}
+          referenceProfiles={referenceProfiles}
           onNavigateTab={(tab) => {
             setSelectedEntryId(null);
+            setSelectedSubstanceId(null);
             setActiveTab(tab);
           }}
           onSelectEntry={handleSelectEntry}
+          onSelectSubstance={handleSelectSubstance}
+          onSelectAnalyticalTest={handleSelectAnalyticalTest}
           onQuickSearch={handleQuickSearch}
-          onToggleBookmark={handleToggleBookmark}
-          onAddToCompare={handleAddToCompare}
-        />
-      ) : activeTab === 'directory' ? (
-        <PharmacopoeiaDirectory
-          userStore={userStore}
-          onSelectEntry={handleSelectEntry}
-          onToggleBookmark={handleToggleBookmark}
-          onAddToCompare={handleAddToCompare}
+          onRecordSearch={handleRecordSearch}
         />
       ) : activeTab === 'search' ? (
         <PharmacopoeiaSearch
@@ -412,6 +497,16 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
           referenceItems={referenceItems}
           referenceProfiles={referenceProfiles}
           onSelectEntry={handleSelectEntry}
+          onSelectSubstance={handleSelectSubstance}
+          onSelectAnalyticalTest={handleSelectAnalyticalTest}
+          onRecordSearch={handleRecordSearch}
+        />
+      ) : activeTab === 'analytical_lab' ? (
+        <AnalyticalLearningView
+          selectedTestId={selectedTestId}
+          onSelectTestId={setSelectedTestId}
+          books={books}
+          onOpenPharmacopoeiaEntry={handleSelectEntry}
         />
       ) : activeTab === 'compare' ? (
         <PharmacopoeiaComparison
@@ -420,8 +515,17 @@ export default function PharmacopoeiaCenter({ jumpTarget }: PharmacopoeiaCenterP
           userStore={userStore}
           books={books}
           referenceItems={referenceItems}
+          referenceProfiles={referenceProfiles}
           onSaveComparisonNote={handleSaveComparisonNote}
           onSelectEntry={handleSelectEntry}
+          onSelectSubstance={handleSelectSubstance}
+        />
+      ) : activeTab === 'directory' ? (
+        <PharmacopoeiaDirectory
+          userStore={userStore}
+          onSelectEntry={handleSelectEntry}
+          onToggleBookmark={handleToggleBookmark}
+          onAddToCompare={handleAddToCompare}
         />
       ) : activeTab === 'official_sources' ? (
         <div className="space-y-4">

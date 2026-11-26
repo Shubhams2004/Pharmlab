@@ -3,11 +3,18 @@ import {
   AlertTriangle,
   ExternalLink,
   GitCompare,
-  Save
+  Save,
+  ShieldAlert,
+  ShieldCheck
 } from 'lucide-react';
 import { LibraryBookMeta } from '../knowledge-library/types';
-import { ReferenceItem } from '../reference-center/types';
+import { PharmacopoeiaProfileMeta, ReferenceItem } from '../reference-center/types';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
+import {
+  computePharmacopoeiaAvailability,
+  EDUCATIONAL_ANALYTICAL_TESTS,
+  SUBSTANCE_KNOWLEDGE_BASE
+} from './knowledgeIndex';
 import { PHARMACOPOEIA_DIRECTORY } from './pharmacopoeiaCatalog';
 import { buildPharmacopoeiaComparisonMatrix } from './searchEngine';
 import { PharmacopoeiaUserStore } from './types';
@@ -18,9 +25,13 @@ interface PharmacopoeiaComparisonProps {
   userStore: PharmacopoeiaUserStore;
   books: LibraryBookMeta[];
   referenceItems: ReferenceItem[];
+  referenceProfiles?: PharmacopoeiaProfileMeta[];
   onSaveComparisonNote: (entryId: string, note: string) => Promise<void>;
   onSelectEntry: (entryId: string) => void;
+  onSelectSubstance?: (substanceId: string) => void;
 }
+
+const CORE_FOUR_IDS = ['pc_ip', 'pc_bp', 'pc_usp_nf', 'pc_ph_eur'];
 
 export default function PharmacopoeiaComparison({
   selectedEntryIds,
@@ -28,8 +39,10 @@ export default function PharmacopoeiaComparison({
   userStore,
   books,
   referenceItems,
+  referenceProfiles = [],
   onSaveComparisonNote,
-  onSelectEntry
+  onSelectEntry,
+  onSelectSubstance
 }: PharmacopoeiaComparisonProps) {
   const [focusQuery, setFocusQuery] = useState('');
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>(
@@ -58,6 +71,17 @@ export default function PharmacopoeiaComparison({
     [selectedEntryIds, focusQuery, userStore, books, referenceItems]
   );
 
+  const matchedSubstance = useMemo(() => {
+    const q = focusQuery.trim().toLowerCase();
+    if (q.length < 2) return null;
+    return (
+      SUBSTANCE_KNOWLEDGE_BASE.find((sub) => {
+        const hay = `${sub.name} ${sub.synonyms.join(' ')} ${sub.categoryLabel}`.toLowerCase();
+        return hay.includes(q);
+      }) || null
+    );
+  }, [focusQuery]);
+
   const handleSaveNote = async (entryId: string) => {
     await onSaveComparisonNote(entryId, noteDrafts[entryId] || '');
     setSavedId(entryId);
@@ -72,22 +96,31 @@ export default function PharmacopoeiaComparison({
           <div className="space-y-1">
             <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <GitCompare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Side-by-Side Pharmacopoeia Comparison Workspace</span>
+              <span>Pharmacopoeia Comparison Workspace (IP · BP · USP–NF · Ph. Eur.)</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Select multiple pharmacopoeias (or Martindale for scope contrast) to compare reference availability, accessibility status, edition records, official portals, and your verified notes.
+              Compare reference accessibility, local imported PDFs, PharmaLab curriculum coverage, edition metadata, and your notes side by side.
             </p>
           </div>
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
-            {matrix.length} selected
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onChangeSelectedIds(CORE_FOUR_IDS)}
+              className="min-h-[32px] px-3 py-1 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap"
+            >
+              IP · BP · USP–NF · Ph. Eur.
+            </button>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
+              {matrix.length} selected
+            </span>
+          </div>
         </div>
 
-        {/* Non-fabrication Integrity Notice */}
+        {/* Integrity Notice */}
         <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
           <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <p>
-            <strong>Scientific Integrity Guarantee:</strong> This workspace compares verified availability, official portal links, edition metadata, and user-recorded notes only. It never fabricates assay tolerances, impurity limits, acceptance criteria, or unverified monograph differences. Always consult the official portal for binding specifications.
+            <strong>Zero-Fabrication Integrity:</strong> This matrix compares verified availability status, local PharmaLab educational links, official portal links, edition notes, and your comparison notes only. It never invents monograph specification tolerances or assay acceptance differences.
           </p>
         </div>
 
@@ -116,21 +149,30 @@ export default function PharmacopoeiaComparison({
         {/* Topic / Drug / Category Scope Filter */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
           <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 shrink-0">
-            Focus Drug / Monograph / Test Category:
+            Focus Drug, Substance or Test:
           </label>
           <input
             type="text"
             value={focusQuery}
             onChange={(e) => setFocusQuery(e.target.value)}
-            placeholder="e.g., dissolution, limit tests, excipients, crude drugs, paracetamol..."
+            placeholder="e.g., Paracetamol, Aspirin, Ferrous Sulphate, Dissolution, Limit tests..."
             className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm text-slate-900 dark:text-white"
           />
+          {matchedSubstance && onSelectSubstance && (
+            <button
+              type="button"
+              onClick={() => onSelectSubstance(matchedSubstance.id)}
+              className="min-h-[36px] px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold whitespace-nowrap shrink-0"
+            >
+              Open {matchedSubstance.name.split('(')[0].trim()} Workspace
+            </button>
+          )}
         </div>
       </section>
 
       {/* Side-by-Side Matrix Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[720px]">
+        <table className="w-full text-left border-collapse min-w-[780px]">
           <thead>
             <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
               <th className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400 w-44">
@@ -157,69 +199,108 @@ export default function PharmacopoeiaComparison({
           <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-xs sm:text-sm">
             <tr>
               <td className="p-4 font-semibold text-slate-700 dark:text-slate-200 align-top">
-                Classification
+                Monograph / Content Availability
               </td>
-              {matrix.map((cell) => (
-                <td key={cell.entry.id} className="p-4 text-slate-600 dark:text-slate-300 align-top">
-                  {cell.classificationLabel}
-                </td>
-              ))}
+              {matrix.map((cell) => {
+                const avail = computePharmacopoeiaAvailability({
+                  entry: cell.entry,
+                  books,
+                  referenceItems,
+                  referenceProfiles
+                });
+                const isOpen =
+                  avail.status === 'imported_user_pdf' ||
+                  avail.status === 'publicly_accessible' ||
+                  avail.status === 'official_locally_available';
+                return (
+                  <td key={cell.entry.id} className="p-4 align-top space-y-1">
+                    <span
+                      className={`inline-flex items-center gap-1 text-xs font-bold ${
+                        isOpen
+                          ? 'text-emerald-700 dark:text-emerald-400'
+                          : 'text-amber-700 dark:text-amber-400'
+                      }`}
+                    >
+                      {isOpen ? (
+                        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                      ) : (
+                        <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                      <span>{avail.label}</span>
+                    </span>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      {avail.detail}
+                    </p>
+                  </td>
+                );
+              })}
             </tr>
 
             <tr>
               <td className="p-4 font-semibold text-slate-700 dark:text-slate-200 align-top">
-                Issuing Authority &amp; Region
-              </td>
-              {matrix.map((cell) => (
-                <td key={cell.entry.id} className="p-4 text-slate-600 dark:text-slate-300 align-top">
-                  <span className="block font-medium text-slate-900 dark:text-white">
-                    {cell.entry.countryOrRegion}
-                  </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {cell.entry.issuingOrganization}
-                  </span>
-                </td>
-              ))}
-            </tr>
-
-            <tr>
-              <td className="p-4 font-semibold text-slate-700 dark:text-slate-200 align-top">
-                Online Access &amp; Availability
+                Classification &amp; Authority
               </td>
               {matrix.map((cell) => (
                 <td key={cell.entry.id} className="p-4 text-slate-600 dark:text-slate-300 align-top space-y-1">
-                  <span className="block font-semibold text-slate-900 dark:text-white">
-                    {cell.accessTypeLabel}
+                  <span className="block font-medium text-slate-900 dark:text-white">
+                    {cell.classificationLabel}
                   </span>
-                  <span className="block text-xs leading-relaxed">{cell.availabilityStatus}</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                    {cell.entry.countryOrRegion} · {cell.entry.issuingOrganization}
+                  </span>
                 </td>
               ))}
+            </tr>
+
+            <tr>
+              <td className="p-4 font-semibold text-slate-700 dark:text-slate-200 align-top">
+                PharmaLab Educational Coverage
+              </td>
+              {matrix.map((cell) => {
+                const subCount = SUBSTANCE_KNOWLEDGE_BASE.filter((s) =>
+                  s.relevantPharmacopoeiaIds.includes(cell.entry.id)
+                ).length;
+                const testCount = EDUCATIONAL_ANALYTICAL_TESTS.filter((t) =>
+                  t.linkedPharmacopoeiaIds.includes(cell.entry.id)
+                ).length;
+                return (
+                  <td key={cell.entry.id} className="p-4 text-xs text-slate-700 dark:text-slate-300 align-top tabular-nums">
+                    {subCount} substance topic(s) · {testCount} analytical guide(s)
+                  </td>
+                );
+              })}
             </tr>
 
             {focusQuery.trim().length >= 2 && (
               <tr>
                 <td className="p-4 font-semibold text-slate-700 dark:text-slate-200 align-top">
-                  Scope Match for &ldquo;{focusQuery.trim()}&rdquo;
+                  Relevance for &ldquo;{focusQuery.trim()}&rdquo;
                 </td>
-                {matrix.map((cell) => (
-                  <td key={cell.entry.id} className="p-4 align-top text-xs">
-                    {cell.coversSelectedFocus ? (
-                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                        Topic covered in directory scope metadata (verify exact monograph on official portal)
-                      </span>
-                    ) : (
-                      <span className="text-slate-500 dark:text-slate-400">
-                        Not explicitly listed in local scope summary — check official portal directly
-                      </span>
-                    )}
-                  </td>
-                ))}
+                {matrix.map((cell) => {
+                  const subReferenced = matchedSubstance
+                    ? matchedSubstance.relevantPharmacopoeiaIds.includes(cell.entry.id)
+                    : false;
+                  const covered = cell.coversSelectedFocus || subReferenced;
+                  return (
+                    <td key={cell.entry.id} className="p-4 align-top text-xs">
+                      {covered ? (
+                        <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                          Referenced in local scope / curriculum links (verify binding monograph on official portal)
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 dark:text-slate-400">
+                          Not listed in local summary — verify directly on official portal
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             )}
 
             <tr>
               <td className="p-4 font-semibold text-slate-700 dark:text-slate-200 align-top">
-                Verified / Recorded Edition Metadata
+                Edition &amp; Supplement Metadata
               </td>
               {matrix.map((cell) => (
                 <td key={cell.entry.id} className="p-4 text-xs text-slate-600 dark:text-slate-300 align-top leading-relaxed">
@@ -230,20 +311,7 @@ export default function PharmacopoeiaComparison({
 
             <tr>
               <td className="p-4 font-semibold text-slate-700 dark:text-slate-200 align-top">
-                Local Imported PDFs
-              </td>
-              {matrix.map((cell) => (
-                <td key={cell.entry.id} className="p-4 text-xs text-slate-700 dark:text-slate-300 align-top tabular-nums">
-                  {cell.linkedLocalPdfCount > 0
-                    ? `${cell.linkedLocalPdfCount} PDF document(s) linked locally`
-                    : 'No local PDF attached'}
-                </td>
-              ))}
-            </tr>
-
-            <tr>
-              <td className="p-4 font-semibold text-slate-700 dark:text-slate-200 align-top">
-                Official Source Links
+                Official Source Portals
               </td>
               {matrix.map((cell) => {
                 const portal = sanitizeHttpUrl(cell.officialPortalUrl);
