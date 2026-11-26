@@ -24,17 +24,15 @@ import {
   Compass,
   Terminal,
   Beaker,
-  BarChart3,
-  FilePenLine
+  BookMarked
 } from 'lucide-react';
 
 export const SUBJECT_NAV_ITEMS = [
   { id: 'dashboard', label: 'Overview & Hub', group: 'Workspace', icon: LayoutGrid, code: 'Workspace' },
   { id: 'study_mode', label: 'Study Mode & Exam Prep', group: 'Workspace', icon: GraduationCap, code: 'Syllabus & Content Engine' },
-  { id: 'coverage_analyzer', label: 'Coverage Analyzer', group: 'Workspace', icon: BarChart3, code: 'P4.1 Gap Intelligence' },
-  { id: 'enrichment_workspace', label: 'Content Enrichment', group: 'Workspace', icon: FilePenLine, code: 'P4.2.1 Topic Authoring' },
   { id: 'syllabus', label: 'Official Syllabus', group: 'Workspace', icon: FileText, code: 'B.Pharm Sem I PDF' },
   { id: 'reference_center', label: 'Reference Center', group: 'Workspace', icon: Scale, code: 'Pharmacopoeias & Books' },
+  { id: 'pharmacopoeia_center', label: 'Pharmacopoeia Center', group: 'Workspace', icon: BookMarked, code: 'IP · BP · USP · Ph. Eur. · JP' },
   { id: 'resource_hub', label: 'Scientific Resource Hub', group: 'Workspace', icon: Globe, code: 'Open Access Search' },
   { id: 'knowledge_library', label: 'Knowledge Library', group: 'Workspace', icon: Library, code: 'PDF Library' },
   { id: 'visual_library', label: 'Visual Library', group: 'Workspace', icon: Images, code: 'Scientific Atlas' },
@@ -133,38 +131,6 @@ export default function SubjectNavigation({
             <span className="flex items-center gap-2.5 truncate">
               <GraduationCap className="w-4 h-4 shrink-0" />
               <span className="truncate">Study Mode &amp; Exam Prep</span>
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onSelectModule('coverage_analyzer')}
-            aria-current={activeModule === 'coverage_analyzer' ? 'page' : undefined}
-            className={`w-full min-h-[42px] flex items-center justify-between px-3 py-2 rounded-xl transition-colors whitespace-nowrap ${
-              activeModule === 'coverage_analyzer'
-                ? 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
-            }`}
-          >
-            <span className="flex items-center gap-2.5 truncate">
-              <BarChart3 className="w-4 h-4 shrink-0" />
-              <span className="truncate">Coverage Analyzer</span>
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onSelectModule('enrichment_workspace')}
-            aria-current={activeModule === 'enrichment_workspace' ? 'page' : undefined}
-            className={`w-full min-h-[42px] flex items-center justify-between px-3 py-2 rounded-xl transition-colors whitespace-nowrap ${
-              activeModule === 'enrichment_workspace'
-                ? 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
-            }`}
-          >
-            <span className="flex items-center gap-2.5 truncate">
-              <FilePenLine className="w-4 h-4 shrink-0" />
-              <span className="truncate">Content Enrichment</span>
             </span>
           </button>
 
@@ -293,6 +259,22 @@ export default function SubjectNavigation({
             <span className="flex items-center gap-2.5 truncate">
               <Scale className="w-4 h-4 shrink-0" />
               <span className="truncate">Reference Center</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSelectModule('pharmacopoeia_center')}
+            aria-current={activeModule === 'pharmacopoeia_center' ? 'page' : undefined}
+            className={`w-full min-h-[42px] flex items-center justify-between px-3 py-2 rounded-xl transition-colors whitespace-nowrap ${
+              activeModule === 'pharmacopoeia_center'
+                ? 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-semibold'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent'
+            }`}
+          >
+            <span className="flex items-center gap-2.5 truncate">
+              <BookMarked className="w-4 h-4 shrink-0" />
+              <span className="truncate">Pharmacopoeia Center</span>
             </span>
           </button>
 

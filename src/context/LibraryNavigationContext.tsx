@@ -1,5 +1,6 @@
 import React, { createContext, useContext } from 'react';
 import { BPharmDepartmentId } from '../modules/assets-3d/types';
+import { PharmacopoeiaCenterJumpTarget } from '../modules/pharmacopoeia-center/types';
 import { ReferenceNavSection } from '../modules/reference-center/types';
 import { AcademicContextRef, ResourceHubTab, ResourceType } from '../modules/resource-hub/types';
 import {
@@ -95,6 +96,7 @@ interface LibraryNavigationContextValue {
   openVisualLibrary: (opts?: Omit<VisualJumpTarget, 'nonce'>) => void;
   openResourceHub: (opts?: Omit<ResourceJumpTarget, 'nonce'>) => void;
   openReferenceCenter: (opts?: Omit<ReferenceJumpTarget, 'nonce'>) => void;
+  openPharmacopoeiaCenter: (opts?: Omit<PharmacopoeiaCenterJumpTarget, 'nonce'>) => void;
   openStudyMode: (opts?: Omit<StudyModeJumpTarget, 'nonce'>) => void;
   openAsset3DEngine: (opts?: Omit<Asset3DJumpTarget, 'nonce'>) => void;
   openAcademicExplorer: (opts?: Omit<AcademicExplorerJumpTarget, 'nonce'>) => void;
@@ -123,6 +125,7 @@ export const LibraryNavigationContext = createContext<LibraryNavigationContextVa
   openVisualLibrary: noop,
   openResourceHub: noop,
   openReferenceCenter: noop,
+  openPharmacopoeiaCenter: noop,
   openStudyMode: noop,
   openAsset3DEngine: noop,
   openAcademicExplorer: noop,

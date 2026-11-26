@@ -20,8 +20,7 @@ import {
   Box,
   Terminal,
   Beaker,
-  BarChart3,
-  FilePenLine
+  BookMarked
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 import { getAll3DAssets } from '../modules/assets-3d/asset3dDb';
@@ -35,12 +34,13 @@ export const QUICK_INDEX = [
   // Study Mode & Anatomy Explorer & Libraries
   { title: 'Study Mode & Academic Content Engine', sub: 'Syllabus-Driven Learning, Auto-Sourced References, Personal Notes & Bookmarks', module: 'study_mode', studyView: 'study', cat: 'Study Mode', icon: GraduationCap },
   { title: 'Exam Prep & Previous-Year Question Paper Intelligence', sub: '9 Question Formats, Paper PDF Importer & Evidence-Based Unit Analysis', module: 'study_mode', studyView: 'exam', cat: 'Exam Prep', icon: GraduationCap },
-  { title: 'Syllabus Coverage & Content Gap Analyzer (P4.1)', sub: 'Audit Hierarchy Completeness, References, Visuals, 3D Assets, Practicals & Assessment Gaps', module: 'coverage_analyzer', coverageAnalyzer: true, cat: 'Coverage Audit', icon: BarChart3 },
-  { title: 'Academic Content Enrichment Workspace (P4.2.1)', sub: 'Enrich Incomplete Syllabus Topics Section-by-Section with References & Review Controls', module: 'enrichment_workspace', enrichmentWorkspace: true, cat: 'Enrichment', icon: FilePenLine },
   { title: 'Anatomy Explorer (60 Cataloged Organs, Parts & Tissues)', sub: 'BP104T · Search, Filter 10 Body Systems, View Plates & Textbook Links', module: 'anatomy', tab: 'explorer', cat: 'Explorer', icon: Activity },
   { title: 'Anatomy Identification Practice', sub: 'BP104T · Structure & Function MCQs and Calibrated Visual Pin Quiz', module: 'anatomy', tab: 'practice', cat: 'Practice', icon: Compass },
   { title: 'Official B.Pharm Semester I Syllabus (PDF Pages 38–65)', sub: 'Verbatim Scheme, Objectives, Outcomes, Units I–V, Practicals & References (BP101T–BP111P)', module: 'syllabus', tab: null, cat: 'Syllabus', icon: FileText },
   { title: 'Pharmaceutical Reference Center (Pharmacopoeias, Textbooks & Standards)', sub: 'IP, BP, USP–NF, Ph. Eur., WHO Ph. Int., Textbooks, Handbooks & Guidelines', referenceSection: 'overview', cat: 'Reference Center', icon: Scale },
+  { title: 'Pharmacopoeia Reference Center (P4.3.1)', sub: 'IP, BP, USP–NF, Ph. Eur., WHO Ph. Int., JP, ChP & Martindale Directory, Compare & Portals', pharmacopoeiaTab: 'dashboard', cat: 'Pharmacopoeias', icon: BookMarked },
+  { title: 'Pharmacopoeia Side-by-Side Comparison Workspace', sub: 'Compare IP, BP, USP–NF, Ph. Eur., WHO Ph. Int., JP & ChP availability and portals', pharmacopoeiaTab: 'compare', cat: 'Pharmacopoeias', icon: Scale },
+  { title: 'Japanese Pharmacopoeia (JP) & Chinese Pharmacopoeia (ChP)', sub: 'PMDA Official English Portal & NMPA Chinese Pharmacopoeia Commission Entry', pharmacopoeiaEntryId: 'pc_jp', cat: 'Pharmacopoeias', icon: BookMarked },
   { title: 'Knowledge Library (PDF Textbook Reader & Search)', sub: 'Offline IndexedDB PDF Repository · Full-Book Search, Notes & Diagram Crop', module: 'knowledge_library', tab: null, cat: 'Library', icon: Library },
   { title: 'Scientific Resource Hub (PubMed, Europe PMC, OpenStax, Wikimedia)', sub: 'Discover Open-Access Papers, Textbooks, Reference Chapters & Scientific Visuals', module: 'resource_hub', tab: null, cat: 'Resource Hub', icon: Globe },
   { title: 'Academic Visual Learning Library & Atlas', sub: 'Interactive Diagrams, Structure Labels, Mechanisms, MCQs & Open-Access Search', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
@@ -105,13 +105,12 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     openKnowledgeLibrary,
     openResourceHub,
     openReferenceCenter,
+    openPharmacopoeiaCenter,
     openStudyMode,
     openAsset3DEngine,
     openAcademicExplorer,
     openInteractiveExperiments,
-    openPythonStudio,
-    openCoverageAnalyzer,
-    openEnrichmentWorkspace
+    openPythonStudio
   } = useLibraryNavigation();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -265,11 +264,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
   }, [query, books, visuals, references, assets3d]);
 
   const launchPick = (pick) => {
-    if (pick.enrichmentWorkspace) {
-      openEnrichmentWorkspace();
-    } else if (pick.coverageAnalyzer) {
-      openCoverageAnalyzer();
-    } else if (pick.pythonStudio) {
+    if (pick.pythonStudio) {
       openPythonStudio();
     } else if (pick.experimentSimId) {
       openInteractiveExperiments({ experimentId: pick.experimentSimId });
@@ -283,6 +278,10 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
       openAsset3DEngine({ tab: pick.asset3dTab });
     } else if (pick.studyView) {
       openStudyMode({ view: pick.studyView });
+    } else if (pick.pharmacopoeiaEntryId) {
+      openPharmacopoeiaCenter({ entryId: pick.pharmacopoeiaEntryId });
+    } else if (pick.pharmacopoeiaTab) {
+      openPharmacopoeiaCenter({ tab: pick.pharmacopoeiaTab });
     } else if (pick.referenceId) {
       openReferenceCenter({ referenceId: pick.referenceId });
     } else if (pick.referenceSection) {

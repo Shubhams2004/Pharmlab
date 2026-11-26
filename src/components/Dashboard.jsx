@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BarChart3,
   Beaker,
+  BookMarked,
   BookOpen,
   Box,
   Clock,
@@ -59,6 +60,7 @@ export default function Dashboard({
     openVisualLibrary,
     openResourceHub,
     openReferenceCenter,
+    openPharmacopoeiaCenter,
     openStudyMode,
     openAsset3DEngine,
     openAcademicExplorer,
@@ -322,6 +324,10 @@ export default function Dashboard({
                       ? openInteractiveExperiments({ experimentId: hit.experimentSimId })
                       : hit.interactiveSims
                       ? openInteractiveExperiments()
+                      : hit.pharmacopoeiaEntryId
+                      ? openPharmacopoeiaCenter({ entryId: hit.pharmacopoeiaEntryId })
+                      : hit.pharmacopoeiaTab
+                      ? openPharmacopoeiaCenter({ tab: hit.pharmacopoeiaTab })
                       : hit.referenceSection
                       ? openReferenceCenter({ section: hit.referenceSection })
                       : hit.visualId
@@ -694,6 +700,12 @@ export default function Dashboard({
               sub: 'Pharmacopoeias & Books',
               icon: Scale,
               action: () => openReferenceCenter({ section: 'overview' })
+            },
+            {
+              label: 'Pharmacopoeias',
+              sub: 'IP · BP · USP · Ph. Eur. · JP',
+              icon: BookMarked,
+              action: () => openPharmacopoeiaCenter({ tab: 'dashboard' })
             },
             {
               label: 'Equipment',

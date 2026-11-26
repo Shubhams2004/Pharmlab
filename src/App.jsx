@@ -16,14 +16,13 @@ import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibrary
 import Assets3DModule from './modules/assets-3d/Assets3DModule';
 import Academic3DExplorerModule from './modules/assets-3d/Academic3DExplorerModule';
 import InteractiveExperimentsModule from './modules/interactive-experiments/InteractiveExperimentsModule';
+import PharmacopoeiaCenter from './modules/pharmacopoeia-center/PharmacopoeiaCenter';
 import ReferenceCenterModule from './modules/reference-center/ReferenceCenterModule';
 import ResourceHubModule from './modules/resource-hub/ResourceHubModule';
 import StudyModeModule from './modules/study-mode/StudyModeModule';
 import SyllabusModule from './modules/syllabus/SyllabusModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 import PythonStudioWorkspace from './modules/python-studio/PythonStudioWorkspace';
-import CoverageAnalyzerModule from './modules/coverage-analyzer/CoverageAnalyzerModule';
-import EnrichmentWorkspaceModule from './modules/enrichment-workspace/EnrichmentWorkspaceModule';
 import { OfflineIndicator } from './components/PWAControls';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
 import {
@@ -78,6 +77,13 @@ export default function App() {
     query: null,
     nonce: 0
   });
+  const [pharmacopoeiaJump, setPharmacopoeiaJump] = useState({
+    tab: null,
+    entryId: null,
+    query: null,
+    department: null,
+    nonce: 0
+  });
   const [studyJump, setStudyJump] = useState({
     syllabusId: null,
     subjectCode: null,
@@ -117,20 +123,6 @@ export default function App() {
     experimentId: null,
     stage: null,
     department: null,
-    nonce: 0
-  });
-  const [coverageJump, setCoverageJump] = useState({
-    subjectCode: null,
-    topicId: null,
-    tab: null,
-    nonce: 0
-  });
-  const [enrichmentJump, setEnrichmentJump] = useState({
-    syllabusId: null,
-    subjectCode: null,
-    topicId: null,
-    sectionKey: null,
-    returnTo: null,
     nonce: 0
   });
   const [explorerReturnModule, setExplorerReturnModule] = useState('assets_3d');
@@ -279,9 +271,8 @@ export default function App() {
         moduleId !== 'interactive_experiments' &&
         moduleId !== 'resource_hub' &&
         moduleId !== 'reference_center' &&
-        moduleId !== 'python_studio' &&
-        moduleId !== 'coverage_analyzer' &&
-        moduleId !== 'enrichment_workspace'
+        moduleId !== 'pharmacopoeia_center' &&
+        moduleId !== 'python_studio'
       ) {
         setLastModule(moduleId);
         try {
@@ -388,6 +379,20 @@ export default function App() {
     [navigateTo]
   );
 
+  const openPharmacopoeiaCenter = useCallback(
+    (opts = {}) => {
+      setPharmacopoeiaJump((prev) => ({
+        tab: opts.tab ?? null,
+        entryId: opts.entryId ?? null,
+        query: opts.query ?? null,
+        department: opts.department ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('pharmacopoeia_center');
+    },
+    [navigateTo]
+  );
+
   const openStudyMode = useCallback(
     (opts = {}) => {
       setStudyJump((prev) => ({
@@ -466,34 +471,6 @@ export default function App() {
     [navigateTo]
   );
 
-  const openCoverageAnalyzer = useCallback(
-    (opts = {}) => {
-      setCoverageJump((prev) => ({
-        subjectCode: opts.subjectCode ?? null,
-        topicId: opts.topicId ?? null,
-        tab: opts.tab ?? null,
-        nonce: prev.nonce + 1
-      }));
-      navigateTo('coverage_analyzer');
-    },
-    [navigateTo]
-  );
-
-  const openEnrichmentWorkspace = useCallback(
-    (opts = {}) => {
-      setEnrichmentJump((prev) => ({
-        syllabusId: opts.syllabusId ?? null,
-        subjectCode: opts.subjectCode ?? null,
-        topicId: opts.topicId ?? null,
-        sectionKey: opts.sectionKey ?? null,
-        returnTo: opts.returnTo ?? null,
-        nonce: prev.nonce + 1
-      }));
-      navigateTo('enrichment_workspace');
-    },
-    [navigateTo]
-  );
-
   const handleOpenRecentItem = useCallback(
     (item) => {
       if (item.kind === 'interactive_sim' && item.experimentSimId) {
@@ -564,13 +541,12 @@ export default function App() {
       openVisualLibrary,
       openResourceHub,
       openReferenceCenter,
+      openPharmacopoeiaCenter,
       openStudyMode,
       openAsset3DEngine,
       openAcademicExplorer,
       openInteractiveExperiments,
       openPythonStudio,
-      openCoverageAnalyzer,
-      openEnrichmentWorkspace,
       navigateToModule: navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -585,13 +561,12 @@ export default function App() {
       openVisualLibrary,
       openResourceHub,
       openReferenceCenter,
+      openPharmacopoeiaCenter,
       openStudyMode,
       openAsset3DEngine,
       openAcademicExplorer,
       openInteractiveExperiments,
       openPythonStudio,
-      openCoverageAnalyzer,
-      openEnrichmentWorkspace,
       navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -640,6 +615,7 @@ export default function App() {
       assets_3d: 'Back to 3D Library',
       interactive_experiments: 'Back to Interactive Simulation',
       reference_center: 'Back to References',
+      pharmacopoeia_center: 'Back to Pharmacopoeia Center',
       resource_hub: 'Back to Resource Hub',
       inorganic: 'Back to Inorganic Lab',
       pharmacognosy: 'Back to Pharmacognosy',
@@ -793,16 +769,13 @@ export default function App() {
         {activeModule === 'reference_center' && (
           <ReferenceCenterModule jumpTarget={referenceJump} />
         )}
+        {activeModule === 'pharmacopoeia_center' && (
+          <PharmacopoeiaCenter jumpTarget={pharmacopoeiaJump} />
+        )}
         {activeModule === 'study_mode' && <StudyModeModule jumpTarget={studyJump} />}
         {activeModule === 'assets_3d' && <Assets3DModule jumpTarget={asset3dJump} />}
         {activeModule === 'interactive_experiments' && (
           <InteractiveExperimentsModule jumpTarget={experimentJump} />
-        )}
-        {activeModule === 'coverage_analyzer' && (
-          <CoverageAnalyzerModule jumpTarget={coverageJump} />
-        )}
-        {activeModule === 'enrichment_workspace' && (
-          <EnrichmentWorkspaceModule jumpTarget={enrichmentJump} />
         )}
         {activeModule === 'syllabus' && <SyllabusModule />}
       </DashboardLayout>

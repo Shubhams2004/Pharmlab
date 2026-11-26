@@ -137,7 +137,8 @@ function mapReferenceToBookDept(ref: ReferenceItem): BookDepartmentTag {
 }
 
 export default function ReferenceCenterModule({ jumpTarget }: ReferenceCenterModuleProps) {
-  const { setWorkspaceSection, recordActivity, openAsset3DEngine } = useLibraryNavigation();
+  const { setWorkspaceSection, recordActivity, openAsset3DEngine, openPharmacopoeiaCenter } =
+    useLibraryNavigation();
 
   const [references, setReferences] = useState<ReferenceItem[]>([]);
   const [collections, setCollections] = useState<CustomCollection[]>([]);
@@ -1425,11 +1426,20 @@ export default function ReferenceCenterModule({ jumpTarget }: ReferenceCenterMod
               />
             ) : (
               <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs text-slate-700 dark:text-slate-300">
-                  <Scale className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <p className="leading-relaxed">
-                    Select any official Pharmacopoeia below to open its 12-section Compendial Workspace, verify publishing authority &amp; access status, attach an authorized PDF copy, or connect pharmaceutical subjects and educational notes.
-                  </p>
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-700 dark:text-slate-300">
+                  <div className="flex items-start gap-3">
+                    <Scale className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">
+                      Select any official Pharmacopoeia below to open its 12-section Compendial Workspace, verify publishing authority &amp; access status, attach an authorized PDF copy, or connect pharmaceutical subjects and educational notes.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openPharmacopoeiaCenter({ tab: 'dashboard' })}
+                    className="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold whitespace-nowrap shrink-0"
+                  >
+                    Open Pharmacopoeia Center
+                  </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {pharmacopoeias.map(renderReferenceCard)}
