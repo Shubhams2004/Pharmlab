@@ -11,7 +11,8 @@ import {
   Custom3DCategory,
   EXPERIMENT_ROLE_LABELS,
   get3DCategoryLabel,
-  ModelFormat
+  ModelFormat,
+  ModelScaleCalibration
 } from './types';
 import { getRelatedExperimentsForAsset } from './experimentCatalog';
 
@@ -73,6 +74,8 @@ export interface StructureInspectionReport {
   rawNodeName: string;
   hasMeaningfulName: boolean;
   parentName?: string;
+  ancestorNames?: string[];
+  depth?: number;
   materialName?: string;
   vertexCount: number;
   triangleCount: number;
@@ -553,6 +556,8 @@ export function inspectStructureComponent(
     rawNodeName: component.rawNodeName,
     hasMeaningfulName: component.hasMeaningfulName,
     parentName: component.parentName,
+    ancestorNames: component.ancestorNames,
+    depth: component.depth,
     materialName: component.materialName,
     vertexCount: component.vertexCount,
     triangleCount: component.triangleCount,
@@ -767,3 +772,193 @@ export function buildGuidedIdentificationSteps(
 
   return steps;
 }
+
+export interface ToolCapabilityStatus {
+  supported: boolean;
+  label: string;
+  reason: string;
+  category: 'fully_functional' | 'model_dependent' | 'unsupported';
+}
+
+export interface ExplorerToolAvailability {
+  cameraAndPresets: ToolCapabilityStatus;
+  autoRotate: ToolCapabilityStatus;
+  structureSelection: ToolCapabilityStatus;
+  multiSelectAndIsolate: ToolCapabilityStatus;
+  hierarchyTree: ToolCapabilityStatus;
+  labelsOverlay: ToolCapabilityStatus;
+  sectioningClipping: ToolCapabilityStatus;
+  visualizationModes: ToolCapabilityStatus;
+  distanceMeasurement: ToolCapabilityStatus;
+  annotationsAndViews: ToolCapabilityStatus;
+  screenshotAndPresentation: ToolCapabilityStatus;
+}
+
+export function computeModelScaleInfo(asset: Asset3DItem): ModelScaleCalibration {
+  if (asset.scaleCalibration && asset.scaleCalibration.unitsPerModelUnit > 0) {
+    return asset.scaleCalibration;
+  }
+  if (asset.format === 'pdb' || asset.format === 'sdf' || asset.format === 'mol') {
+    return {
+      unitLabel: 'Angstroms (Molecular Coordinates)',
+      unitSymbol: 'Å',
+      unitsPerModelUnit: 1,
+      source: 'molecular_angstrom',
+      note: 'PDB, SDF, and MOL coordinate frames use crystallographic Angstrom units (1 Å = 0.1 nm).'
+    };
+  }
+  return {
+    unitLabel: 'Model Units (Uncalibrated)',
+    unitSymbol: 'model units',
+    unitsPerModelUnit: 1,
+    source: 'uncalibrated',
+    note: 'Source mesh does not specify real-world units. Distance is reported in model units unless calibrated.'
+  };
+}
+
+export function formatMeasuredDistance(
+  modelUnitDistance: number,
+  scaleInfo: ModelScaleCalibration
+): {
+  numericValue: number;
+  formatted: string;
+  isCalibrated: boolean;
+} {
+  const scaled = modelUnitDistance * (scaleInfo.unitsPerModelUnit || 1);
+  const precision = scaled < 1 ? 3 : scaled < 100 ? 2 : 1;
+  const formatted = `${scaled.toFixed(precision)} ${scaleInfo.unitSymbol}`;
+  return {
+    numericValue: Number(scaled.toFixed(precision)),
+    formatted,
+    isCalibrated: scaleInfo.source !== 'uncalibrated'
+  };
+}
+
+export function computeExplorerToolAvailability(params: {
+  asset: Asset3DItem | null;
+  loadingStatus: 'idle' | 'loading' | 'ready' | 'error';
+  capabilities: ModelCapabilitiesSummary | null;
+  components: Analyzed3DComponent[];
+  isSoftwareGl?: boolean;
+}): ExplorerToolAvailability {
+  const { asset, loadingStatus, capabilities, components, isSoftwareGl } = params;
+  const ready = Boolean(asset && loadingStatus === 'ready' && components.length > 0);
+  const notReadyReason = !asset
+    ? 'No 3D asset is currently selected.'
+    : loadingStatus === 'error'
+    ? '3D geometry failed to load or is metadata-only.'
+    : 'Wait for 3D geometry to finish loading.';
+
+  const multiMesh = ready && components.length > 1;
+  const hasHierarchy =
+    ready &&
+    components.some((c) => (c.ancestorNames && c.ancestorNames.length > 0) || Boolean(c.parentName));
+  const hasNamed = ready && Boolean(capabilities?.hasNamedStructures);
+  const supportsClipping = ready && Boolean(asset && isSupported3DFormat(asset.format));
+
+  return {
+    cameraAndPresets: {
+      supported: ready,
+      label: 'Orbit, Pan, Zoom, Fit & Presets',
+      reason: ready
+        ? 'Full 3D camera framing and presets active.'
+        : notReadyReason,
+      category: ready ? 'fully_functional' : 'unsupported'
+    },
+    autoRotate: {
+      supported: ready && !isSoftwareGl,
+      label: 'Auto-Rotation Speed Control',
+      reason: !ready
+        ? notReadyReason
+        : isSoftwareGl
+        ? 'Paused automatically on Software WebGL to maintain smooth interaction.'
+        : 'Adjustable turntable orbit active.',
+      category: !ready || isSoftwareGl ? 'model_dependent' : 'fully_functional'
+    },
+    structureSelection: {
+      supported: ready,
+      label: 'Structure Selection & Highlight',
+      reason: ready
+        ? multiMesh
+          ? `Click meshes or use hierarchy (${components.length} parts).`
+          : 'Single unified mesh: click selects whole specimen.'
+        : notReadyReason,
+      category: ready ? 'fully_functional' : 'unsupported'
+    },
+    multiSelectAndIsolate: {
+      supported: multiMesh,
+      label: 'Multi-Select, Hide & Isolate',
+      reason: !ready
+        ? notReadyReason
+        : multiMesh
+        ? `Available across ${components.length} selectable sub-meshes.`
+        : 'Requires multi-part assembly (current file is a single unified mesh).',
+      category: multiMesh ? 'model_dependent' : 'unsupported'
+    },
+    hierarchyTree: {
+      supported: hasHierarchy || multiMesh,
+      label: 'Parent/Child Node Hierarchy',
+      reason: !ready
+        ? notReadyReason
+        : hasHierarchy
+        ? 'Preserves nested group hierarchy from source 3D file.'
+        : multiMesh
+        ? 'Flat multi-mesh list (source file has no nested parent groups).'
+        : 'Single-mesh file without nested hierarchy.',
+      category: hasHierarchy ? 'model_dependent' : 'unsupported'
+    },
+    labelsOverlay: {
+      supported: hasNamed,
+      label: 'Projected 3D Structure Labels',
+      reason: !ready
+        ? notReadyReason
+        : hasNamed
+        ? `${capabilities?.namedComponentCount || 0} named structures available for labels.`
+        : 'No descriptive node names exist in source file (labels are never fabricated).',
+      category: hasNamed ? 'model_dependent' : 'unsupported'
+    },
+    sectioningClipping: {
+      supported: supportsClipping,
+      label: 'Multi-Axis Geometry Sectioning',
+      reason: supportsClipping
+        ? 'Real WebGL clipping planes along X, Y, and Z with position, tilt, and flip.'
+        : notReadyReason,
+      category: supportsClipping ? 'fully_functional' : 'unsupported'
+    },
+    visualizationModes: {
+      supported: ready,
+      label: 'Solid / Wireframe / X-Ray Modes',
+      reason: ready
+        ? 'Non-destructive material inspection active.'
+        : notReadyReason,
+      category: ready ? 'fully_functional' : 'unsupported'
+    },
+    distanceMeasurement: {
+      supported: ready,
+      label: 'Distance & Coordinate Measurement',
+      reason: ready
+        ? asset && (asset.format === 'pdb' || asset.format === 'sdf' || asset.format === 'mol')
+          ? 'Surface/atom distance in crystallographic Ångströms.'
+          : 'Point-to-point distance in uncalibrated model units (custom calibration supported).'
+        : notReadyReason,
+      category: ready ? 'model_dependent' : 'unsupported'
+    },
+    annotationsAndViews: {
+      supported: ready,
+      label: 'Annotations & Saved Camera Views',
+      reason: ready
+        ? '3D surface pins, edits, and camera views persist locally in IndexedDB.'
+        : notReadyReason,
+      category: ready ? 'fully_functional' : 'unsupported'
+    },
+    screenshotAndPresentation: {
+      supported: ready,
+      label: 'Screenshot PNG, Fullscreen & Presentation',
+      reason: ready
+        ? 'Live canvas PNG export, thumbnail capture, and clean presentation mode ready.'
+        : notReadyReason,
+      category: ready ? 'fully_functional' : 'unsupported'
+    }
+  };
+}
+

@@ -5,15 +5,17 @@ import {
   Asset3DCategory,
   Asset3DDeleteImpact,
   Asset3DItem,
-  Asset3DSavedView,
+  Asset3DMeasurement,
   Asset3DStorageReport,
   BPharmDepartmentId,
   CATEGORY_3D_LABELS,
   Custom3DCategory,
   get3DCategoryLabel,
   ModelFormat,
+  ModelScaleCalibration,
   normalizeCustomCategoryId,
   Predefined3DCategory,
+  SavedCameraView,
   SyllabusAssociation
 } from './types';
 import { ANATOMY_CATALOG } from '../../data/anatomyCatalog';
@@ -377,14 +379,13 @@ export async function add3DAssetAnnotation(
 export async function update3DAssetAnnotation(
   assetId: string,
   annotationId: string,
-  patch: Partial<Pick<Asset3DAnnotation, 'label' | 'note' | 'visible'>>
+  patch: Partial<Pick<Asset3DAnnotation, 'label' | 'note'>>
 ): Promise<Asset3DItem | null> {
   const existing = await get3DAssetById(assetId);
   if (!existing) return null;
-  const now = Date.now();
   return update3DAssetMeta(assetId, {
     annotations: (existing.annotations || []).map((a) =>
-      a.id === annotationId ? { ...a, ...patch, updatedAt: now } : a
+      a.id === annotationId ? { ...a, ...patch } : a
     )
   });
 }
@@ -400,9 +401,9 @@ export async function remove3DAssetAnnotation(
   });
 }
 
-export async function add3DAssetSavedView(
+export async function add3DSavedView(
   assetId: string,
-  view: Asset3DSavedView
+  view: SavedCameraView
 ): Promise<Asset3DItem | null> {
   const existing = await get3DAssetById(assetId);
   if (!existing) return null;
@@ -411,7 +412,7 @@ export async function add3DAssetSavedView(
   });
 }
 
-export async function remove3DAssetSavedView(
+export async function remove3DSavedView(
   assetId: string,
   viewId: string
 ): Promise<Asset3DItem | null> {
@@ -420,6 +421,56 @@ export async function remove3DAssetSavedView(
   return update3DAssetMeta(assetId, {
     savedViews: (existing.savedViews || []).filter((v) => v.id !== viewId)
   });
+}
+
+export async function add3DMeasurement(
+  assetId: string,
+  measurement: Asset3DMeasurement
+): Promise<Asset3DItem | null> {
+  const existing = await get3DAssetById(assetId);
+  if (!existing) return null;
+  return update3DAssetMeta(assetId, {
+    measurements: [measurement, ...(existing.measurements || [])]
+  });
+}
+
+export async function toggle3DMeasurementVisible(
+  assetId: string,
+  measurementId: string
+): Promise<Asset3DItem | null> {
+  const existing = await get3DAssetById(assetId);
+  if (!existing) return null;
+  return update3DAssetMeta(assetId, {
+    measurements: (existing.measurements || []).map((m) =>
+      m.id === measurementId ? { ...m, visible: !m.visible } : m
+    )
+  });
+}
+
+export async function remove3DMeasurement(
+  assetId: string,
+  measurementId: string
+): Promise<Asset3DItem | null> {
+  const existing = await get3DAssetById(assetId);
+  if (!existing) return null;
+  return update3DAssetMeta(assetId, {
+    measurements: (existing.measurements || []).filter((m) => m.id !== measurementId)
+  });
+}
+
+export async function clear3DMeasurements(assetId: string): Promise<Asset3DItem | null> {
+  const existing = await get3DAssetById(assetId);
+  if (!existing) return null;
+  return update3DAssetMeta(assetId, { measurements: [] });
+}
+
+export async function save3DScaleCalibration(
+  assetId: string,
+  calibration: ModelScaleCalibration | undefined
+): Promise<Asset3DItem | null> {
+  const existing = await get3DAssetById(assetId);
+  if (!existing) return null;
+  return update3DAssetMeta(assetId, { scaleCalibration: calibration });
 }
 
 function normAssocText(s?: string | null): string {
@@ -456,8 +507,6 @@ export function getSyllabusAssociationFingerprint(association: SyllabusAssociati
     normAssocText(association.subtopicId) || normAssocText(association.subtopicTitle),
     normAssocText(association.learningObjective),
     normAssocText(association.experimentId) || normAssocText(association.experimentTitle),
-    normAssocText(association.stepId) || normAssocText(association.stepTitle),
-    normAssocText(association.experimentRole),
     normAssocText(association.structureId) || normAssocText(association.structureName)
   ].join('|');
 }
@@ -475,8 +524,6 @@ export function isSameSyllabusAssociation(
     sameAssocSlot(a.subtopicId, a.subtopicTitle, b.subtopicId, b.subtopicTitle) &&
     normAssocText(a.learningObjective) === normAssocText(b.learningObjective) &&
     sameAssocSlot(a.experimentId, a.experimentTitle, b.experimentId, b.experimentTitle) &&
-    sameAssocSlot(a.stepId, a.stepTitle, b.stepId, b.stepTitle) &&
-    normAssocText(a.experimentRole) === normAssocText(b.experimentRole) &&
     sameAssocSlot(a.structureId, a.structureName, b.structureId, b.structureName)
   );
 }
@@ -777,9 +824,6 @@ export interface Curriculum3DContextQuery {
   learningObjective?: string;
   experimentId?: string;
   experimentTitle?: string;
-  experimentTab?: string;
-  stepId?: string;
-  stepTitle?: string;
   structureId?: string;
   linkedStructureIds?: string[];
   query?: string;
@@ -822,9 +866,6 @@ export function matchCurriculumAssetsSync(
   const normObjective = normAssocText(ctx.learningObjective);
   const normExpId = normAssocText(ctx.experimentId);
   const normExpTitle = normAssocText(ctx.experimentTitle);
-  const normExpTab = normAssocText(ctx.experimentTab);
-  const normStepId = normAssocText(ctx.stepId);
-  const normStepTitle = normAssocText(ctx.stepTitle);
   const normStructureId = normAssocText(ctx.structureId);
   const linkedStructSet = new Set(
     (ctx.linkedStructureIds || []).map((id) => normAssocText(id)).filter(Boolean)
@@ -863,19 +904,9 @@ export function matchCurriculumAssetsSync(
 
       const lnkExpId = normAssocText(lnk.experimentId);
       const lnkExpTitle = normAssocText(lnk.experimentTitle);
-      const lnkExpTab = normAssocText(lnk.experimentTab);
-      const lnkStepId = normAssocText(lnk.stepId);
-      const lnkStepTitle = normAssocText(lnk.stepTitle);
       const expDirectHit = Boolean(
         (normExpId && lnkExpId === normExpId) ||
-          (normExpTitle && lnkExpTitle && lnkExpTitle === normExpTitle) ||
-          (normExpTab && lnkExpTab && lnkExpTab === normExpTab && subjectCompatible)
-      );
-      const stepDirectHit = Boolean(
-        expDirectHit &&
-          (normStepId || normStepTitle) &&
-          ((normStepId && lnkStepId === normStepId) ||
-            (normStepTitle && lnkStepTitle && lnkStepTitle === normStepTitle))
+          (normExpTitle && lnkExpTitle && lnkExpTitle === normExpTitle)
       );
 
       const lnkTopicId = normAssocText(lnk.topicId);
@@ -941,13 +972,6 @@ export function matchCurriculumAssetsSync(
           lnk.subtopicTitle
             ? `Linked to topic (${lnk.subtopicTitle})`
             : `Linked to topic: ${lnk.topicTitle || lnk.topicId}`
-        );
-      } else if (stepDirectHit) {
-        directScore = Math.max(directScore, 96);
-        if (!bestDirectLevel) bestDirectLevel = 'experiment';
-        directLinkIds.push(lnk.id);
-        directReasons.push(
-          `Step focus: ${lnk.stepTitle || lnk.stepId} (${lnk.experimentTitle || lnk.experimentId})`
         );
       } else if (expDirectHit) {
         directScore = Math.max(directScore, 84);

@@ -14,13 +14,20 @@ export default function VisualThumbnail({
   className = '',
   imgClassName = 'w-full h-full object-contain'
 }: VisualThumbnailProps) {
-  const [src, setSrc] = useState<string | null>(item.assetUrl || null);
-  const [loading, setLoading] = useState(!item.assetUrl);
-  const [failed, setFailed] = useState(false);
+  const [src, setSrc] = useState<string | null>(item?.assetUrl || null);
+  const [loading, setLoading] = useState(Boolean(item && !item.assetUrl));
+  const [failed, setFailed] = useState(!item);
 
   useEffect(() => {
     let cancelled = false;
     setFailed(false);
+
+    if (!item) {
+      setSrc(null);
+      setLoading(false);
+      setFailed(true);
+      return;
+    }
 
     if (item.assetUrl) {
       setSrc(item.assetUrl);
@@ -64,7 +71,7 @@ export default function VisualThumbnail({
       >
         <ImageOff className="w-6 h-6" />
         <span className="text-xs font-medium text-slate-500 dark:text-slate-400 line-clamp-1">
-          {item.title}
+          {item?.title || 'Visual preview'}
         </span>
       </div>
     );
@@ -74,7 +81,7 @@ export default function VisualThumbnail({
     <div className={`overflow-hidden bg-slate-50 dark:bg-slate-950 ${className}`}>
       <img
         src={src}
-        alt={item.title}
+        alt={item?.title || 'Visual preview'}
         referrerPolicy="no-referrer"
         loading="lazy"
         onError={() => setFailed(true)}

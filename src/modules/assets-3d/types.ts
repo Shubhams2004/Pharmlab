@@ -76,31 +76,6 @@ export type Asset3DLibraryCollection =
   | 'recent_imported'
   | 'recent_viewed';
 
-export type ExperimentAssetRole =
-  | 'apparatus'
-  | 'setup'
-  | 'instrument'
-  | 'glassware'
-  | 'specimen'
-  | 'anatomy'
-  | 'molecule'
-  | 'manufacturing'
-  | 'component'
-  | 'reference';
-
-export const EXPERIMENT_ROLE_LABELS: Record<ExperimentAssetRole, string> = {
-  apparatus: 'Lab Apparatus',
-  setup: 'Experiment Setup',
-  instrument: 'Instrument',
-  glassware: 'Glassware',
-  specimen: 'Specimen',
-  anatomy: 'Anatomical Structure',
-  molecule: 'Molecular Structure',
-  manufacturing: 'Manufacturing Equipment',
-  component: 'Experimental Component',
-  reference: 'Reference Model'
-};
-
 export interface SyllabusAssociation {
   id: string;
   course: string;
@@ -118,12 +93,6 @@ export interface SyllabusAssociation {
   learningObjective?: string;
   experimentId?: string;
   experimentTitle?: string;
-  experimentTab?: string;
-  experimentRole?: ExperimentAssetRole;
-  stepId?: string;
-  stepTitle?: string;
-  setupNote?: string;
-  focusComponentName?: string;
   structureId?: string;
   structureName?: string;
 }
@@ -134,16 +103,32 @@ export interface Asset3DAnnotation {
   note?: string;
   componentName?: string;
   position: [number, number, number];
-  visible?: boolean;
   createdAt: number;
-  updatedAt?: number;
 }
 
-export interface Asset3DSavedView {
+export interface SavedCameraView {
   id: string;
   name: string;
   position: [number, number, number];
   target: [number, number, number];
+  createdAt: number;
+}
+
+export interface ModelScaleCalibration {
+  unitLabel: string;
+  unitSymbol: string;
+  unitsPerModelUnit: number;
+  source: 'uncalibrated' | 'molecular_angstrom' | 'user_calibrated';
+  note?: string;
+}
+
+export interface Asset3DMeasurement {
+  id: string;
+  label?: string;
+  pointA: [number, number, number];
+  pointB: [number, number, number];
+  modelUnitDistance: number;
+  visible: boolean;
   createdAt: number;
 }
 
@@ -176,7 +161,9 @@ export interface Asset3DItem {
   vertexCount?: number;
   triangleCount?: number;
   annotations: Asset3DAnnotation[];
-  savedViews?: Asset3DSavedView[];
+  savedViews?: SavedCameraView[];
+  measurements?: Asset3DMeasurement[];
+  scaleCalibration?: ModelScaleCalibration;
   createdAt: number;
   updatedAt: number;
   lastOpenedAt?: number;
@@ -279,10 +266,28 @@ export interface Discovered3DCandidate {
 
 export type RenderVisualizationMode = 'solid' | 'wireframe' | 'xray';
 
+export type InteractionToolMode = 'inspect' | 'pin' | 'measure' | 'coord';
+
+export type ClippingAxisKey = 'x' | 'y' | 'z';
+
+export interface ClippingPlaneConfig {
+  enabled: boolean;
+  /** Normalized position from -1 (min bound) to +1 (max bound) */
+  position: number;
+  inverted: boolean;
+  /** Plane tilt rotation in degrees (-45 to +45) */
+  tiltDeg: number;
+}
+
+export interface SectioningState {
+  x: ClippingPlaneConfig;
+  y: ClippingPlaneConfig;
+  z: ClippingPlaneConfig;
+  showPlanes: boolean;
+}
+
 export type CameraViewPreset =
   | 'reset'
-  | 'fit'
-  | 'iso'
   | 'front'
   | 'back'
   | 'left'
@@ -290,80 +295,19 @@ export type CameraViewPreset =
   | 'top'
   | 'bottom';
 
-export type ViewerInteractionTool =
-  | 'select'
-  | 'multi_select'
-  | 'pin'
-  | 'measure_distance'
-  | 'measure_coords';
-
-export type SectionPlaneAxis = 'x' | 'y' | 'z';
-
-export interface SectionPlaneConfig {
-  enabled: boolean;
-  axis: SectionPlaneAxis;
-  /** Normalized offset along model bounds [-1, 1] */
-  offset: number;
-  inverted: boolean;
-  /** Tilt rotation in degrees [-60, 60] */
-  tiltXDeg: number;
-  tiltYDeg: number;
-}
-
-export interface SectioningState {
-  active: boolean;
-  showPlaneGuides: boolean;
-  planes: Record<SectionPlaneAxis, SectionPlaneConfig>;
-}
-
-export interface DistanceMeasurement {
-  id: string;
-  pointA: [number, number, number];
-  pointB: [number, number, number];
-  distanceLocal: number;
-  distanceRaw: number;
-  unitLabel: string;
-  isCalibrated: boolean;
-  componentA?: string;
-  componentB?: string;
-  createdAt: number;
-}
-
-export interface CoordinateSample {
-  pointLocal: [number, number, number];
-  pointRaw: [number, number, number];
-  unitLabel: string;
-  isCalibrated: boolean;
-  componentName?: string;
-}
-
 export interface Analyzed3DComponent {
   id: string;
   name: string;
   rawNodeName: string;
-  parentId?: string | null;
   parentName?: string;
-  hierarchyPath: string[];
-  depth: number;
+  ancestorNames?: string[];
+  depth?: number;
   hasMeaningfulName: boolean;
   visible: boolean;
   vertexCount: number;
   triangleCount: number;
   materialName?: string;
   localCenter: [number, number, number];
-  boundsSize?: [number, number, number];
-}
-
-export interface SceneHierarchyNode {
-  id: string;
-  name: string;
-  rawName: string;
-  kind: 'group' | 'mesh';
-  hasMeaningfulName: boolean;
-  componentId?: string;
-  meshIds: string[];
-  depth: number;
-  children: SceneHierarchyNode[];
 }
 
 export interface ModelAnalysisSummary {
@@ -371,11 +315,7 @@ export interface ModelAnalysisSummary {
   vertexCount: number;
   triangleCount: number;
   dimensions?: [number, number, number];
-  normalizeScale?: number;
-  unitLabel?: string;
-  isCalibrated?: boolean;
   components: Analyzed3DComponent[];
-  hierarchy: SceneHierarchyNode[];
 }
 
 export interface ModelComponentNode {
@@ -397,7 +337,7 @@ export interface ViewerRenderSettings {
   showAxes: boolean;
   showLabels: boolean;
   showAnnotations?: boolean;
-  highlightSelected?: boolean;
+  highlightSelection?: boolean;
   autoRotate?: boolean;
   autoRotateSpeed?: number;
   backgroundMode: 'slate_dark' | 'clinical_light';

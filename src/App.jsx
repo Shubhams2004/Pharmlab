@@ -15,6 +15,7 @@ import InorganicModule from './modules/bp106t-inorganic/InorganicModule';
 import KnowledgeLibraryModule from './modules/knowledge-library/KnowledgeLibraryModule';
 import Assets3DModule from './modules/assets-3d/Assets3DModule';
 import Academic3DExplorerModule from './modules/assets-3d/Academic3DExplorerModule';
+import InteractiveExperimentsModule from './modules/interactive-experiments/InteractiveExperimentsModule';
 import ReferenceCenterModule from './modules/reference-center/ReferenceCenterModule';
 import ResourceHubModule from './modules/resource-hub/ResourceHubModule';
 import StudyModeModule from './modules/study-mode/StudyModeModule';
@@ -108,6 +109,12 @@ export default function App() {
     stepTitle: null,
     focusComponentName: null,
     returnTab: null,
+    nonce: 0
+  });
+  const [experimentJump, setExperimentJump] = useState({
+    experimentId: null,
+    stage: null,
+    department: null,
     nonce: 0
   });
   const [explorerReturnModule, setExplorerReturnModule] = useState('assets_3d');
@@ -253,6 +260,7 @@ export default function App() {
         moduleId !== 'visual_library' &&
         moduleId !== 'assets_3d' &&
         moduleId !== 'explorer_3d' &&
+        moduleId !== 'interactive_experiments' &&
         moduleId !== 'resource_hub' &&
         moduleId !== 'reference_center' &&
         moduleId !== 'python_studio'
@@ -427,8 +435,25 @@ export default function App() {
     [navigateTo]
   );
 
+  const openInteractiveExperiments = useCallback(
+    (opts = {}) => {
+      setExperimentJump((prev) => ({
+        experimentId: opts.experimentId ?? null,
+        stage: opts.stage ?? null,
+        department: opts.department ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('interactive_experiments');
+    },
+    [navigateTo]
+  );
+
   const handleOpenRecentItem = useCallback(
     (item) => {
+      if (item.kind === 'interactive_sim' && item.experimentSimId) {
+        openInteractiveExperiments({ experimentId: item.experimentSimId });
+        return;
+      }
       if (item.kind === 'model_3d' && item.asset3dId) {
         if (item.moduleId === 'explorer_3d') {
           openAcademicExplorer({ assetId: item.asset3dId });
@@ -469,7 +494,8 @@ export default function App() {
       openVisualLibrary,
       openStudyMode,
       openAsset3DEngine,
-      openAcademicExplorer
+      openAcademicExplorer,
+      openInteractiveExperiments
     ]
   );
 
@@ -495,6 +521,7 @@ export default function App() {
       openStudyMode,
       openAsset3DEngine,
       openAcademicExplorer,
+      openInteractiveExperiments,
       openPythonStudio,
       navigateToModule: navigateTo,
       setWorkspaceSection,
@@ -513,6 +540,7 @@ export default function App() {
       openStudyMode,
       openAsset3DEngine,
       openAcademicExplorer,
+      openInteractiveExperiments,
       openPythonStudio,
       navigateTo,
       setWorkspaceSection,
@@ -560,6 +588,7 @@ export default function App() {
       syllabus: 'Back to Syllabus',
       anatomy: 'Back to Anatomy',
       assets_3d: 'Back to 3D Library',
+      interactive_experiments: 'Back to Interactive Simulation',
       reference_center: 'Back to References',
       resource_hub: 'Back to Resource Hub',
       inorganic: 'Back to Inorganic Lab',
@@ -716,6 +745,9 @@ export default function App() {
         )}
         {activeModule === 'study_mode' && <StudyModeModule jumpTarget={studyJump} />}
         {activeModule === 'assets_3d' && <Assets3DModule jumpTarget={asset3dJump} />}
+        {activeModule === 'interactive_experiments' && (
+          <InteractiveExperimentsModule jumpTarget={experimentJump} />
+        )}
         {activeModule === 'syllabus' && <SyllabusModule />}
       </DashboardLayout>
 

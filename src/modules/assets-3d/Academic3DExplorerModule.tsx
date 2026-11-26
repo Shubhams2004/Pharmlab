@@ -9,35 +9,35 @@ import {
   Box,
   Camera,
   Check,
-  ChevronDown,
+  CheckCircle2,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Compass,
   Crosshair,
   Download,
-  Edit3,
   ExternalLink,
   Eye,
   EyeOff,
   FileCode2,
   FlaskConical,
   Focus,
-  FolderTree,
   Globe,
   GraduationCap,
   Grid3X3,
   Info,
   Layers,
   Link2,
-  List,
   Loader2,
   MapPin,
+  Maximize,
   Maximize2,
   Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -62,32 +62,40 @@ import { sanitizeHttpUrl } from '../resource-hub/utils';
 import { getAllSyllabi } from '../study-mode/studyDb';
 import { SyllabusProfile } from '../study-mode/types';
 import Universal3DViewer, {
-  createDefaultSectioningState,
+  DEFAULT_SECTIONING_STATE,
   DEFAULT_VIEWER_SETTINGS,
   Universal3DViewerHandle,
   ViewerLoadingState
 } from './Universal3DViewer';
 import {
   add3DAssetAnnotation,
-  add3DAssetSavedView,
+  add3DMeasurement,
+  add3DSavedView,
   addSyllabusAssociationSafe,
+  clear3DMeasurements,
   get3DModelObjectUrl,
   getAll3DAssets,
   getCustom3DCategories,
   getRelated3DModels,
   mark3DAssetOpened,
   remove3DAssetAnnotation,
-  remove3DAssetSavedView,
+  remove3DMeasurement,
+  remove3DSavedView,
   removeSyllabusAssociation,
   save3DAssetThumbnail,
+  save3DScaleCalibration,
   toggle3DAssetFavorite,
+  toggle3DMeasurementVisible,
   update3DAssetAnnotation,
   update3DAssetMeta
 } from './asset3dDb';
 import {
   analyzeModelCapabilities,
   buildGuidedIdentificationSteps,
+  computeExplorerToolAvailability,
+  computeModelScaleInfo,
   CPK_ELEMENT_LEGEND,
+  formatMeasuredDistance,
   getExplorationProfile,
   inspectStructureComponent,
   isSupported3DFormat,
@@ -98,38 +106,29 @@ import {
   Analyzed3DComponent,
   Asset3DAnnotation,
   Asset3DItem,
-  Asset3DSavedView,
+  Asset3DMeasurement,
   BPHARM_DEPARTMENT_LABELS,
   BPharmDepartmentId,
   CameraViewPreset,
-  CoordinateSample,
+  ClippingAxisKey,
   Custom3DCategory,
-  DistanceMeasurement,
   formatBytes,
   get3DCategoryLabel,
   getAsset3DAvailability,
+  InteractionToolMode,
+  ModelScaleCalibration,
   RenderVisualizationMode,
-  SceneHierarchyNode,
-  SectionPlaneAxis,
+  SavedCameraView,
   SectioningState,
   SyllabusAssociation,
-  ViewerInteractionTool,
   ViewerRenderSettings
 } from './types';
-import { getApparatusProfile, getExperimentById } from './experimentCatalog';
 
 export interface AcademicExplorerJumpTarget {
   assetId?: string | null;
   subjectCode?: string | null;
   topicId?: string | null;
   structureName?: string | null;
-  experimentId?: string | null;
-  experimentTitle?: string | null;
-  experimentTab?: string | null;
-  stepId?: string | null;
-  stepTitle?: string | null;
-  focusComponentName?: string | null;
-  returnTab?: string | null;
   nonce: number;
 }
 
@@ -144,12 +143,8 @@ export default function Academic3DExplorerModule({
   onExitExplorer,
   returnLabel = '3D Library'
 }: Academic3DExplorerModuleProps) {
-  const {
-    openAsset3DEngine,
-    openStudyMode,
-    navigateToModule,
-    recordActivity
-  } = useLibraryNavigation();
+  const { openAsset3DEngine, openStudyMode, navigateToModule, recordActivity } =
+    useLibraryNavigation();
 
   const workspaceRootRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Universal3DViewerHandle | null>(null);
@@ -167,8 +162,9 @@ export default function Academic3DExplorerModule({
     status: 'idle',
     percent: 0
   });
+  const [isSoftwareGl, setIsSoftwareGl] = useState(false);
 
-  // Explorer Workbench UI Panels
+  // Explorer Workbench UI Panels & Presentation Mode
   const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
   );
@@ -177,42 +173,44 @@ export default function Academic3DExplorerModule({
   );
   const [rightTab, setRightTab] = useState<'inspect' | 'tools' | 'academic' | 'info'>('inspect');
   const [lightingPopoverOpen, setLightingPopoverOpen] = useState(false);
+  const [sectionPopoverOpen, setSectionPopoverOpen] = useState(false);
+  const [controlsHidden, setControlsHidden] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [presentationMode, setPresentationMode] = useState(false);
 
-  // Interactive 3D Inspection & P3.6 Tool State
+  // Interactive 3D Inspection & P3.6 Tools State
   const [renderSettings, setRenderSettings] =
     useState<ViewerRenderSettings>(DEFAULT_VIEWER_SETTINGS);
   const [activeCameraPreset, setActiveCameraPreset] = useState<CameraViewPreset>('reset');
+  const [interactionMode, setInteractionMode] = useState<InteractionToolMode>('inspect');
+  const [sectioning, setSectioning] = useState<SectioningState>(DEFAULT_SECTIONING_STATE);
+
   const [components, setComponents] = useState<Analyzed3DComponent[]>([]);
-  const [hierarchyTree, setHierarchyTree] = useState<SceneHierarchyNode[]>([]);
-  const [hierarchyViewMode, setHierarchyViewMode] = useState<'tree' | 'flat'>('tree');
-  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
   const [componentSearch, setComponentSearch] = useState('');
   const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>([]);
   const [isolatedComponentIds, setIsolatedComponentIds] = useState<string[]>([]);
-  const selectedComponentId = selectedComponentIds[0] ?? null;
-
-  const [interactionTool, setInteractionTool] = useState<ViewerInteractionTool>('select');
-  const pinMode = interactionTool === 'pin';
-  const setPinMode = useCallback((val: boolean | ((prev: boolean) => boolean)) => {
-    setInteractionTool((prevTool) => {
-      const nextBool = typeof val === 'function' ? val(prevTool === 'pin') : val;
-      return nextBool ? 'pin' : 'select';
-    });
-  }, []);
-
-  const [sectioning, setSectioning] = useState<SectioningState>(createDefaultSectioningState);
-  const [measurements, setMeasurements] = useState<DistanceMeasurement[]>([]);
-  const [coordinateSample, setCoordinateSample] = useState<CoordinateSample | null>(null);
-  const [analyzedTriCount, setAnalyzedTriCount] = useState<number | undefined>(undefined);
-
   const [activePinId, setActivePinId] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState<[number, number, number] | undefined>(undefined);
+
+  // Annotation Editing State
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [editPinLabel, setEditPinLabel] = useState('');
   const [editPinNote, setEditPinNote] = useState('');
+
+  // Measurement & Coordinate Probe State
+  const [hasPendingMeasurePoint, setHasPendingMeasurePoint] = useState(false);
+  const [hoveredCoord, setHoveredCoord] = useState<{
+    rawPoint: [number, number, number];
+    componentName?: string;
+  } | null>(null);
+  const [clickedCoord, setClickedCoord] = useState<{
+    rawPoint: [number, number, number];
+    componentName?: string;
+  } | null>(null);
+  const [calibUnitSymbol, setCalibUnitSymbol] = useState<'mm' | 'cm' | 'm' | 'µm'>('mm');
+  const [calibFactor, setCalibFactor] = useState('1');
+
+  // Saved Camera View Draft
   const [newViewName, setNewViewName] = useState('');
-  const [dimensions, setDimensions] = useState<[number, number, number] | undefined>(undefined);
 
   // Guided Identification Tour State
   const [guidedIndex, setGuidedIndex] = useState<number | null>(null);
@@ -226,7 +224,7 @@ export default function Academic3DExplorerModule({
   const [quickLinkNotice, setQuickLinkNotice] = useState<string | null>(null);
 
   const handledNonceRef = useRef<number>(-1);
-  const pendingFocusNameRef = useRef<string | null>(null);
+  const selectedComponentId = selectedComponentIds[0] ?? null;
 
   const loadData = useCallback(async () => {
     setLoadingLibrary(true);
@@ -250,43 +248,10 @@ export default function Academic3DExplorerModule({
 
     if (jumpTarget && jumpTarget.nonce > 0 && handledNonceRef.current !== jumpTarget.nonce) {
       handledNonceRef.current = jumpTarget.nonce;
-      pendingFocusNameRef.current =
-        jumpTarget.focusComponentName || jumpTarget.structureName || null;
-
-      if (jumpTarget.experimentId || jumpTarget.experimentTitle) {
-        setRightTab(jumpTarget.focusComponentName ? 'inspect' : 'academic');
-      }
-
       if (jumpTarget.assetId) {
         const hit = assets.find((a) => a.id === jumpTarget.assetId);
         if (hit) {
           setSelectedAssetId(hit.id);
-          return;
-        }
-      }
-      if (jumpTarget.experimentId || jumpTarget.experimentTitle || jumpTarget.stepId) {
-        const qExpId = (jumpTarget.experimentId || '').toLowerCase();
-        const qExpTitle = (jumpTarget.experimentTitle || '').toLowerCase();
-        const qStepId = (jumpTarget.stepId || '').toLowerCase();
-        const expStepMatch = assets.find((a) =>
-          a.syllabusLinks.some(
-            (l) =>
-              ((qExpId && l.experimentId?.toLowerCase() === qExpId) ||
-                (qExpTitle && l.experimentTitle?.toLowerCase().includes(qExpTitle))) &&
-              (!qStepId || l.stepId?.toLowerCase() === qStepId)
-          )
-        );
-        const expAnyMatch =
-          expStepMatch ||
-          assets.find((a) =>
-            a.syllabusLinks.some(
-              (l) =>
-                (qExpId && l.experimentId?.toLowerCase() === qExpId) ||
-                (qExpTitle && l.experimentTitle?.toLowerCase().includes(qExpTitle))
-            )
-          );
-        if (expAnyMatch) {
-          setSelectedAssetId(expAnyMatch.id);
           return;
         }
       }
@@ -308,7 +273,6 @@ export default function Academic3DExplorerModule({
       }
     }
 
-    // Fallback: maintain current valid selection or pick best compatible asset
     if (selectedAssetId && assets.some((a) => a.id === selectedAssetId)) return;
     if (assets.length === 0) {
       setSelectedAssetId(null);
@@ -322,43 +286,23 @@ export default function Academic3DExplorerModule({
     setSelectedAssetId((compatible[0] || assets[0]).id);
   }, [assets, loadingLibrary, jumpTarget, selectedAssetId]);
 
-  useEffect(() => {
-    const focusName = pendingFocusNameRef.current;
-    if (!focusName || components.length === 0) return;
-    const norm = focusName.trim().toLowerCase();
-    const hit =
-      components.find((c) => c.name.toLowerCase() === norm) ||
-      components.find(
-        (c) => c.name.toLowerCase().includes(norm) || norm.includes(c.name.toLowerCase())
-      );
-    if (hit) {
-      setSelectedComponentIds([hit.id]);
-      setTimeout(() => {
-        viewerRef.current?.focusComponent(hit.id);
-      }, 150);
-    }
-    pendingFocusNameRef.current = null;
-  }, [components]);
-
   const activeAsset = useMemo(
     () => assets.find((a) => a.id === selectedAssetId) || null,
     [assets, selectedAssetId]
   );
 
-  // Resolve active asset binary/URL cleanly
+  // Sync calibration inputs & reset transient per-model tool state when switching asset
   useEffect(() => {
     setComponents([]);
-    setHierarchyTree([]);
-    setCollapsedGroupIds(new Set());
     setSelectedComponentIds([]);
     setIsolatedComponentIds([]);
     setActivePinId(null);
     setEditingPinId(null);
-    setInteractionTool('select');
-    setSectioning(createDefaultSectioningState());
-    setMeasurements([]);
-    setCoordinateSample(null);
-    setAnalyzedTriCount(undefined);
+    setInteractionMode('inspect');
+    setSectioning(DEFAULT_SECTIONING_STATE);
+    setHoveredCoord(null);
+    setClickedCoord(null);
+    setHasPendingMeasurePoint(false);
     setGuidedIndex(null);
     setComponentSearch('');
     setDimensions(undefined);
@@ -367,6 +311,20 @@ export default function Academic3DExplorerModule({
       setModelUrl(null);
       setResolveError(null);
       return;
+    }
+
+    if (
+      activeAsset.scaleCalibration &&
+      activeAsset.scaleCalibration.source === 'user_calibrated'
+    ) {
+      const sym = activeAsset.scaleCalibration.unitSymbol;
+      if (sym === 'mm' || sym === 'cm' || sym === 'm' || sym === 'µm') {
+        setCalibUnitSymbol(sym);
+      }
+      setCalibFactor(String(activeAsset.scaleCalibration.unitsPerModelUnit || 1));
+    } else {
+      setCalibUnitSymbol('mm');
+      setCalibFactor('1');
     }
 
     let cancelled = false;
@@ -442,15 +400,32 @@ export default function Academic3DExplorerModule({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAsset?.id]);
 
-  // Derived exploration domain profile, capabilities & academic context
+  // Derived exploration domain profile, capabilities, scale, academic context & tool availability
   const domainProfile = useMemo(
     () => (activeAsset ? getExplorationProfile(activeAsset, customCategories) : null),
     [activeAsset, customCategories]
   );
 
   const capabilities = useMemo(
-    () => (activeAsset ? analyzeModelCapabilities(activeAsset, components, analyzedTriCount) : null),
-    [activeAsset, components, analyzedTriCount]
+    () => (activeAsset ? analyzeModelCapabilities(activeAsset, components) : null),
+    [activeAsset, components]
+  );
+
+  const scaleInfo = useMemo(
+    () => (activeAsset ? computeModelScaleInfo(activeAsset) : null),
+    [activeAsset]
+  );
+
+  const toolAvailability = useMemo(
+    () =>
+      computeExplorerToolAvailability({
+        asset: activeAsset,
+        loadingStatus: viewerLoading.status,
+        capabilities,
+        components,
+        isSoftwareGl
+      }),
+    [activeAsset, viewerLoading.status, capabilities, components, isSoftwareGl]
   );
 
   const academicContext = useMemo(
@@ -533,16 +508,8 @@ export default function Academic3DExplorerModule({
   };
 
   const selectedComponent = useMemo(
-    () =>
-      selectedComponentIds.length === 1
-        ? components.find((c) => c.id === selectedComponentIds[0]) || null
-        : null,
-    [components, selectedComponentIds]
-  );
-
-  const selectedComponentsList = useMemo(
-    () => components.filter((c) => selectedComponentIds.includes(c.id)),
-    [components, selectedComponentIds]
+    () => components.find((c) => c.id === selectedComponentId) || null,
+    [components, selectedComponentId]
   );
 
   const selectedInspection = useMemo(() => {
@@ -573,20 +540,43 @@ export default function Academic3DExplorerModule({
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.rawNodeName.toLowerCase().includes(q) ||
-        (c.parentName && c.parentName.toLowerCase().includes(q))
+        (c.parentName && c.parentName.toLowerCase().includes(q)) ||
+        (c.ancestorNames && c.ancestorNames.some((anc) => anc.toLowerCase().includes(q)))
     );
   }, [components, componentSearch]);
+
+  const hierarchyGroups = useMemo(() => {
+    const groups: Array<{
+      key: string;
+      parentLabel: string | null;
+      items: Analyzed3DComponent[];
+    }> = [];
+    const byKey = new Map<string, { key: string; parentLabel: string | null; items: Analyzed3DComponent[] }>();
+    for (const c of filteredComponents) {
+      const parentLabel = c.parentName || null;
+      const key = parentLabel || '__root__';
+      let bucket = byKey.get(key);
+      if (!bucket) {
+        bucket = { key, parentLabel, items: [] };
+        byKey.set(key, bucket);
+        groups.push(bucket);
+      }
+      bucket.items.push(c);
+    }
+    return groups;
+  }, [filteredComponents]);
 
   const anyComponentHidden = useMemo(
     () => isolatedComponentIds.length > 0 || components.some((c) => !c.visible),
     [components, isolatedComponentIds]
   );
 
-  const componentById = useMemo(() => {
-    const map = new Map<string, Analyzed3DComponent>();
-    components.forEach((c) => map.set(c.id, c));
-    return map;
-  }, [components]);
+  const anySectionActive =
+    sectioning.x.enabled || sectioning.y.enabled || sectioning.z.enabled;
+
+  const isHeavyMesh = Boolean(
+    activeAsset?.triangleCount && activeAsset.triangleCount > 250_000
+  );
 
   const jumpToGuidedStep = useCallback(
     (idx: number) => {
@@ -610,26 +600,12 @@ export default function Academic3DExplorerModule({
     [guidedSteps]
   );
 
-  // Sync fullscreen document state & Escape shortcut for Presentation / Tools
+  // Sync fullscreen document state
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
-    const onKeyDown = (ev: KeyboardEvent) => {
-      const tag = (ev.target as HTMLElement | null)?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-      if (ev.key === 'Escape') {
-        if (presentationMode) setPresentationMode(false);
-        else if (interactionTool !== 'select') setInteractionTool('select');
-      } else if ((ev.key === 'h' || ev.key === 'H') && !ev.ctrlKey && !ev.metaKey) {
-        setPresentationMode((p) => !p);
-      }
-    };
     document.addEventListener('fullscreenchange', onFsChange);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('fullscreenchange', onFsChange);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [presentationMode, interactionTool]);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
 
   const handleToggleWorkspaceFullscreen = async () => {
     const el = workspaceRootRef.current;
@@ -669,14 +645,16 @@ export default function Academic3DExplorerModule({
     }
   };
 
-  const handleUpdateAnnotation = async (
-    pinId: string,
-    patch: { label?: string; note?: string; visible?: boolean }
-  ) => {
-    if (!activeAsset) return;
-    const updated = await update3DAssetAnnotation(activeAsset.id, pinId, patch);
+  const handleSavePinEdit = async (e: React.FormEvent, pinId: string) => {
+    e.preventDefault();
+    if (!activeAsset || !editPinLabel.trim()) return;
+    const updated = await update3DAssetAnnotation(activeAsset.id, pinId, {
+      label: editPinLabel.trim(),
+      note: editPinNote.trim() || undefined
+    });
     if (updated) {
       setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      setEditingPinId(null);
     }
   };
 
@@ -690,30 +668,87 @@ export default function Academic3DExplorerModule({
     }
   };
 
-  const handleSaveCameraView = async (e: React.FormEvent) => {
+  const handleAddMeasurement = async (measurement: Asset3DMeasurement) => {
+    if (!activeAsset) return;
+    const updated = await add3DMeasurement(activeAsset.id, measurement);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    }
+  };
+
+  const handleToggleMeasurementVisible = async (measurementId: string) => {
+    if (!activeAsset) return;
+    const updated = await toggle3DMeasurementVisible(activeAsset.id, measurementId);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    }
+  };
+
+  const handleRemoveMeasurement = async (measurementId: string) => {
+    if (!activeAsset) return;
+    const updated = await remove3DMeasurement(activeAsset.id, measurementId);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    }
+  };
+
+  const handleClearMeasurements = async () => {
+    if (!activeAsset) return;
+    const updated = await clear3DMeasurements(activeAsset.id);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    }
+  };
+
+  const handleSaveScaleCalibration = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAsset) return;
-    const cam = viewerRef.current?.getCameraState();
-    if (!cam) return;
-    const label =
-      newViewName.trim() || `View ${(activeAsset.savedViews?.length || 0) + 1}`;
-    const view: Asset3DSavedView = {
-      id: `view_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      name: label,
-      position: cam.position,
-      target: cam.target,
+    const factorNum = Number(calibFactor);
+    if (!Number.isFinite(factorNum) || factorNum <= 0) return;
+    const cal: ModelScaleCalibration = {
+      unitLabel: `Calibrated (${calibUnitSymbol})`,
+      unitSymbol: calibUnitSymbol,
+      unitsPerModelUnit: factorNum,
+      source: 'user_calibrated',
+      note: `User-calibrated 1 model unit = ${factorNum} ${calibUnitSymbol}`
+    };
+    const updated = await save3DScaleCalibration(activeAsset.id, cal);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    }
+  };
+
+  const handleResetScaleCalibration = async () => {
+    if (!activeAsset) return;
+    const updated = await save3DScaleCalibration(activeAsset.id, undefined);
+    if (updated) {
+      setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      setCalibFactor('1');
+    }
+  };
+
+  const handleSaveCurrentCameraView = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeAsset || !newViewName.trim()) return;
+    const camState = viewerRef.current?.getCameraState();
+    if (!camState) return;
+    const view: SavedCameraView = {
+      id: `view_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      name: newViewName.trim(),
+      position: camState.position,
+      target: camState.target,
       createdAt: Date.now()
     };
-    const updated = await add3DAssetSavedView(activeAsset.id, view);
+    const updated = await add3DSavedView(activeAsset.id, view);
     if (updated) {
       setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       setNewViewName('');
     }
   };
 
-  const handleRemoveSavedView = async (viewId: string) => {
+  const handleDeleteSavedView = async (viewId: string) => {
     if (!activeAsset) return;
-    const updated = await remove3DAssetSavedView(activeAsset.id, viewId);
+    const updated = await remove3DSavedView(activeAsset.id, viewId);
     if (updated) {
       setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
     }
@@ -735,7 +770,6 @@ export default function Academic3DExplorerModule({
       dimensions?: [number, number, number];
     }) => {
       setDimensions(stats.dimensions);
-      setAnalyzedTriCount(stats.triangleCount);
       if (!activeAsset) return;
       if (
         activeAsset.componentCount === stats.componentCount &&
@@ -761,201 +795,113 @@ export default function Academic3DExplorerModule({
     viewerRef.current?.setCameraPreset(preset);
   };
 
-  const setVisualizationMode = (mode: RenderVisualizationMode) => {
+  const setVisualizationMode = useCallback((mode: RenderVisualizationMode) => {
     setRenderSettings((s) => ({
       ...s,
       renderMode: mode,
       wireframe: mode === 'wireframe'
     }));
-  };
+  }, []);
 
-  const toggleGroupCollapsed = (groupId: string) => {
-    setCollapsedGroupIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
-  };
+  const resetExplorationState = useCallback(() => {
+    setSectioning(DEFAULT_SECTIONING_STATE);
+    setRenderSettings(DEFAULT_VIEWER_SETTINGS);
+    setInteractionMode('inspect');
+    setSelectedComponentIds([]);
+    setIsolatedComponentIds([]);
+    viewerRef.current?.restoreAllComponents();
+    viewerRef.current?.setCameraPreset('reset');
+    setActiveCameraPreset('reset');
+    setActivePinId(null);
+    setGuidedIndex(null);
+  }, []);
 
-  const updateSectionAxis = (
-    axis: SectionPlaneAxis,
-    patch: Partial<SectioningState['planes'][SectionPlaneAxis]>
+  const updateAxisSection = (
+    axis: ClippingAxisKey,
+    patch: Partial<SectioningState['x']>
   ) => {
-    setSectioning((prev) => {
-      const nextPlane = { ...prev.planes[axis], ...patch };
-      const nextPlanes = { ...prev.planes, [axis]: nextPlane };
-      const anyEnabled = nextPlanes.x.enabled || nextPlanes.y.enabled || nextPlanes.z.enabled;
-      return {
-        ...prev,
-        active: patch.enabled === true ? true : anyEnabled ? prev.active : false,
-        planes: nextPlanes
-      };
-    });
+    setSectioning((prev) => ({
+      ...prev,
+      [axis]: { ...prev[axis], ...patch }
+    }));
   };
+
+  // Keyboard shortcuts for scientific workbench
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'r') {
+        e.preventDefault();
+        setActiveCameraPreset('reset');
+        viewerRef.current?.setCameraPreset('reset');
+      } else if (key === 'f') {
+        e.preventDefault();
+        if (selectedComponentIds.length > 0) viewerRef.current?.focusSelection();
+        else viewerRef.current?.fitToViewport();
+      } else if (key === 'h') {
+        e.preventDefault();
+        setControlsHidden((v) => !v);
+      } else if (key === 'l') {
+        if (capabilities?.hasNamedStructures) {
+          e.preventDefault();
+          setRenderSettings((s) => ({ ...s, showLabels: !s.showLabels }));
+        }
+      } else if (key === '1') {
+        setVisualizationMode('solid');
+      } else if (key === '2') {
+        setVisualizationMode('wireframe');
+      } else if (key === '3') {
+        setVisualizationMode('xray');
+      } else if (e.key === 'Escape') {
+        if (interactionMode !== 'inspect') {
+          setInteractionMode('inspect');
+        } else if (controlsHidden) {
+          setControlsHidden(false);
+        } else if (sectionPopoverOpen) {
+          setSectionPopoverOpen(false);
+        } else if (lightingPopoverOpen) {
+          setLightingPopoverOpen(false);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    capabilities?.hasNamedStructures,
+    controlsHidden,
+    interactionMode,
+    lightingPopoverOpen,
+    sectionPopoverOpen,
+    selectedComponentIds.length,
+    setVisualizationMode
+  ]);
 
   const safeSourceUrl = activeAsset ? sanitizeHttpUrl(activeAsset.sourceUrl) : null;
   const activeAvailability = activeAsset ? getAsset3DAvailability(activeAsset) : null;
-
-  const renderHierarchyNode = (node: SceneHierarchyNode): React.ReactNode => {
-    if (node.kind === 'mesh' && node.componentId) {
-      const c = componentById.get(node.componentId);
-      if (!c) return null;
-      const isSel = selectedComponentIds.includes(c.id);
-      const isIso = isolatedComponentIds.includes(c.id);
-      return (
-        <div
-          key={node.id}
-          style={{ paddingLeft: `${Math.min(node.depth, 4) * 10 + 8}px` }}
-          className={`flex items-center justify-between gap-1 pr-2 py-1.5 rounded-xl border text-xs transition-colors ${
-            isSel
-              ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-900 dark:text-emerald-200 font-semibold'
-              : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-          }`}
-        >
-          <button
-            type="button"
-            onClick={(ev) => {
-              if (ev.shiftKey || interactionTool === 'multi_select') {
-                setSelectedComponentIds((prev) =>
-                  prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id]
-                );
-              } else {
-                const next = isSel && selectedComponentIds.length === 1 ? [] : [c.id];
-                setSelectedComponentIds(next);
-                if (next.length === 1) {
-                  viewerRef.current?.focusComponent(c.id);
-                  setRightTab('inspect');
-                }
-              }
-            }}
-            className="min-w-0 flex-1 text-left"
-            title={c.name}
-          >
-            <span className="block truncate">{c.name}</span>
-            <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums">
-              {c.triangleCount.toLocaleString()} tris
-              {!c.hasMeaningfulName ? ' · Unnamed node' : ''}
-            </span>
-          </button>
-
-          {components.length > 1 && (
-            <button
-              type="button"
-              onClick={() => viewerRef.current?.isolateComponent(isIso ? null : c.id)}
-              className={`p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 ${
-                isIso ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
-              }`}
-              title={isIso ? 'Restore entire model' : 'Isolate structure'}
-              aria-label={`Isolate ${c.name}`}
-            >
-              <Focus className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => viewerRef.current?.toggleComponentVisible(c.id)}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
-            title={c.visible ? 'Hide structure' : 'Show structure'}
-            aria-label={c.visible ? `Hide ${c.name}` : `Show ${c.name}`}
-          >
-            {c.visible ? (
-              <Eye className="w-3.5 h-3.5" />
-            ) : (
-              <EyeOff className="w-3.5 h-3.5 text-rose-500" />
-            )}
-          </button>
-        </div>
-      );
-    }
-
-    const collapsed = collapsedGroupIds.has(node.id);
-    const allSelected =
-      node.meshIds.length > 0 && node.meshIds.every((id) => selectedComponentIds.includes(id));
-    const allHidden =
-      node.meshIds.length > 0 && node.meshIds.every((id) => componentById.get(id)?.visible === false);
-
-    return (
-      <div key={node.id} className="space-y-1">
-        <div
-          style={{ paddingLeft: `${Math.min(node.depth, 4) * 10 + 6}px` }}
-          className={`flex items-center justify-between gap-1 pr-2 py-1.5 rounded-xl border text-xs transition-colors ${
-            allSelected
-              ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-900 dark:text-emerald-200 font-semibold'
-              : 'bg-slate-100/80 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
-          }`}
-        >
-          <button
-            type="button"
-            onClick={() => toggleGroupCollapsed(node.id)}
-            className="p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-white shrink-0"
-            aria-label={collapsed ? `Expand ${node.name}` : `Collapse ${node.name}`}
-          >
-            {collapsed ? (
-              <ChevronRight className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedComponentIds(allSelected ? [] : node.meshIds);
-              if (!allSelected) viewerRef.current?.focusSelected();
-            }}
-            className="min-w-0 flex-1 text-left flex items-center gap-1.5"
-            title={`${node.name} (${node.meshIds.length} meshes)`}
-          >
-            <span className="truncate font-semibold">{node.name}</span>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
-              ({node.meshIds.length})
-            </span>
-          </button>
-
-          {components.length > 1 && (
-            <button
-              type="button"
-              onClick={() => viewerRef.current?.isolateComponents(node.meshIds)}
-              className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400"
-              title="Isolate branch"
-              aria-label={`Isolate group ${node.name}`}
-            >
-              <Focus className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => viewerRef.current?.setComponentsVisibility(node.meshIds, allHidden)}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
-            title={allHidden ? 'Show branch' : 'Hide branch'}
-            aria-label={allHidden ? `Show ${node.name}` : `Hide ${node.name}`}
-          >
-            {allHidden ? (
-              <EyeOff className="w-3.5 h-3.5 text-rose-500" />
-            ) : (
-              <Eye className="w-3.5 h-3.5" />
-            )}
-          </button>
-        </div>
-
-        {!collapsed && node.children.length > 0 && (
-          <div className="space-y-1">{node.children.map((child) => renderHierarchyNode(child))}</div>
-        )}
-      </div>
-    );
-  };
+  const savedViews = activeAsset?.savedViews || [];
+  const measurements = activeAsset?.measurements || [];
 
   return (
     <div
       ref={workspaceRootRef}
       className="h-[100dvh] w-full bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col overflow-hidden"
     >
-      {/* Top Academic Explorer Navigation Bar (hidden in Presentation Mode) */}
-      {!presentationMode && (
-        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+      {/* Top Academic Explorer Navigation Bar */}
+      {!controlsHidden && (
+        <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <button
               type="button"
@@ -963,7 +909,7 @@ export default function Academic3DExplorerModule({
                 if (onExitExplorer) onExitExplorer();
                 else openAsset3DEngine({ tab: 'library' });
               }}
-              className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0"
+              className="min-h-[34px] px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 shrink-0"
               title={`Return to ${returnLabel}`}
             >
               <ArrowLeft className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -979,9 +925,6 @@ export default function Academic3DExplorerModule({
                       customCategories
                     )} · ${activeAsset.format.toUpperCase()}`
                   : ''}
-                {jumpTarget?.experimentTitle
-                  ? ` · Lab: ${jumpTarget.experimentTitle}${jumpTarget.stepTitle ? ` (${jumpTarget.stepTitle})` : ''}`
-                  : ''}
               </p>
               <h1 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
                 {activeAsset ? activeAsset.name : 'Select a Scientific 3D Model'}
@@ -989,14 +932,14 @@ export default function Academic3DExplorerModule({
             </div>
           </div>
 
-          {/* Library Switcher & Explorer Utilities */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+          {/* Library Switcher & Presentation Utilities */}
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
             {assets.length > 0 && (
               <select
                 aria-label="Switch 3D model from library"
                 value={selectedAssetId || ''}
                 onChange={(e) => setSelectedAssetId(e.target.value || null)}
-                className="max-w-[180px] sm:max-w-[260px] min-h-[36px] px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white"
+                className="max-w-[160px] sm:max-w-[230px] min-h-[34px] px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-900 dark:text-white"
               >
                 {assets.map((item) => {
                   const avail = getAsset3DAvailability(item);
@@ -1015,7 +958,7 @@ export default function Academic3DExplorerModule({
                 <button
                   type="button"
                   onClick={() => void handleToggleFavorite()}
-                  className={`min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl border transition-colors ${
+                  className={`min-h-[34px] min-w-[34px] inline-flex items-center justify-center rounded-xl border transition-colors ${
                     activeAsset.isFavorite
                       ? 'bg-amber-500/10 border-amber-500/40 text-amber-500'
                       : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-400 hover:text-amber-500'
@@ -1031,22 +974,22 @@ export default function Academic3DExplorerModule({
                   <>
                     <button
                       type="button"
-                      onClick={() => viewerRef.current?.downloadScreenshot()}
-                      className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
-                      title="Download PNG screenshot of current 3D viewport"
+                      onClick={() => void viewerRef.current?.captureScreenshotPng(activeAsset.name)}
+                      className="min-h-[34px] px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+                      title="Download high-resolution PNG screenshot of current 3D view"
                     >
                       <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span className="hidden md:inline">Screenshot</span>
+                      <span className="hidden lg:inline">PNG</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => void viewerRef.current?.captureThumbnail()}
-                      className="min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
+                      className="min-h-[34px] px-2.5 py-1 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
                       title="Save current 3D view as library preview thumbnail"
                     >
                       <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span className="hidden lg:inline">Save Preview</span>
+                      <span className="hidden md:inline">Snapshot</span>
                     </button>
                   </>
                 )}
@@ -1055,12 +998,26 @@ export default function Academic3DExplorerModule({
 
             <button
               type="button"
+              onClick={() => setControlsHidden(true)}
+              className="min-h-[34px] px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1"
+              title="Clean presentation mode — hide UI chrome (Shortcut: H)"
+            >
+              <Maximize className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden xl:inline">Present</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleToggleWorkspaceFullscreen}
-              className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+              className="min-h-[34px] min-w-[34px] inline-flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
               aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen workspace'}
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              {isFullscreen ? (
+                <Minimize2 className="w-4 h-4" />
+              ) : (
+                <Maximize2 className="w-4 h-4" />
+              )}
             </button>
           </div>
         </header>
@@ -1107,14 +1064,14 @@ export default function Academic3DExplorerModule({
       ) : (
         /* Main 3-Zone Responsive Exploration Workbench */
         <div className="relative flex-1 min-h-0 flex overflow-hidden">
-          {/* LEFT PANEL: Structure Hierarchy, Multi-Select, Visibility, Isolation & Guided Identification */}
-          {leftPanelOpen && !presentationMode && (
+          {/* LEFT PANEL: Structure Hierarchy, Multi-Select, Isolation & Guided Tour */}
+          {!controlsHidden && leftPanelOpen && (
             <aside className="absolute inset-y-0 left-0 z-30 w-80 max-w-[88vw] lg:static lg:w-72 xl:w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 shadow-2xl lg:shadow-none">
-              <div className="px-3.5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+              <div className="px-3.5 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <h2 className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                    Structures &amp; Parts ({components.length})
+                    Structures &amp; Hierarchy ({components.length})
                   </h2>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1138,7 +1095,7 @@ export default function Academic3DExplorerModule({
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-4">
+              <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3.5">
                 {/* Honest Capabilities Notice */}
                 {capabilities && (
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1 text-xs">
@@ -1150,105 +1107,6 @@ export default function Academic3DExplorerModule({
                     </p>
                   </div>
                 )}
-
-                {/* Bulk Multi-Selection & Isolation Controls */}
-                <section className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-slate-800 dark:text-slate-200">
-                      Selection ({selectedComponentIds.length}/{components.length})
-                    </span>
-                    {hierarchyTree.length > 0 && components.length > 1 && (
-                      <div className="inline-flex rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setHierarchyViewMode('tree')}
-                          className={`px-2 py-0.5 rounded text-[11px] font-semibold inline-flex items-center gap-1 ${
-                            hierarchyViewMode === 'tree'
-                              ? 'bg-emerald-600 text-white'
-                              : 'text-slate-500'
-                          }`}
-                          title="Scene hierarchy tree"
-                        >
-                          <FolderTree className="w-3 h-3" />
-                          <span>Tree</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setHierarchyViewMode('flat')}
-                          className={`px-2 py-0.5 rounded text-[11px] font-semibold inline-flex items-center gap-1 ${
-                            hierarchyViewMode === 'flat'
-                              ? 'bg-emerald-600 text-white'
-                              : 'text-slate-500'
-                          }`}
-                          title="Flat mesh list"
-                        >
-                          <List className="w-3 h-3" />
-                          <span>List</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      disabled={!capabilities?.supportsMultiSelect}
-                      onClick={() => viewerRef.current?.selectAllComponents()}
-                      title={
-                        capabilities?.supportsMultiSelect
-                          ? 'Select all sub-structures'
-                          : capabilities?.unavailableReasons.multiSelect
-                      }
-                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      disabled={selectedComponentIds.length === 0}
-                      onClick={() => viewerRef.current?.deselectAllComponents()}
-                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
-                    >
-                      Deselect
-                    </button>
-                    <button
-                      type="button"
-                      disabled={selectedComponentIds.length === 0}
-                      onClick={() => viewerRef.current?.focusSelected()}
-                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
-                    >
-                      Focus
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!capabilities?.supportsIsolation || selectedComponentIds.length === 0}
-                      onClick={() => viewerRef.current?.isolateComponents(selectedComponentIds)}
-                      title={
-                        capabilities?.supportsIsolation
-                          ? 'Isolate selected structures'
-                          : capabilities?.unavailableReasons.isolation
-                      }
-                      className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold disabled:opacity-45 disabled:cursor-not-allowed"
-                    >
-                      Isolate
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!capabilities?.supportsIsolation || selectedComponentIds.length === 0}
-                      onClick={() =>
-                        viewerRef.current?.setComponentsVisibility(selectedComponentIds, false)
-                      }
-                      title={
-                        capabilities?.supportsIsolation
-                          ? 'Hide selected structures'
-                          : capabilities?.unavailableReasons.isolation
-                      }
-                      className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
-                    >
-                      Hide
-                    </button>
-                  </div>
-                </section>
 
                 {/* Guided Identification Tour Controls */}
                 <section className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
@@ -1315,7 +1173,7 @@ export default function Academic3DExplorerModule({
                       </p>
                       <button
                         type="button"
-                        onClick={() => setPinMode(true)}
+                        onClick={() => setInteractionMode('pin')}
                         className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline inline-flex items-center gap-1"
                       >
                         <MapPin className="w-3.5 h-3.5" />
@@ -1325,9 +1183,65 @@ export default function Academic3DExplorerModule({
                   )}
                 </section>
 
-                {/* Component Selection Hierarchy Tree or Flat List */}
+                {/* Multi-Select & Node Hierarchy List */}
                 {components.length > 1 && (
                   <section className="space-y-2">
+                    <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                        <span>
+                          Selected: {selectedComponentIds.length} / {components.length}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => viewerRef.current?.selectAllComponents()}
+                            className="text-emerald-700 dark:text-emerald-400 hover:underline"
+                          >
+                            All
+                          </button>
+                          <span className="text-slate-400">·</span>
+                          <button
+                            type="button"
+                            onClick={() => viewerRef.current?.deselectAllComponents()}
+                            disabled={selectedComponentIds.length === 0}
+                            className="text-slate-500 dark:text-slate-400 hover:underline disabled:opacity-40"
+                          >
+                            None
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        <button
+                          type="button"
+                          disabled={selectedComponentIds.length === 0}
+                          onClick={() =>
+                            viewerRef.current?.isolateComponents(selectedComponentIds)
+                          }
+                          className="py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-[11px] font-semibold"
+                        >
+                          Isolate
+                        </button>
+                        <button
+                          type="button"
+                          disabled={selectedComponentIds.length === 0}
+                          onClick={() =>
+                            viewerRef.current?.hideComponents(selectedComponentIds)
+                          }
+                          className="py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 disabled:opacity-40 text-slate-700 dark:text-slate-200 text-[11px] font-semibold"
+                        >
+                          Hide
+                        </button>
+                        <button
+                          type="button"
+                          disabled={selectedComponentIds.length === 0}
+                          onClick={() => viewerRef.current?.focusSelection()}
+                          className="py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 disabled:opacity-40 text-slate-700 dark:text-slate-200 text-[11px] font-semibold"
+                        >
+                          Focus
+                        </button>
+                      </div>
+                    </div>
+
                     {components.length > 5 && (
                       <div className="relative">
                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1335,106 +1249,139 @@ export default function Academic3DExplorerModule({
                           type="text"
                           value={componentSearch}
                           onChange={(e) => setComponentSearch(e.target.value)}
-                          placeholder="Filter mesh nodes..."
+                          placeholder="Filter mesh or parent nodes..."
                           className="w-full min-h-[34px] pl-8 pr-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
                         />
                       </div>
                     )}
 
-                    {hierarchyViewMode === 'tree' &&
-                    hierarchyTree.length > 0 &&
-                    !componentSearch.trim() ? (
-                      <div className="space-y-1">
-                        {hierarchyTree.map((rootNode) => renderHierarchyNode(rootNode))}
-                      </div>
-                    ) : (
-                      <div className="space-y-1">
-                        {filteredComponents.map((c) => {
-                          const isSel = selectedComponentIds.includes(c.id);
-                          const isIso = isolatedComponentIds.includes(c.id);
-                          return (
-                            <div
-                              key={c.id}
-                              className={`flex items-center justify-between gap-1 px-2.5 py-2 rounded-xl border text-xs transition-colors ${
-                                isSel
-                                  ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-900 dark:text-emerald-200 font-semibold'
-                                  : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                              }`}
-                            >
+                    <div className="space-y-2">
+                      {hierarchyGroups.map((grp) => (
+                        <div key={grp.key} className="space-y-1">
+                          {grp.parentLabel && (
+                            <div className="flex items-center justify-between gap-1 px-2 py-1 rounded-lg bg-slate-100/90 dark:bg-slate-800/70 text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                              <span className="truncate" title={grp.parentLabel}>
+                                ↳ {grp.parentLabel} ({grp.items.length})
+                              </span>
                               <button
                                 type="button"
-                                onClick={(ev) => {
-                                  if (ev.shiftKey || interactionTool === 'multi_select') {
+                                onClick={() =>
+                                  viewerRef.current?.isolateComponents(
+                                    grp.items.map((item) => item.id)
+                                  )
+                                }
+                                className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline shrink-0"
+                              >
+                                Isolate Group
+                              </button>
+                            </div>
+                          )}
+
+                          {grp.items.map((c) => {
+                            const isSel = selectedComponentIds.includes(c.id);
+                            const isIso = isolatedComponentIds.includes(c.id);
+                            const indentPx = grp.parentLabel
+                              ? Math.min(18, Math.max(8, (c.depth || 1) * 8))
+                              : 0;
+                            return (
+                              <div
+                                key={c.id}
+                                style={indentPx ? { marginLeft: `${indentPx}px` } : undefined}
+                                className={`flex items-center justify-between gap-1 px-2 py-1.5 rounded-xl border text-xs transition-colors ${
+                                  isSel
+                                    ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-900 dark:text-emerald-200 font-semibold'
+                                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSel}
+                                  onChange={() =>
                                     setSelectedComponentIds((prev) =>
                                       prev.includes(c.id)
                                         ? prev.filter((id) => id !== c.id)
                                         : [...prev, c.id]
-                                    );
-                                  } else {
-                                    const next =
-                                      isSel && selectedComponentIds.length === 1 ? [] : [c.id];
-                                    setSelectedComponentIds(next);
-                                    if (next.length === 1) {
-                                      viewerRef.current?.focusComponent(c.id);
-                                      setRightTab('inspect');
-                                    }
+                                    )
                                   }
-                                }}
-                                className="min-w-0 flex-1 text-left"
-                                title={c.name}
-                              >
-                                <span className="block truncate">{c.name}</span>
-                                <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums">
-                                  {c.triangleCount.toLocaleString()} tris
-                                  {!c.hasMeaningfulName ? ' · Unnamed node' : ''}
-                                </span>
-                              </button>
+                                  aria-label={`Select ${c.name}`}
+                                  className="accent-emerald-600 shrink-0"
+                                />
 
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  viewerRef.current?.isolateComponent(isIso ? null : c.id)
-                                }
-                                className={`p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 ${
-                                  isIso
-                                    ? 'text-emerald-600 dark:text-emerald-400'
-                                    : 'text-slate-400'
-                                }`}
-                                title={isIso ? 'Restore entire model' : 'Isolate structure'}
-                                aria-label={`Isolate ${c.name}`}
-                              >
-                                <Focus className="w-3.5 h-3.5" />
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={(ev) => {
+                                    if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
+                                      setSelectedComponentIds((prev) =>
+                                        prev.includes(c.id)
+                                          ? prev.filter((id) => id !== c.id)
+                                          : [...prev, c.id]
+                                      );
+                                    } else {
+                                      const nextIds =
+                                        isSel && selectedComponentIds.length === 1 ? [] : [c.id];
+                                      setSelectedComponentIds(nextIds);
+                                      if (nextIds.length > 0) {
+                                        viewerRef.current?.focusComponent(c.id);
+                                        setRightTab('inspect');
+                                      }
+                                    }
+                                  }}
+                                  className="min-w-0 flex-1 text-left"
+                                  title={c.name}
+                                >
+                                  <span className="block truncate">{c.name}</span>
+                                  <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400 tabular-nums">
+                                    {c.triangleCount.toLocaleString()} tris
+                                    {!c.hasMeaningfulName ? ' · Unnamed node' : ''}
+                                  </span>
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => viewerRef.current?.toggleComponentVisible(c.id)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
-                                title={c.visible ? 'Hide structure' : 'Show structure'}
-                                aria-label={c.visible ? `Hide ${c.name}` : `Show ${c.name}`}
-                              >
-                                {c.visible ? (
-                                  <Eye className="w-3.5 h-3.5" />
-                                ) : (
-                                  <EyeOff className="w-3.5 h-3.5 text-rose-500" />
-                                )}
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    viewerRef.current?.isolateComponent(isIso ? null : c.id)
+                                  }
+                                  className={`p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 ${
+                                    isIso
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-slate-400'
+                                  }`}
+                                  title={isIso ? 'Restore entire model' : 'Isolate structure'}
+                                  aria-label={`Isolate ${c.name}`}
+                                >
+                                  <Focus className="w-3.5 h-3.5" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => viewerRef.current?.toggleComponentVisible(c.id)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-white"
+                                  title={c.visible ? 'Hide structure' : 'Show structure'}
+                                  aria-label={c.visible ? `Hide ${c.name}` : `Show ${c.name}`}
+                                >
+                                  {c.visible ? (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+                                  )}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
                   </section>
                 )}
               </div>
             </aside>
           )}
 
-          {/* CENTER STAGE: Control Strip + Full Immersive WebGL Viewport */}
+          {/* CENTER STAGE: Grouped Scientific Toolbar + Full Immersive WebGL Viewport */}
           <main className="flex-1 min-w-0 flex flex-col bg-slate-100 dark:bg-slate-950 relative">
             {/* Solid Control Bar above Canvas (never overlays WebGL with backdrop-blur) */}
-            {!presentationMode && (
-              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-3.5 py-2 flex items-center justify-between gap-2 overflow-x-auto shrink-0">
+            {!controlsHidden && (
+              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2.5 sm:px-3 py-1.5 flex items-center justify-between gap-2 overflow-x-auto shrink-0">
                 <div className="flex items-center gap-1.5 shrink-0">
                   {!leftPanelOpen && (
                     <button
@@ -1445,10 +1392,10 @@ export default function Academic3DExplorerModule({
                           setRightPanelOpen(false);
                         }
                       }}
-                      className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                      className="min-h-[30px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1 border border-slate-200 dark:border-slate-700"
                     >
                       <PanelLeftOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>Structures ({components.length})</span>
+                      <span>Parts ({components.length})</span>
                     </button>
                   )}
 
@@ -1456,7 +1403,7 @@ export default function Academic3DExplorerModule({
                     <button
                       type="button"
                       onClick={() => viewerRef.current?.restoreAllComponents()}
-                      className="min-h-[32px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1"
+                      className="min-h-[30px] px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1"
                       title="Restore all hidden or isolated parts"
                     >
                       <Eye className="w-3.5 h-3.5" />
@@ -1464,101 +1411,43 @@ export default function Academic3DExplorerModule({
                     </button>
                   )}
 
-                  {/* Interaction Mode Switcher: Select / Multi / Distance / Coords / Pin */}
+                  {/* Interaction Tool Mode Group */}
                   <div
                     className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5"
                     role="group"
-                    aria-label="3D interaction tool"
+                    aria-label="Interaction tool mode"
                   >
-                    <button
-                      type="button"
-                      onClick={() => setInteractionTool('select')}
-                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
-                        interactionTool === 'select'
-                          ? 'bg-emerald-600 text-white'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                      title="Single structure click selection & orbit"
-                    >
-                      <Focus className="w-3 h-3" />
-                      <span className="hidden sm:inline">Select</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={!capabilities?.supportsMultiSelect}
-                      onClick={() =>
-                        setInteractionTool((t) =>
-                          t === 'multi_select' ? 'select' : 'multi_select'
-                        )
-                      }
-                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${
-                        interactionTool === 'multi_select'
-                          ? 'bg-emerald-600 text-white'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                      title={
-                        capabilities?.supportsMultiSelect
-                          ? 'Multi-select components (or Shift+Click)'
-                          : capabilities?.unavailableReasons.multiSelect ||
-                            'Requires multi-mesh assembly'
-                      }
-                    >
-                      <Layers className="w-3 h-3" />
-                      <span className="hidden md:inline">Multi</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInteractionTool((t) =>
-                          t === 'measure_distance' ? 'select' : 'measure_distance'
-                        )
-                      }
-                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
-                        interactionTool === 'measure_distance'
-                          ? 'bg-sky-600 text-white'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                      title="Point-to-point distance measurement (model units)"
-                    >
-                      <Ruler className="w-3 h-3" />
-                      <span className="hidden sm:inline">Measure</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInteractionTool((t) =>
-                          t === 'measure_coords' ? 'select' : 'measure_coords'
-                        )
-                      }
-                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
-                        interactionTool === 'measure_coords'
-                          ? 'bg-sky-600 text-white'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                      title="Inspect 3D surface coordinates"
-                    >
-                      <Crosshair className="w-3 h-3" />
-                      <span className="hidden lg:inline">Coords</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setInteractionTool((t) => (t === 'pin' ? 'select' : 'pin'))
-                      }
-                      className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
-                        interactionTool === 'pin'
-                          ? 'bg-amber-600 text-white'
-                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                      title="Pin 3D annotation marker on surface"
-                    >
-                      <MapPin className="w-3 h-3" />
-                      <span className="hidden sm:inline">Pin</span>
-                    </button>
+                    {(
+                      [
+                        { id: 'inspect', label: 'Inspect', icon: Focus, title: 'Select & inspect structures (Shift/Ctrl-click multi-select)' },
+                        { id: 'measure', label: 'Measure', icon: Ruler, title: 'Click two points on model to measure distance' },
+                        { id: 'coord', label: 'Coords', icon: Crosshair, title: 'Probe 3D coordinates (X, Y, Z) on model surface' },
+                        { id: 'pin', label: 'Pin Note', icon: MapPin, title: 'Click surface to add persistent 3D study pin' }
+                      ] as const
+                    ).map((tool) => {
+                      const Icon = tool.icon;
+                      const active = interactionMode === tool.id;
+                      return (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          title={tool.title}
+                          onClick={() => setInteractionMode(tool.id)}
+                          className={`min-h-[26px] px-2 py-0.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 transition-colors ${
+                            active
+                              ? tool.id === 'pin'
+                                ? 'bg-amber-600 text-white'
+                                : tool.id === 'measure' || tool.id === 'coord'
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-emerald-600 text-white'
+                              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          <Icon className="w-3 h-3" />
+                          <span className="hidden xl:inline">{tool.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {/* Visualization Mode Switcher: Solid / Wireframe / X-Ray */}
@@ -1569,9 +1458,9 @@ export default function Academic3DExplorerModule({
                   >
                     {(
                       [
-                        { id: 'solid', label: 'Solid', icon: Box },
-                        { id: 'wireframe', label: 'Wireframe', icon: Grid3X3 },
-                        { id: 'xray', label: 'X-Ray', icon: Scan }
+                        { id: 'solid', label: 'Solid', icon: Box, title: 'Solid shaded view (1)' },
+                        { id: 'wireframe', label: 'Wire', icon: Grid3X3, title: 'Wireframe topology view (2)' },
+                        { id: 'xray', label: 'X-Ray', icon: Scan, title: 'Translucent X-Ray view (3)' }
                       ] as const
                     ).map((mode) => {
                       const Icon = mode.icon;
@@ -1580,98 +1469,139 @@ export default function Academic3DExplorerModule({
                         <button
                           key={mode.id}
                           type="button"
+                          title={mode.title}
                           onClick={() => setVisualizationMode(mode.id)}
-                          className={`min-h-[28px] px-2 py-0.5 rounded-md text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
+                          className={`min-h-[26px] px-2 py-0.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 transition-colors ${
                             active
                               ? 'bg-emerald-600 text-white'
                               : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
-                          <Icon className="w-3.5 h-3.5" />
-                          <span className="hidden md:inline">{mode.label}</span>
+                          <Icon className="w-3 h-3" />
+                          <span>{mode.label}</span>
                         </button>
                       );
                     })}
                   </div>
 
-                  {/* Camera Angle Presets */}
+                  {/* Sectioning Cutaway Popover Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSectionPopoverOpen((v) => !v);
+                      setLightingPopoverOpen(false);
+                    }}
+                    title="Cross-section clipping planes (X, Y, Z)"
+                    className={`min-h-[30px] px-2 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 border ${
+                      sectionPopoverOpen || anySectionActive
+                        ? 'bg-emerald-600 text-white border-emerald-500'
+                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span className="hidden lg:inline">Section</span>
+                  </button>
+
+                  {/* Camera Framing & Presets */}
                   <div
                     className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5"
                     role="group"
                     aria-label="Camera orientation presets"
                   >
+                    <button
+                      type="button"
+                      onClick={() => handleCameraPresetClick('reset')}
+                      title="Reset camera framing (Shortcut: R)"
+                      className="min-h-[26px] px-2 py-0.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800"
+                    >
+                      <RotateCcw className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      <span className="hidden md:inline">Reset</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        selectedComponentIds.length > 0
+                          ? viewerRef.current?.focusSelection()
+                          : viewerRef.current?.fitToViewport()
+                      }
+                      title="Fit model or selection to viewport (Shortcut: F)"
+                      className="min-h-[26px] px-2 py-0.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800"
+                    >
+                      <Focus className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      <span>Fit</span>
+                    </button>
                     {(
                       [
-                        { id: 'reset', label: 'Reset', icon: RotateCcw },
-                        { id: 'fit', label: 'Fit' },
-                        { id: 'iso', label: 'Iso' },
-                        { id: 'front', label: 'Front' },
-                        { id: 'back', label: 'Back' },
-                        { id: 'left', label: 'Left' },
-                        { id: 'right', label: 'Right' },
-                        { id: 'top', label: 'Top' },
-                        { id: 'bottom', label: 'Bottom' }
-                      ] as Array<{ id: CameraViewPreset; label: string; icon?: typeof RotateCcw }>
+                        { id: 'front', label: 'F' },
+                        { id: 'back', label: 'B' },
+                        { id: 'left', label: 'L' },
+                        { id: 'right', label: 'R' },
+                        { id: 'top', label: 'T' },
+                        { id: 'bottom', label: 'Bm' }
+                      ] as Array<{ id: CameraViewPreset; label: string }>
                     ).map((preset) => {
-                      const active =
-                        activeCameraPreset === preset.id &&
-                        preset.id !== 'reset' &&
-                        preset.id !== 'fit';
+                      const active = activeCameraPreset === preset.id;
                       return (
                         <button
                           key={preset.id}
                           type="button"
+                          title={`Camera preset: ${preset.id}`}
                           onClick={() => handleCameraPresetClick(preset.id)}
-                          className={`min-h-[28px] px-2 py-0.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 transition-colors ${
+                          className={`min-h-[26px] px-1.5 py-0.5 rounded-md text-[11px] font-semibold transition-colors ${
                             active
                               ? 'bg-emerald-600 text-white'
-                              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800'
+                              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800'
                           }`}
                         >
-                          {preset.icon && (
-                            <RotateCcw className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                          )}
-                          <span>{preset.label}</span>
+                          {preset.label}
                         </button>
                       );
                     })}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSectioning((prev) => ({ ...prev, active: !prev.active }));
-                      setRightPanelOpen(true);
-                      setRightTab('tools');
-                    }}
-                    className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border ${
-                      sectioning.active
-                        ? 'bg-rose-600 text-white border-rose-500'
-                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                    title="Toggle real WebGL cutaway sectioning planes"
-                  >
-                    <Scissors className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Section</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setRenderSettings((s) => ({ ...s, autoRotate: !s.autoRotate }))
-                    }
-                    className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border ${
-                      renderSettings.autoRotate
-                        ? 'bg-emerald-600 text-white border-emerald-500'
-                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                    title="Toggle turntable auto-rotation"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                    <span className="hidden xl:inline">Rotate</span>
-                  </button>
+                {/* Right Utility Strip: Auto-Rotate, Labels, Pins, Scene, Tools/Context */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <div className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5">
+                    <button
+                      type="button"
+                      disabled={isSoftwareGl}
+                      onClick={() =>
+                        setRenderSettings((s) => ({ ...s, autoRotate: !s.autoRotate }))
+                      }
+                      title={
+                        isSoftwareGl
+                          ? 'Auto-rotate disabled on Software WebGL for smooth responsiveness'
+                          : 'Toggle continuous turntable auto-rotation'
+                      }
+                      className={`min-h-[26px] px-2 py-0.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 disabled:opacity-45 disabled:cursor-not-allowed ${
+                        renderSettings.autoRotate && !isSoftwareGl
+                          ? 'bg-emerald-600 text-white'
+                          : 'text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      <RotateCw className="w-3 h-3" />
+                      <span className="hidden xl:inline">Orbit</span>
+                    </button>
+                    {renderSettings.autoRotate && !isSoftwareGl && (
+                      <select
+                        aria-label="Auto-rotation speed"
+                        value={renderSettings.autoRotateSpeed ?? 1.5}
+                        onChange={(e) =>
+                          setRenderSettings((s) => ({
+                            ...s,
+                            autoRotateSpeed: Number(e.target.value)
+                          }))
+                        }
+                        className="bg-transparent text-[11px] font-semibold text-slate-700 dark:text-slate-200 px-1 outline-none"
+                      >
+                        <option value={0.6}>0.5×</option>
+                        <option value={1.5}>1×</option>
+                        <option value={3.0}>2×</option>
+                        <option value={5.5}>4×</option>
+                      </select>
+                    )}
+                  </div>
 
                   <button
                     type="button"
@@ -1679,39 +1609,53 @@ export default function Academic3DExplorerModule({
                     onClick={() =>
                       setRenderSettings((s) => ({ ...s, showLabels: !s.showLabels }))
                     }
-                    className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border disabled:opacity-45 disabled:cursor-not-allowed ${
+                    className={`min-h-[30px] px-2 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 border disabled:opacity-45 disabled:cursor-not-allowed ${
                       renderSettings.showLabels && capabilities?.hasNamedStructures
                         ? 'bg-emerald-600 text-white border-emerald-500'
-                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                     }`}
                     title={
                       capabilities?.hasNamedStructures
-                        ? 'Toggle projected 3D node labels'
-                        : capabilities?.unavailableReasons.labels ||
-                          'No named sub-structures in this 3D file'
+                        ? 'Toggle projected 3D node labels (Shortcut: L)'
+                        : 'No named sub-structures in this 3D file (labels never fabricated)'
                     }
                   >
                     <Tag className="w-3.5 h-3.5" />
                     <span className="hidden xl:inline">Labels</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setPresentationMode(true)}
-                    className="min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
-                    title="Clean presentation mode (Shortcut: H)"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                    <span className="hidden lg:inline">Present</span>
-                  </button>
+                  {activeAsset.annotations.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRenderSettings((s) => ({
+                          ...s,
+                          showAnnotations: s.showAnnotations === false
+                        }))
+                      }
+                      title="Toggle 3D surface annotation pins"
+                      className={`min-h-[30px] px-2 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 border ${
+                        renderSettings.showAnnotations !== false
+                          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40'
+                          : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500'
+                      }`}
+                    >
+                      <MapPin className="w-3 h-3" />
+                      <span>{activeAsset.annotations.length}</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
-                    onClick={() => setLightingPopoverOpen((v) => !v)}
-                    className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 border ${
+                    onClick={() => {
+                      setLightingPopoverOpen((v) => !v);
+                      setSectionPopoverOpen(false);
+                    }}
+                    title="Scene lighting, highlight, grid & axes"
+                    className={`min-h-[30px] px-2 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 border ${
                       lightingPopoverOpen
                         ? 'bg-emerald-600 text-white border-emerald-500'
-                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                        : 'bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -1727,10 +1671,10 @@ export default function Academic3DExplorerModule({
                           setLeftPanelOpen(false);
                         }
                       }}
-                      className="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                      className="min-h-[30px] px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center gap-1 border border-slate-200 dark:border-slate-700"
                     >
                       <PanelRightOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>Tools &amp; Info</span>
+                      <span>Tools</span>
                     </button>
                   )}
                 </div>
@@ -1739,36 +1683,6 @@ export default function Academic3DExplorerModule({
 
             {/* Viewport Container */}
             <div className="relative flex-1 min-h-0 flex flex-col">
-              {presentationMode && (
-                <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/95 border border-slate-700 text-xs text-slate-100 shadow-2xl">
-                  <button
-                    type="button"
-                    onClick={() => viewerRef.current?.setCameraPreset('fit')}
-                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 font-semibold"
-                    title="Fit model"
-                  >
-                    Fit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => viewerRef.current?.downloadScreenshot()}
-                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 font-semibold inline-flex items-center gap-1"
-                    title="Download PNG screenshot"
-                  >
-                    <Download className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>PNG</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPresentationMode(false)}
-                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold inline-flex items-center gap-1"
-                  >
-                    <Minimize2 className="w-3.5 h-3.5" />
-                    <span>Exit Presentation (Esc)</span>
-                  </button>
-                </div>
-              )}
-
               {resolvingBinary ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-300 p-6">
                   <Loader2 className="w-7 h-7 animate-spin text-emerald-400" />
@@ -1823,33 +1737,243 @@ export default function Academic3DExplorerModule({
                   hideBuiltInHeader
                   hideBuiltInSidebars
                   className="flex-1 min-h-0 border-0 rounded-none"
+                  selectedComponentId={selectedComponentId}
                   selectedComponentIds={selectedComponentIds}
                   onSelectComponents={setSelectedComponentIds}
                   isolatedComponentIds={isolatedComponentIds}
-                  onIsolateChangeMulti={setIsolatedComponentIds}
+                  onIsolateComponentsChange={setIsolatedComponentIds}
                   renderSettings={renderSettings}
                   onRenderSettingsChange={setRenderSettings}
                   onLoadingStateChange={setViewerLoading}
                   onComponentsChange={setComponents}
-                  onHierarchyChange={setHierarchyTree}
                   activePinId={activePinId}
                   onActivePinChange={setActivePinId}
-                  pinMode={pinMode}
-                  onPinModeChange={setPinMode}
-                  interactionTool={interactionTool}
-                  onInteractionToolChange={setInteractionTool}
+                  interactionMode={interactionMode}
+                  onInteractionModeChange={setInteractionMode}
                   sectioning={sectioning}
-                  onSectioningChange={setSectioning}
                   measurements={measurements}
-                  onMeasurementsChange={setMeasurements}
-                  onCoordinateSample={setCoordinateSample}
-                  presentationMode={presentationMode}
+                  scaleCalibration={scaleInfo || undefined}
+                  onAddMeasurement={handleAddMeasurement}
+                  onPendingMeasureChange={setHasPendingMeasurePoint}
+                  onHoverCoordinate={setHoveredCoord}
+                  onClickCoordinate={setClickedCoord}
+                  onSoftwareGlDetected={setIsSoftwareGl}
                   fullscreenTargetRef={workspaceRootRef}
                 />
               )}
 
+              {/* Active Interactive Tool Status Banner (Solid dark badge, no backdrop-blur) */}
+              {!controlsHidden &&
+                (interactionMode !== 'inspect' || anySectionActive) &&
+                viewerLoading.status === 'ready' && (
+                  <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 pointer-events-none">
+                    {interactionMode === 'measure' && (
+                      <div className="pointer-events-auto px-3 py-1.5 rounded-xl bg-slate-900 border border-cyan-500/60 text-xs text-slate-100 shadow-lg inline-flex items-center gap-2">
+                        <Ruler className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>
+                          {hasPendingMeasurePoint
+                            ? 'Click Point B on model surface to complete distance'
+                            : 'Measure Mode: Click Point A on model surface'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setInteractionMode('inspect')}
+                          className="text-slate-400 hover:text-white font-semibold"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    )}
+
+                    {interactionMode === 'coord' && (
+                      <div className="pointer-events-auto px-3 py-1.5 rounded-xl bg-slate-900 border border-cyan-500/60 text-xs text-slate-100 shadow-lg inline-flex items-center gap-2 tabular-nums">
+                        <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>
+                          {(hoveredCoord || clickedCoord)
+                            ? `XYZ: (${(hoveredCoord || clickedCoord)!.rawPoint[0]}, ${(hoveredCoord || clickedCoord)!.rawPoint[1]}, ${(hoveredCoord || clickedCoord)!.rawPoint[2]})${
+                                (hoveredCoord || clickedCoord)!.componentName
+                                  ? ` · ${(hoveredCoord || clickedCoord)!.componentName}`
+                                  : ''
+                              }`
+                            : isHeavyMesh
+                            ? 'Click surface to probe XYZ coordinate'
+                            : 'Hover or click surface to read XYZ coordinate'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setInteractionMode('inspect')}
+                          className="text-slate-400 hover:text-white font-semibold"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    )}
+
+                    {interactionMode === 'pin' && (
+                      <div className="pointer-events-auto px-3 py-1.5 rounded-xl bg-slate-900 border border-amber-500/60 text-xs text-slate-100 shadow-lg inline-flex items-center gap-2">
+                        <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Pin Mode: Click model surface to attach study annotation</span>
+                        <button
+                          type="button"
+                          onClick={() => setInteractionMode('inspect')}
+                          className="text-slate-400 hover:text-white font-semibold"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+
+                    {anySectionActive && (
+                      <div className="pointer-events-auto px-3 py-1.5 rounded-xl bg-slate-900 border border-emerald-500/60 text-xs text-slate-100 shadow-lg inline-flex items-center gap-2">
+                        <Scissors className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>
+                          Sectioning:{' '}
+                          {(['x', 'y', 'z'] as const)
+                            .filter((ax) => sectioning[ax].enabled)
+                            .map((ax) => ax.toUpperCase())
+                            .join(' + ')}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSectioning(DEFAULT_SECTIONING_STATE)}
+                          className="text-emerald-400 hover:underline font-semibold"
+                        >
+                          Reset Cut
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {/* Quick Sectioning & Cutaway Popover */}
+              {!controlsHidden && sectionPopoverOpen && (
+                <div className="absolute top-3 right-3 z-20 w-80 p-4 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-white flex items-center gap-1.5">
+                      <Scissors className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Sectioning &amp; Cutaway Planes</span>
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setSectionPopoverOpen(false)}
+                      className="text-slate-400 hover:text-white"
+                      aria-label="Close sectioning popover"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {(['x', 'y', 'z'] as ClippingAxisKey[]).map((ax) => {
+                    const cfg = sectioning[ax];
+                    return (
+                      <div
+                        key={ax}
+                        className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="inline-flex items-center gap-2 font-semibold text-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={cfg.enabled}
+                              onChange={(e) =>
+                                updateAxisSection(ax, { enabled: e.target.checked })
+                              }
+                              className="accent-emerald-500"
+                            />
+                            <span>
+                              {ax.toUpperCase()}-Axis Plane{' '}
+                              {ax === 'y' ? '(Horizontal)' : '(Vertical)'}
+                            </span>
+                          </label>
+                          {cfg.enabled && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateAxisSection(ax, { inverted: !cfg.inverted })
+                              }
+                              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-emerald-300"
+                            >
+                              {cfg.inverted ? 'Flipped' : 'Flip Cut'}
+                            </button>
+                          )}
+                        </div>
+
+                        {cfg.enabled && (
+                          <div className="space-y-1.5">
+                            <div>
+                              <div className="flex justify-between text-[11px] text-slate-400">
+                                <span>Cut Position</span>
+                                <span className="tabular-nums">
+                                  {Math.round(cfg.position * 100)}%
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min={-1}
+                                max={1}
+                                step={0.02}
+                                value={cfg.position}
+                                onChange={(e) =>
+                                  updateAxisSection(ax, {
+                                    position: Number(e.target.value)
+                                  })
+                                }
+                                className="w-full accent-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-[11px] text-slate-400">
+                                <span>Plane Tilt</span>
+                                <span className="tabular-nums">{cfg.tiltDeg}°</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={-45}
+                                max={45}
+                                step={1}
+                                value={cfg.tiltDeg}
+                                onChange={(e) =>
+                                  updateAxisSection(ax, {
+                                    tiltDeg: Number(e.target.value)
+                                  })
+                                }
+                                className="w-full accent-emerald-500"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="inline-flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sectioning.showPlanes}
+                        onChange={(e) =>
+                          setSectioning((prev) => ({
+                            ...prev,
+                            showPlanes: e.target.checked
+                          }))
+                        }
+                        className="accent-emerald-500"
+                      />
+                      <span>Show Plane Frames</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setSectioning(DEFAULT_SECTIONING_STATE)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold"
+                    >
+                      Reset Cut
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Lighting & Scene Settings Popover */}
-              {lightingPopoverOpen && (
+              {!controlsHidden && lightingPopoverOpen && (
                 <div className="absolute top-3 right-3 z-20 w-72 p-4 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl space-y-3.5 text-xs">
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold text-white flex items-center gap-1.5">
@@ -1960,35 +2084,51 @@ export default function Academic3DExplorerModule({
                     />
                   </div>
 
-                  <div className="flex items-center justify-between pt-1">
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <label className="inline-flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={renderSettings.showGrid}
+                          onChange={(e) =>
+                            setRenderSettings((s) => ({ ...s, showGrid: e.target.checked }))
+                          }
+                          className="accent-emerald-500"
+                        />
+                        <span>Reference Grid</span>
+                      </label>
+                      <label className="inline-flex items-center gap-1.5 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={renderSettings.showAxes}
+                          onChange={(e) =>
+                            setRenderSettings((s) => ({ ...s, showAxes: e.target.checked }))
+                          }
+                          className="accent-emerald-500"
+                        />
+                        <span>XYZ Axes</span>
+                      </label>
+                    </div>
                     <label className="inline-flex items-center gap-1.5 text-slate-300 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={renderSettings.showGrid}
+                        checked={renderSettings.highlightSelection !== false}
                         onChange={(e) =>
-                          setRenderSettings((s) => ({ ...s, showGrid: e.target.checked }))
+                          setRenderSettings((s) => ({
+                            ...s,
+                            highlightSelection: e.target.checked
+                          }))
                         }
                         className="accent-emerald-500"
                       />
-                      <span>Reference Grid</span>
-                    </label>
-                    <label className="inline-flex items-center gap-1.5 text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={renderSettings.showAxes}
-                        onChange={(e) =>
-                          setRenderSettings((s) => ({ ...s, showAxes: e.target.checked }))
-                        }
-                        className="accent-emerald-500"
-                      />
-                      <span>XYZ Axes</span>
+                      <span>Highlight Selected Parts</span>
                     </label>
                   </div>
                 </div>
               )}
 
               {/* Guided Identification Floating Popover Card */}
-              {activeGuidedStep && (
+              {!controlsHidden && activeGuidedStep && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-md p-3.5 rounded-xl bg-slate-900 border border-emerald-500/60 shadow-2xl space-y-2 text-xs">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -2037,17 +2177,31 @@ export default function Academic3DExplorerModule({
                   </div>
                 </div>
               )}
+
+              {/* Clean Presentation Restore Trigger when UI chrome is hidden */}
+              {controlsHidden && (
+                <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setControlsHidden(false)}
+                    className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-emerald-500 text-xs font-semibold text-white shadow-xl inline-flex items-center gap-1.5"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Show Controls (H)</span>
+                  </button>
+                </div>
+              )}
             </div>
           </main>
 
           {/* RIGHT PANEL: Structure Inspection, Interactive Tools, Academic Context & Asset Provenance */}
-          {rightPanelOpen && !presentationMode && (
+          {!controlsHidden && rightPanelOpen && (
             <aside className="absolute inset-y-0 right-0 z-30 w-96 max-w-[92vw] lg:static lg:w-80 xl:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col shrink-0 shadow-2xl lg:shadow-none">
               <div className="px-3 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-1.5">
                 <div
                   role="tablist"
                   aria-label="Explorer context panels"
-                  className="flex items-center gap-1 overflow-x-auto"
+                  className="flex items-center gap-1 flex-wrap"
                 >
                   {(
                     [
@@ -2066,7 +2220,7 @@ export default function Academic3DExplorerModule({
                         type="button"
                         aria-selected={active}
                         onClick={() => setRightTab(tab.id)}
-                        className={`min-h-[32px] px-2 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors shrink-0 ${
+                        className={`min-h-[30px] px-2 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
                           active
                             ? 'bg-emerald-600 text-white'
                             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -2090,80 +2244,64 @@ export default function Academic3DExplorerModule({
               </div>
 
               <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 text-xs">
-                {/* ---------- TAB 1: STRUCTURE INSPECTION & DOMAIN EXPLORATION ---------- */}
+                {/* ---------- TAB 1: STRUCTURE INSPECTION & PINS ---------- */}
                 {rightTab === 'inspect' && (
                   <>
-                    {/* Multi-Structure Selection Summary */}
-                    {selectedComponentIds.length > 1 ? (
-                      <section className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/40 space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                              Multi-Structure Selection
-                            </p>
-                            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                              {selectedComponentIds.length} Structures Selected
-                            </h3>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">
-                              {selectedComponentsList
-                                .reduce((acc, c) => acc + c.triangleCount, 0)
-                                .toLocaleString()}{' '}
-                              combined tris
-                            </p>
-                          </div>
+                    {/* Multi-Selection Batch Card when 2+ parts selected */}
+                    {selectedComponentIds.length > 1 && (
+                      <section className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/40 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{selectedComponentIds.length} Structures Selected</span>
+                          </p>
                           <button
                             type="button"
                             onClick={() => setSelectedComponentIds([])}
-                            className="text-slate-400 hover:text-slate-800 dark:hover:text-white p-0.5"
-                            aria-label="Clear selection"
+                            className="text-slate-500 hover:text-slate-900 dark:hover:text-white"
                           >
-                            <X className="w-4 h-4" />
+                            Clear
                           </button>
                         </div>
-
                         <div className="flex flex-wrap gap-1.5">
                           <button
                             type="button"
-                            onClick={() => viewerRef.current?.focusSelected()}
-                            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1"
+                            onClick={() => viewerRef.current?.focusSelection()}
+                            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold"
                           >
-                            <Focus className="w-3 h-3 text-emerald-600" />
-                            <span>Focus Group</span>
+                            Focus Selection
                           </button>
                           <button
                             type="button"
                             onClick={() =>
                               viewerRef.current?.isolateComponents(selectedComponentIds)
                             }
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold"
                           >
                             Isolate Group
                           </button>
                           <button
                             type="button"
                             onClick={() =>
-                              viewerRef.current?.setComponentsVisibility(selectedComponentIds, false)
+                              viewerRef.current?.hideComponents(selectedComponentIds)
                             }
-                            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-200"
+                            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold"
                           >
                             Hide Selected
                           </button>
                         </div>
-
-                        <ul className="space-y-1 max-h-36 overflow-y-auto pt-1 border-t border-emerald-500/20 text-[11px] text-slate-700 dark:text-slate-300">
-                          {selectedComponentsList.map((c) => (
-                            <li key={c.id} className="truncate">
-                              • {c.name}
-                            </li>
-                          ))}
-                        </ul>
                       </section>
-                    ) : selectedComponent && selectedInspection ? (
+                    )}
+
+                    {/* Selected Structure Card */}
+                    {selectedComponent && selectedInspection ? (
                       <section className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/40 space-y-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                              Selected Mesh Structure
+                              {selectedInspection.ancestorNames?.length
+                                ? selectedInspection.ancestorNames.join(' › ')
+                                : 'Selected Mesh Structure'}
                             </p>
                             <h3 className="text-sm font-extrabold text-slate-900 dark:text-white break-words">
                               {selectedInspection.displayName}
@@ -2175,12 +2313,6 @@ export default function Academic3DExplorerModule({
                                 ? ` · Material: ${selectedInspection.materialName}`
                                 : ''}
                             </p>
-                            {selectedComponent.boundsSize && (
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                                Raw bounds: {selectedComponent.boundsSize.join(' × ')}{' '}
-                                {capabilities?.unitLabel || 'model units'}
-                              </p>
-                            )}
                           </div>
                           <button
                             type="button"
@@ -2272,7 +2404,7 @@ export default function Academic3DExplorerModule({
                             </p>
                             <button
                               type="button"
-                              onClick={() => setPinMode(true)}
+                              onClick={() => setInteractionMode('pin')}
                               className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline inline-flex items-center gap-1"
                             >
                               <MapPin className="w-3 h-3" />
@@ -2341,7 +2473,7 @@ export default function Academic3DExplorerModule({
                         </p>
                         <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
                           {components.length > 1
-                            ? 'Select a mesh in the 3D viewport or from the Structures panel to highlight, multi-select (Shift+Click), isolate, or inspect its node metadata.'
+                            ? 'Select meshes in the 3D viewport (Shift/Ctrl+click to multi-select) or use the Structures panel to isolate, hide, or inspect node metadata.'
                             : activeAsset.description ||
                               'Use Solid, Wireframe, X-Ray, Sectioning, Measurement, and camera presets to inspect this unified 3D specimen.'}
                         </p>
@@ -2399,7 +2531,7 @@ export default function Academic3DExplorerModule({
                       </section>
                     )}
 
-                    {/* Saved 3D Pins List with Visibility & Edit Support */}
+                    {/* Saved 3D Pins List with Visibility Toggle & In-Place Editing */}
                     <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -2413,38 +2545,49 @@ export default function Academic3DExplorerModule({
                               onClick={() =>
                                 setRenderSettings((s) => ({
                                   ...s,
-                                  showAnnotations: s.showAnnotations === false ? true : false
+                                  showAnnotations: s.showAnnotations === false
                                 }))
                               }
-                              className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-white"
-                              title="Toggle all 3D pin markers on viewport"
+                              className="text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                              title={
+                                renderSettings.showAnnotations === false
+                                  ? 'Show 3D pins in viewport'
+                                  : 'Hide 3D pins in viewport'
+                              }
                             >
-                              {renderSettings.showAnnotations === false ? 'Show Pins' : 'Hide Pins'}
+                              {renderSettings.showAnnotations === false ? (
+                                <EyeOff className="w-3.5 h-3.5" />
+                              ) : (
+                                <Eye className="w-3.5 h-3.5" />
+                              )}
                             </button>
                           )}
                           <button
                             type="button"
-                            onClick={() => setPinMode((v) => !v)}
+                            onClick={() =>
+                              setInteractionMode(
+                                interactionMode === 'pin' ? 'inspect' : 'pin'
+                              )
+                            }
                             className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline"
                           >
-                            {pinMode ? 'Cancel Pin' : '+ Add Pin'}
+                            {interactionMode === 'pin' ? 'Cancel Pin' : '+ Add Pin'}
                           </button>
                         </div>
                       </div>
 
                       {activeAsset.annotations.length === 0 ? (
                         <p className="text-slate-500 dark:text-slate-400 leading-relaxed">
-                          No pins saved on this model yet. Enable &ldquo;Pin&rdquo; and click any point on the 3D surface to annotate key features.
+                          No pins saved on this model yet. Enable &ldquo;Pin Note&rdquo; and click any point on the 3D surface to annotate key features.
                         </p>
                       ) : (
                         <div className="space-y-1.5">
                           {activeAsset.annotations.map((ann, idx) => {
                             const isEditing = editingPinId === ann.id;
-                            const isHidden = ann.visible === false;
                             return (
                               <div
                                 key={ann.id}
-                                className={`p-2.5 rounded-lg border transition-colors ${
+                                className={`p-2 rounded-lg border transition-colors ${
                                   activePinId === ann.id
                                     ? 'bg-amber-500/10 border-amber-500/50'
                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
@@ -2452,15 +2595,7 @@ export default function Academic3DExplorerModule({
                               >
                                 {isEditing ? (
                                   <form
-                                    onSubmit={async (ev) => {
-                                      ev.preventDefault();
-                                      if (!editPinLabel.trim()) return;
-                                      await handleUpdateAnnotation(ann.id, {
-                                        label: editPinLabel.trim(),
-                                        note: editPinNote.trim()
-                                      });
-                                      setEditingPinId(null);
-                                    }}
+                                    onSubmit={(e) => void handleSavePinEdit(e, ann.id)}
                                     className="space-y-1.5"
                                   >
                                     <input
@@ -2468,27 +2603,27 @@ export default function Academic3DExplorerModule({
                                       required
                                       value={editPinLabel}
                                       onChange={(e) => setEditPinLabel(e.target.value)}
-                                      className="w-full px-2 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white"
-                                      placeholder="Pin title"
+                                      className="w-full px-2 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                                      placeholder="Annotation title"
                                     />
                                     <textarea
                                       rows={2}
                                       value={editPinNote}
                                       onChange={(e) => setEditPinNote(e.target.value)}
-                                      className="w-full px-2 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white"
-                                      placeholder="Notes..."
+                                      className="w-full px-2 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                                      placeholder="Academic or clinical note..."
                                     />
                                     <div className="flex items-center justify-end gap-1.5">
                                       <button
                                         type="button"
                                         onClick={() => setEditingPinId(null)}
-                                        className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[11px] font-semibold"
+                                        className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold"
                                       >
                                         Cancel
                                       </button>
                                       <button
                                         type="submit"
-                                        className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[11px] font-semibold inline-flex items-center gap-1"
+                                        className="px-2 py-1 rounded bg-emerald-600 text-white text-[11px] font-semibold inline-flex items-center gap-1"
                                       >
                                         <Check className="w-3 h-3" />
                                         <span>Save</span>
@@ -2496,16 +2631,14 @@ export default function Academic3DExplorerModule({
                                     </div>
                                   </form>
                                 ) : (
-                                  <div className="flex items-start justify-between gap-1.5">
+                                  <div className="flex items-start justify-between gap-2">
                                     <button
                                       type="button"
                                       onClick={() => {
                                         setActivePinId(ann.id);
                                         viewerRef.current?.focusPoint(ann.position);
                                       }}
-                                      className={`min-w-0 flex-1 text-left ${
-                                        isHidden ? 'opacity-50' : ''
-                                      }`}
+                                      className="min-w-0 flex-1 text-left"
                                     >
                                       <p className="font-semibold text-slate-800 dark:text-slate-200">
                                         {idx + 1}. {ann.label}
@@ -2524,31 +2657,15 @@ export default function Academic3DExplorerModule({
                                     <div className="flex items-center gap-0.5 shrink-0">
                                       <button
                                         type="button"
-                                        onClick={() =>
-                                          void handleUpdateAnnotation(ann.id, { visible: isHidden })
-                                        }
-                                        className="p-1 text-slate-400 hover:text-slate-800 dark:hover:text-white"
-                                        title={isHidden ? 'Show pin in 3D' : 'Hide pin in 3D'}
-                                        aria-label={isHidden ? `Show ${ann.label}` : `Hide ${ann.label}`}
-                                      >
-                                        {isHidden ? (
-                                          <EyeOff className="w-3.5 h-3.5 text-rose-500" />
-                                        ) : (
-                                          <Eye className="w-3.5 h-3.5" />
-                                        )}
-                                      </button>
-                                      <button
-                                        type="button"
                                         onClick={() => {
                                           setEditingPinId(ann.id);
                                           setEditPinLabel(ann.label);
                                           setEditPinNote(ann.note || '');
                                         }}
-                                        className="p-1 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400"
-                                        title="Edit annotation"
-                                        aria-label={`Edit ${ann.label}`}
+                                        className="p-1 text-slate-400 hover:text-emerald-600"
+                                        aria-label={`Edit pin ${ann.label}`}
                                       >
-                                        <Edit3 className="w-3.5 h-3.5" />
+                                        <Pencil className="w-3.5 h-3.5" />
                                       </button>
                                       <button
                                         type="button"
@@ -2573,190 +2690,135 @@ export default function Academic3DExplorerModule({
                 {/* ---------- TAB 2: P3.6 INTERACTIVE MODEL TOOLS ---------- */}
                 {rightTab === 'tools' && (
                   <>
-                    {/* 1. Sectioning & Cutaway (Real WebGL Clipping Planes) */}
-                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                    {/* Sectioning & Cutaway */}
+                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <Scissors className="w-3.5 h-3.5 text-rose-500" />
+                          <Scissors className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                           <span>Sectioning &amp; Cutaway</span>
                         </h3>
-                        <div className="flex items-center gap-2">
+                        {anySectionActive && (
                           <button
                             type="button"
-                            onClick={() => viewerRef.current?.resetSectioning()}
-                            className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                            onClick={() => setSectioning(DEFAULT_SECTIONING_STATE)}
+                            className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
                           >
-                            Reset
+                            Reset Cut
                           </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSectioning((prev) => ({ ...prev, active: !prev.active }))
-                            }
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${
-                              sectioning.active
-                                ? 'bg-rose-600 text-white'
-                                : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
-                            }`}
-                          >
-                            {sectioning.active ? 'Active' : 'Enable'}
-                          </button>
-                        </div>
+                        )}
                       </div>
 
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Slices geometry with real WebGL clipping planes. Combine X, Y, and Z planes simultaneously to inspect interior structures.
-                      </p>
+                      {(['x', 'y', 'z'] as ClippingAxisKey[]).map((ax) => {
+                        const cfg = sectioning[ax];
+                        return (
+                          <div
+                            key={ax}
+                            className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={cfg.enabled}
+                                  onChange={(e) =>
+                                    updateAxisSection(ax, { enabled: e.target.checked })
+                                  }
+                                  className="accent-emerald-600"
+                                />
+                                <span>
+                                  {ax.toUpperCase()} Axis{' '}
+                                  {ax === 'y' ? '(Horizontal)' : '(Vertical)'}
+                                </span>
+                              </label>
+                              {cfg.enabled && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateAxisSection(ax, { inverted: !cfg.inverted })
+                                  }
+                                  className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300"
+                                >
+                                  {cfg.inverted ? 'Flipped' : 'Flip'}
+                                </button>
+                              )}
+                            </div>
 
-                      <label className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-300 cursor-pointer">
-                        <span>Show Section Plane Guides</span>
+                            {cfg.enabled && (
+                              <div className="space-y-1.5">
+                                <div>
+                                  <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                                    <span>Position</span>
+                                    <span className="tabular-nums">
+                                      {Math.round(cfg.position * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={-1}
+                                    max={1}
+                                    step={0.02}
+                                    value={cfg.position}
+                                    onChange={(e) =>
+                                      updateAxisSection(ax, {
+                                        position: Number(e.target.value)
+                                      })
+                                    }
+                                    className="w-full accent-emerald-600"
+                                  />
+                                </div>
+                                <div>
+                                  <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                                    <span>Tilt Angle</span>
+                                    <span className="tabular-nums">{cfg.tiltDeg}°</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={-45}
+                                    max={45}
+                                    step={1}
+                                    value={cfg.tiltDeg}
+                                    onChange={(e) =>
+                                      updateAxisSection(ax, {
+                                        tiltDeg: Number(e.target.value)
+                                      })
+                                    }
+                                    className="w-full accent-emerald-600"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      <label className="flex items-center justify-between text-slate-600 dark:text-slate-300 cursor-pointer pt-0.5">
+                        <span>Show Clipping Plane Frames</span>
                         <input
                           type="checkbox"
-                          checked={sectioning.showPlaneGuides}
+                          checked={sectioning.showPlanes}
                           onChange={(e) =>
                             setSectioning((prev) => ({
                               ...prev,
-                              showPlaneGuides: e.target.checked
+                              showPlanes: e.target.checked
                             }))
                           }
                           className="accent-emerald-600"
                         />
                       </label>
-
-                      <div className="space-y-2.5">
-                        {(
-                          [
-                            {
-                              axis: 'y' as const,
-                              label: 'Horizontal Plane (Y)',
-                              dot: 'bg-emerald-500'
-                            },
-                            {
-                              axis: 'x' as const,
-                              label: 'Sagittal Plane (X)',
-                              dot: 'bg-rose-500'
-                            },
-                            {
-                              axis: 'z' as const,
-                              label: 'Coronal Plane (Z)',
-                              dot: 'bg-sky-500'
-                            }
-                          ] as const
-                        ).map(({ axis, label, dot }) => {
-                          const plane = sectioning.planes[axis];
-                          return (
-                            <div
-                              key={axis}
-                              className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={plane.enabled}
-                                    onChange={(e) =>
-                                      updateSectionAxis(axis, { enabled: e.target.checked })
-                                    }
-                                    className="accent-emerald-600"
-                                  />
-                                  <span className={`w-2 h-2 rounded-full ${dot}`} />
-                                  <span>{label}</span>
-                                </label>
-                                {plane.enabled && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateSectionAxis(axis, { inverted: !plane.inverted })
-                                    }
-                                    className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-300"
-                                  >
-                                    {plane.inverted ? 'Inverted' : 'Flip Cut'}
-                                  </button>
-                                )}
-                              </div>
-
-                              {plane.enabled && (
-                                <div className="space-y-1.5 pt-1">
-                                  <div className="space-y-0.5">
-                                    <div className="flex justify-between text-[11px] text-slate-500 tabular-nums">
-                                      <span>Cut Position</span>
-                                      <span>{Math.round(plane.offset * 100)}%</span>
-                                    </div>
-                                    <input
-                                      type="range"
-                                      min={-1}
-                                      max={1}
-                                      step={0.02}
-                                      value={plane.offset}
-                                      onChange={(e) =>
-                                        updateSectionAxis(axis, {
-                                          offset: Number(e.target.value)
-                                        })
-                                      }
-                                      className="w-full accent-emerald-600"
-                                    />
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
-                                        <span>Tilt X</span>
-                                        <span>{plane.tiltXDeg}°</span>
-                                      </div>
-                                      <input
-                                        type="range"
-                                        min={-60}
-                                        max={60}
-                                        step={2}
-                                        value={plane.tiltXDeg}
-                                        onChange={(e) =>
-                                          updateSectionAxis(axis, {
-                                            tiltXDeg: Number(e.target.value)
-                                          })
-                                        }
-                                        className="w-full accent-emerald-600"
-                                      />
-                                    </div>
-                                    <div>
-                                      <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
-                                        <span>Tilt Y</span>
-                                        <span>{plane.tiltYDeg}°</span>
-                                      </div>
-                                      <input
-                                        type="range"
-                                        min={-60}
-                                        max={60}
-                                        step={2}
-                                        value={plane.tiltYDeg}
-                                        onChange={(e) =>
-                                          updateSectionAxis(axis, {
-                                            tiltYDeg: Number(e.target.value)
-                                          })
-                                        }
-                                        className="w-full accent-emerald-600"
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
                     </section>
 
-                    {/* 2. Measurement & Coordinate Probe */}
-                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                    {/* Measurement & Coordinate Inspection */}
+                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <Ruler className="w-3.5 h-3.5 text-sky-500" />
-                          <span>Measurement &amp; Coordinates</span>
+                          <Ruler className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                          <span>Distance &amp; Coordinates</span>
                         </h3>
-                        {(measurements.length > 0 || coordinateSample) && (
+                        {measurements.length > 0 && (
                           <button
                             type="button"
-                            onClick={() => viewerRef.current?.clearMeasurements()}
-                            className="text-[11px] font-semibold text-rose-500 hover:underline"
+                            onClick={() => void handleClearMeasurements()}
+                            className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline"
                           >
                             Clear All
                           </button>
@@ -2767,199 +2829,229 @@ export default function Academic3DExplorerModule({
                         <button
                           type="button"
                           onClick={() =>
-                            setInteractionTool((t) =>
-                              t === 'measure_distance' ? 'select' : 'measure_distance'
+                            setInteractionMode(
+                              interactionMode === 'measure' ? 'inspect' : 'measure'
                             )
                           }
-                          className={`py-1.5 px-2 rounded-lg font-semibold border inline-flex items-center justify-center gap-1 ${
-                            interactionTool === 'measure_distance'
-                              ? 'bg-sky-600 text-white border-sky-600'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+                          className={`py-1.5 px-2 rounded-lg font-semibold inline-flex items-center justify-center gap-1 ${
+                            interactionMode === 'measure'
+                              ? 'bg-cyan-600 text-white'
+                              : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
                           }`}
                         >
                           <Ruler className="w-3.5 h-3.5" />
-                          <span>Distance</span>
+                          <span>
+                            {interactionMode === 'measure' ? 'Stop Measure' : 'Measure'}
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() =>
-                            setInteractionTool((t) =>
-                              t === 'measure_coords' ? 'select' : 'measure_coords'
+                            setInteractionMode(
+                              interactionMode === 'coord' ? 'inspect' : 'coord'
                             )
                           }
-                          className={`py-1.5 px-2 rounded-lg font-semibold border inline-flex items-center justify-center gap-1 ${
-                            interactionTool === 'measure_coords'
-                              ? 'bg-sky-600 text-white border-sky-600'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+                          className={`py-1.5 px-2 rounded-lg font-semibold inline-flex items-center justify-center gap-1 ${
+                            interactionMode === 'coord'
+                              ? 'bg-cyan-600 text-white'
+                              : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200'
                           }`}
                         >
                           <Crosshair className="w-3.5 h-3.5" />
-                          <span>Coordinates</span>
+                          <span>
+                            {interactionMode === 'coord' ? 'Stop Probe' : 'Probe XYZ'}
+                          </span>
                         </button>
                       </div>
 
-                      {capabilities && (
-                        <p className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                          {capabilities.unitCalibrationNote}
-                        </p>
-                      )}
-
-                      {coordinateSample && (
-                        <div className="p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/40 space-y-1 tabular-nums text-[11px]">
-                          <p className="font-bold text-sky-700 dark:text-sky-300">
-                            Coordinate Probe ({coordinateSample.unitLabel})
-                          </p>
-                          {coordinateSample.componentName && (
-                            <p className="text-slate-700 dark:text-slate-200 truncate">
-                              Surface: {coordinateSample.componentName}
+                      {/* Honest Unit Calibration */}
+                      {scaleInfo && (
+                        <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold text-slate-800 dark:text-slate-200">
+                              Unit: {scaleInfo.unitLabel}
                             </p>
-                          )}
-                          <p className="text-slate-800 dark:text-slate-100">
-                            Raw: ({coordinateSample.pointRaw.join(', ')})
-                          </p>
-                          <p className="text-slate-500 dark:text-slate-400">
-                            Normalized: ({coordinateSample.pointLocal.join(', ')})
-                          </p>
-                        </div>
-                      )}
-
-                      {measurements.length > 0 && (
-                        <div className="space-y-1.5">
-                          <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                            Measurements ({measurements.length})
-                          </p>
-                          {measurements.map((m, idx) => (
-                            <div
-                              key={m.id}
-                              className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-2 tabular-nums"
-                            >
-                              <div className="min-w-0">
-                                <p className="font-bold text-slate-900 dark:text-white">
-                                  #{measurements.length - idx}: {m.distanceRaw.toFixed(3)}{' '}
-                                  {m.unitLabel}
-                                </p>
-                                {(m.componentA || m.componentB) && (
-                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                                    {m.componentA || 'Point A'} → {m.componentB || 'Point B'}
-                                  </p>
-                                )}
-                              </div>
+                            {scaleInfo.source === 'user_calibrated' && (
                               <button
                                 type="button"
-                                onClick={() => viewerRef.current?.removeMeasurement(m.id)}
-                                className="p-1 text-slate-400 hover:text-rose-500 shrink-0"
-                                aria-label="Delete measurement"
+                                onClick={() => void handleResetScaleCalibration()}
+                                className="text-[11px] text-slate-500 hover:text-rose-500"
                               >
-                                <X className="w-3.5 h-3.5" />
+                                Reset
                               </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-
-                    {/* 3. Visualization, Highlighting & Rotation Speed */}
-                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
-                      <h3 className="font-bold text-slate-900 dark:text-white">
-                        Rendering &amp; Motion Controls
-                      </h3>
-
-                      <label className="flex items-center justify-between text-slate-700 dark:text-slate-300 cursor-pointer">
-                        <span>Highlight Selected Structures</span>
-                        <input
-                          type="checkbox"
-                          checked={renderSettings.highlightSelected !== false}
-                          onChange={(e) =>
-                            setRenderSettings((s) => ({
-                              ...s,
-                              highlightSelected: e.target.checked
-                            }))
-                          }
-                          className="accent-emerald-600"
-                        />
-                      </label>
-
-                      <label className="flex items-center justify-between text-slate-700 dark:text-slate-300 cursor-pointer">
-                        <span>Turntable Auto-Rotate</span>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(renderSettings.autoRotate)}
-                          onChange={(e) =>
-                            setRenderSettings((s) => ({ ...s, autoRotate: e.target.checked }))
-                          }
-                          className="accent-emerald-600"
-                        />
-                      </label>
-
-                      {renderSettings.autoRotate && (
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[11px] text-slate-500 tabular-nums">
-                            <span>Rotation Speed</span>
-                            <span>{(renderSettings.autoRotateSpeed ?? 1.5).toFixed(1)}×</span>
+                            )}
                           </div>
-                          <input
-                            type="range"
-                            min={0.5}
-                            max={6}
-                            step={0.5}
-                            value={renderSettings.autoRotateSpeed ?? 1.5}
-                            onChange={(e) =>
-                              setRenderSettings((s) => ({
-                                ...s,
-                                autoRotateSpeed: Number(e.target.value)
-                              }))
-                            }
-                            className="w-full accent-emerald-600"
-                          />
+                          {scaleInfo.note && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                              {scaleInfo.note}
+                            </p>
+                          )}
+                          <form
+                            onSubmit={handleSaveScaleCalibration}
+                            className="flex items-center gap-1.5 pt-0.5"
+                          >
+                            <span className="text-[11px] text-slate-500 shrink-0">1 unit =</span>
+                            <input
+                              type="number"
+                              min="0.0001"
+                              step="any"
+                              value={calibFactor}
+                              onChange={(e) => setCalibFactor(e.target.value)}
+                              className="w-20 px-2 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] tabular-nums text-slate-900 dark:text-white"
+                            />
+                            <select
+                              value={calibUnitSymbol}
+                              onChange={(e) =>
+                                setCalibUnitSymbol(
+                                  e.target.value as 'mm' | 'cm' | 'm' | 'µm'
+                                )
+                              }
+                              className="px-1.5 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-900 dark:text-white"
+                            >
+                              <option value="mm">mm</option>
+                              <option value="cm">cm</option>
+                              <option value="m">m</option>
+                              <option value="µm">µm</option>
+                            </select>
+                            <button
+                              type="submit"
+                              className="px-2 py-1 rounded bg-emerald-600 text-white text-[11px] font-semibold"
+                            >
+                              Set
+                            </button>
+                          </form>
+                        </div>
+                      )}
+
+                      {(hoveredCoord || clickedCoord) && (
+                        <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-[11px] tabular-nums space-y-0.5">
+                          <p className="font-bold text-cyan-800 dark:text-cyan-300">
+                            Coordinate Readout
+                          </p>
+                          <p className="text-slate-700 dark:text-slate-200">
+                            X: {(hoveredCoord || clickedCoord)!.rawPoint[0]} · Y:{' '}
+                            {(hoveredCoord || clickedCoord)!.rawPoint[1]} · Z:{' '}
+                            {(hoveredCoord || clickedCoord)!.rawPoint[2]}
+                          </p>
+                          {(hoveredCoord || clickedCoord)!.componentName && (
+                            <p className="text-slate-500 dark:text-slate-400 truncate">
+                              Structure: {(hoveredCoord || clickedCoord)!.componentName}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {measurements.length === 0 ? (
+                        <p className="text-slate-500 dark:text-slate-400">
+                          No distance measurements recorded. Click &ldquo;Measure&rdquo; and select Point A then Point B on the model.
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {measurements.map((m, idx) => {
+                            const fmt = scaleInfo
+                              ? formatMeasuredDistance(m.modelUnitDistance, scaleInfo)
+                              : { formatted: `${m.modelUnitDistance} units` };
+                            return (
+                              <div
+                                key={m.id}
+                                className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => viewerRef.current?.focusPoint(m.pointA)}
+                                  className="min-w-0 flex-1 text-left"
+                                >
+                                  <p className="font-bold text-slate-900 dark:text-white tabular-nums">
+                                    #{idx + 1} · {fmt.formatted}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums truncate">
+                                    Raw Δ: {m.modelUnitDistance.toFixed(3)} model units
+                                  </p>
+                                </button>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleToggleMeasurementVisible(m.id)}
+                                    className="p-1 text-slate-400 hover:text-slate-800 dark:hover:text-white"
+                                    aria-label="Toggle measurement visibility"
+                                  >
+                                    {m.visible ? (
+                                      <Eye className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <EyeOff className="w-3.5 h-3.5 text-rose-500" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleRemoveMeasurement(m.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-500"
+                                    aria-label="Remove measurement"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </section>
 
-                    {/* 4. Saved Camera Views & Presentation */}
-                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
-                      <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                        <Bookmark className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>Saved Camera Views &amp; Presentation</span>
-                      </h3>
+                    {/* Saved Camera Views & Exploration State */}
+                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <Bookmark className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <span>Saved Camera Views ({savedViews.length})</span>
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={resetExplorationState}
+                          className="text-[11px] font-semibold text-slate-500 hover:text-emerald-600"
+                        >
+                          Reset All Tools
+                        </button>
+                      </div>
 
-                      <form onSubmit={handleSaveCameraView} className="flex gap-1.5">
+                      <form onSubmit={handleSaveCurrentCameraView} className="flex gap-1.5">
                         <input
                           type="text"
+                          required
                           value={newViewName}
                           onChange={(e) => setNewViewName(e.target.value)}
-                          placeholder="Bookmark name (e.g. Anterior Valve)"
-                          className="min-w-0 flex-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
+                          placeholder="View name (e.g. Anterior Valve)"
+                          className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-white"
                         />
                         <button
                           type="submit"
                           disabled={viewerLoading.status !== 'ready'}
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 text-white text-xs font-semibold shrink-0"
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 text-white font-semibold shrink-0"
                         >
                           Save
                         </button>
                       </form>
 
-                      {(activeAsset.savedViews?.length || 0) > 0 && (
+                      {savedViews.length > 0 && (
                         <div className="space-y-1">
-                          {activeAsset.savedViews!.map((v) => (
+                          {savedViews.map((v) => (
                             <div
                               key={v.id}
-                              className="flex items-center justify-between gap-1.5 p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+                              className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
                             >
                               <button
                                 type="button"
                                 onClick={() =>
-                                  viewerRef.current?.applyCameraState(v.position, v.target)
+                                  viewerRef.current?.setCameraViewState(v.position, v.target)
                                 }
-                                className="min-w-0 flex-1 text-left font-semibold text-slate-800 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 truncate"
+                                className="min-w-0 flex-1 text-left font-semibold text-slate-800 dark:text-slate-200 truncate hover:text-emerald-600"
                               >
                                 {v.name}
                               </button>
                               <button
                                 type="button"
-                                onClick={() => void handleRemoveSavedView(v.id)}
-                                className="p-1 text-slate-400 hover:text-rose-500"
-                                aria-label={`Delete view ${v.name}`}
+                                onClick={() => void handleDeleteSavedView(v.id)}
+                                className="p-1 text-slate-400 hover:text-rose-500 shrink-0"
+                                aria-label={`Delete saved view ${v.name}`}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -2967,81 +3059,47 @@ export default function Academic3DExplorerModule({
                           ))}
                         </div>
                       )}
-
-                      <div className="grid grid-cols-2 gap-1.5 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => viewerRef.current?.downloadScreenshot()}
-                          className="py-1.5 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center justify-center gap-1"
-                        >
-                          <Download className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Export PNG</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPresentationMode(true)}
-                          className="py-1.5 px-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center justify-center gap-1"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Presentation</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => viewerRef.current?.resetExploration()}
-                          className="col-span-2 py-1.5 px-2.5 rounded-lg bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 font-semibold text-slate-800 dark:text-slate-100 inline-flex items-center justify-center gap-1"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Reset Full Exploration State</span>
-                        </button>
-                      </div>
                     </section>
 
-                    {/* 5. Honest Model Tool Compatibility Summary */}
-                    {capabilities && (
-                      <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-[11px]">
-                        <h3 className="text-xs font-bold text-slate-900 dark:text-white">
-                          Tool Compatibility for This Asset
-                        </h3>
-                        <ul className="space-y-1 text-slate-600 dark:text-slate-400">
-                          <li>
-                            <strong className="text-slate-800 dark:text-slate-200">
-                              Camera, Modes, Sectioning, Measure &amp; Pins:
-                            </strong>{' '}
-                            {capabilities.hasLoadedGeometry
-                              ? 'Full WebGL geometry support'
-                              : 'Waiting for loaded mesh'}
-                          </li>
-                          <li>
-                            <strong className="text-slate-800 dark:text-slate-200">
-                              Multi-Select &amp; Isolation:
-                            </strong>{' '}
-                            {capabilities.supportsMultiSelect
-                              ? `Available (${capabilities.componentCount} meshes)`
-                              : capabilities.unavailableReasons.multiSelect}
-                          </li>
-                          <li>
-                            <strong className="text-slate-800 dark:text-slate-200">
-                              3D Part Labels:
-                            </strong>{' '}
-                            {capabilities.hasNamedStructures
-                              ? `Available (${capabilities.namedComponentCount} named nodes)`
-                              : capabilities.unavailableReasons.labels}
-                          </li>
-                          <li>
-                            <strong className="text-slate-800 dark:text-slate-200">
-                              Distance Units:
-                            </strong>{' '}
-                            {capabilities.isCalibrated
-                              ? capabilities.unitLabel
-                              : `${capabilities.unitLabel} (uncalibrated)`}
-                          </li>
-                        </ul>
-                      </section>
-                    )}
+                    {/* Honest Tool Availability Matrix */}
+                    <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
+                      <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Model Tool Compatibility</span>
+                      </h3>
+                      <div className="space-y-1.5">
+                        {Object.values(toolAvailability).map((cap) => (
+                          <div
+                            key={cap.label}
+                            className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-0.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                {cap.label}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                  cap.category === 'fully_functional'
+                                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                    : cap.category === 'model_dependent' && cap.supported
+                                    ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300'
+                                    : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                }`}
+                              >
+                                {cap.supported ? 'Active' : 'Unavailable'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                              {cap.reason}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
                   </>
                 )}
 
-                {/* ---------- TAB 2: ACADEMIC CONTEXT ---------- */}
+                {/* ---------- TAB 3: ACADEMIC CONTEXT ---------- */}
                 {rightTab === 'academic' && academicContext && (
                   <>
                     <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
@@ -3184,29 +3242,16 @@ export default function Academic3DExplorerModule({
                               {(lnk.topicTitle ||
                                 lnk.subtopicTitle ||
                                 lnk.structureName ||
-                                lnk.experimentTitle ||
-                                lnk.stepTitle) && (
+                                lnk.experimentTitle) && (
                                 <p className="text-slate-600 dark:text-slate-400">
                                   {[
                                     lnk.topicTitle,
                                     lnk.subtopicTitle,
                                     lnk.structureName,
-                                    lnk.experimentTitle,
-                                    lnk.stepTitle
+                                    lnk.experimentTitle
                                   ]
                                     .filter(Boolean)
                                     .join(' → ')}
-                                </p>
-                              )}
-                              {(lnk.experimentRole || lnk.focusComponentName || lnk.setupNote) && (
-                                <p className="text-[11px] text-sky-700 dark:text-sky-300 leading-relaxed">
-                                  {[
-                                    lnk.experimentRole,
-                                    lnk.focusComponentName ? `Focus: ${lnk.focusComponentName}` : null,
-                                    lnk.setupNote
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' · ')}
                                 </p>
                               )}
                               {lnk.learningObjective && (
@@ -3257,7 +3302,6 @@ export default function Academic3DExplorerModule({
                       )}
                     </section>
 
-                    {/* Related Scientific 3D Models */}
                     {relatedModels.length > 0 && (
                       <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
                         <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -3287,7 +3331,6 @@ export default function Academic3DExplorerModule({
                       </section>
                     )}
 
-                    {/* Learning Objectives */}
                     {academicContext.subjectObjectives.length > 0 && (
                       <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
                         <h3 className="font-bold text-slate-900 dark:text-white">
@@ -3303,7 +3346,6 @@ export default function Academic3DExplorerModule({
                       </section>
                     )}
 
-                    {/* Matched Anatomy Entities Clinical & Pharmaceutical Relevance */}
                     {academicContext.matchedAnatomyEntities.map((ent) => (
                       <section
                         key={ent.id}
@@ -3340,64 +3382,35 @@ export default function Academic3DExplorerModule({
                       </section>
                     ))}
 
-                    {/* Related Practical Experiments */}
                     {academicContext.relatedExperiments.length > 0 && (
-                      <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                      <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
                         <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                           <FlaskConical className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                           <span>Related Department Practicals</span>
                         </h3>
-                        <div className="space-y-2">
-                          {academicContext.relatedExperiments.map((exp, idx) => {
-                            const catEntry = getExperimentById(exp.id);
-                            const primaryApp = catEntry?.apparatusIds?.[0]
-                              ? getApparatusProfile(catEntry.apparatusIds[0])
-                              : null;
-                            return (
-                              <div
-                                key={`${exp.moduleId}_${exp.id}_${idx}`}
-                                className="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => navigateToModule(exp.moduleId, exp.tab)}
-                                  className="w-full p-2.5 hover:bg-slate-50 dark:hover:bg-slate-950/60 text-left flex items-center justify-between gap-2"
-                                >
-                                  <div className="min-w-0">
-                                    <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                                      {exp.code} · {exp.title}
-                                    </p>
-                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                                      {exp.departmentLabel} Lab
-                                      {exp.roleLabel ? ` · ${exp.roleLabel}` : ''}
-                                      {exp.stepTitle ? ` · Step: ${exp.stepTitle}` : ''}
-                                    </p>
-                                    {exp.setupNote && (
-                                      <p className="text-[11px] text-emerald-700 dark:text-emerald-400 truncate mt-0.5">
-                                        {exp.setupNote}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-                                </button>
-                                {primaryApp && (
-                                  <div className="px-2.5 py-2 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/50 text-[11px] space-y-0.5">
-                                    <p className="font-semibold text-slate-700 dark:text-slate-300">
-                                      Apparatus: {primaryApp.name}
-                                    </p>
-                                    <p className="text-slate-500 dark:text-slate-400 leading-snug">
-                                      {primaryApp.purpose}
-                                    </p>
-                                  </div>
-                                )}
+                        <div className="space-y-1.5">
+                          {academicContext.relatedExperiments.map((exp) => (
+                            <button
+                              key={`${exp.moduleId}_${exp.id}`}
+                              type="button"
+                              onClick={() => navigateToModule(exp.moduleId, exp.tab)}
+                              className="w-full p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-left flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                  {exp.code} · {exp.title}
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  {exp.departmentLabel} Lab
+                                </p>
                               </div>
-                            );
-                          })}
+                              <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                            </button>
+                          ))}
                         </div>
                       </section>
                     )}
 
-                    {/* Academic References */}
                     {academicContext.academicReferences.length > 0 && (
                       <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
                         <h3 className="font-bold text-slate-900 dark:text-white">
@@ -3415,7 +3428,7 @@ export default function Academic3DExplorerModule({
                   </>
                 )}
 
-                {/* ---------- TAB 3: ASSET METADATA & PROVENANCE ---------- */}
+                {/* ---------- TAB 4: ASSET METADATA & PROVENANCE ---------- */}
                 {rightTab === 'info' && (
                   <>
                     <section className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">

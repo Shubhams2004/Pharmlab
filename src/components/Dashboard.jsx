@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowRight,
+  Beaker,
   BookOpen,
   Box,
   Clock,
@@ -59,6 +60,7 @@ export default function Dashboard({
     openStudyMode,
     openAsset3DEngine,
     openAcademicExplorer,
+    openInteractiveExperiments,
     openPythonStudio
   } = useLibraryNavigation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -312,7 +314,11 @@ export default function Dashboard({
                   key={`${hit.module}-${hit.title}`}
                   type="button"
                   onClick={() =>
-                    hit.referenceSection
+                    hit.experimentSimId
+                      ? openInteractiveExperiments({ experimentId: hit.experimentSimId })
+                      : hit.interactiveSims
+                      ? openInteractiveExperiments()
+                      : hit.referenceSection
                       ? openReferenceCenter({ section: hit.referenceSection })
                       : hit.visualId
                       ? openVisualLibrary({ visualId: hit.visualId })
@@ -672,6 +678,12 @@ export default function Dashboard({
               sub: 'Interactive Scientific Workbench',
               icon: Compass,
               action: () => openAcademicExplorer()
+            },
+            {
+              label: 'Interactive Sims',
+              sub: '6 Scientific Simulators',
+              icon: Beaker,
+              action: () => openInteractiveExperiments()
             },
             {
               label: 'Reference Center',

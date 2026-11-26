@@ -18,7 +18,8 @@ import {
   Scale,
   GraduationCap,
   Box,
-  Terminal
+  Terminal,
+  Beaker
 } from 'lucide-react';
 import { useLibraryNavigation } from '../context/LibraryNavigationContext';
 import { getAll3DAssets } from '../modules/assets-3d/asset3dDb';
@@ -41,6 +42,13 @@ export const QUICK_INDEX = [
   { title: 'Academic Visual Learning Library & Atlas', sub: 'Interactive Diagrams, Structure Labels, Mechanisms, MCQs & Open-Access Search', module: 'visual_library', tab: null, cat: 'Media', icon: Images },
   { title: 'Universal Scientific 3D Asset Engine', sub: 'Interactive GLB / glTF / STL Viewer, Part Isolation & Scientific 3D Repository Discovery', asset3dTab: 'library', cat: '3D Engine', icon: Box },
   { title: 'Academic 3D Explorer (Interactive Scientific Workbench)', sub: 'Structure Inspection, X-Ray Mode, Camera Presets, Labels & Syllabus Context', module: 'explorer_3d', explorer3d: true, cat: '3D Explorer', icon: Compass },
+  { title: 'Interactive Experiments & Simulation Engine (P3.7)', sub: 'Dissolution, Acid-Base Titration, 1-Comp PK, Hemodynamics, Microbial & Diffusion Sims', module: 'interactive_experiments', interactiveSims: true, cat: 'Simulations', icon: Beaker },
+  { title: 'Sim: Tablet Dissolution Kinetics (Noyes-Whitney / Hixson-Crowell)', sub: 'USP Type II Paddle · RPM, Sink Index, Solubility, Q80 & 3D Dissolution Vessel', module: 'interactive_experiments', experimentSimId: 'exp_dissolution_noyes_whitney', cat: 'Simulation', icon: Beaker },
+  { title: 'Sim: Acid-Base Volumetric Titration & Buffer Capacity', sub: 'Exact Charge-Balance pH Curve, Buffer Capacity Beta & Equivalence Volume', module: 'interactive_experiments', experimentSimId: 'exp_acid_base_titration', cat: 'Simulation', icon: FlaskConical },
+  { title: 'Sim: One-Compartment Pharmacokinetics (IV & Oral Bateman)', sub: 'Ka, Ke, Bioavailability, MEC/MTC Window, AUC & Multi-Dose Steady State', module: 'interactive_experiments', experimentSimId: 'exp_one_compartment_pk', cat: 'Simulation', icon: Activity },
+  { title: 'Sim: Cardiac Cycle, Frank-Starling & Windkessel Hemodynamics', sub: 'BP104T · Preload, Contractility, TPR, Arterial Compliance, CO, MAP & Pulse', module: 'interactive_experiments', experimentSimId: 'exp_cardiac_hemodynamics', cat: 'Simulation', icon: Activity },
+  { title: 'Sim: Microbial Growth (Monod) & Autoclave Sterilization (F0/D/z)', sub: 'Fermentation Biomass vs Substrate Kinetics or SAL 10^-6 Moist-Heat Log Reduction', module: 'interactive_experiments', experimentSimId: 'exp_microbial_growth_sterilization', cat: 'Simulation', icon: Microscope },
+  { title: 'Sim: Membrane Diffusion & Drug Permeation (Fick Second Law)', sub: 'Crank Fourier Series Transdermal/Filter Flux, Kp, D, Thickness & Lag Time', module: 'interactive_experiments', experimentSimId: 'exp_fick_diffusion_membrane', cat: 'Simulation', icon: Beaker },
   { title: 'Equipment & Apparatus Directory', sub: 'Compound Microscope, Gutzeit Apparatus, Nessler Cylinders & Lab Glassware', module: 'visual_library', category: 'equipment', tab: null, cat: 'Equipment', icon: Microscope },
   { title: 'Human Nephron & Glomerular Filtration (Visual Plate)', sub: 'Interactive Pins: Glomerulus, PCT, Loop of Henle, DCT & Collecting Duct', module: 'visual_library', visualId: 'builtin_nephron_anatomy', tab: null, cat: 'Anatomy', icon: Activity },
   { title: 'Diuretic Sites of Action Along the Nephron (Visual Plate)', sub: 'Pharmacology · Loop Diuretics, Thiazides, Acetazolamide & Spironolactone', module: 'visual_library', visualId: 'builtin_diuretic_pharmacology', tab: null, cat: 'Pharmacology', icon: FlaskConical },
@@ -96,6 +104,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
     openStudyMode,
     openAsset3DEngine,
     openAcademicExplorer,
+    openInteractiveExperiments,
     openPythonStudio
   } = useLibraryNavigation();
   const [query, setQuery] = useState('');
@@ -252,6 +261,10 @@ export default function CommandPalette({ isOpen, onClose, onNavigate }) {
   const launchPick = (pick) => {
     if (pick.pythonStudio) {
       openPythonStudio();
+    } else if (pick.experimentSimId) {
+      openInteractiveExperiments({ experimentId: pick.experimentSimId });
+    } else if (pick.interactiveSims) {
+      openInteractiveExperiments();
     } else if (pick.explorer3d) {
       openAcademicExplorer();
     } else if (pick.asset3dId) {

@@ -5,10 +5,8 @@ import AnatomyExplorer from './AnatomyExplorer';
 import AnatomyIdentificationPractice from './AnatomyIdentificationPractice';
 import AnatomyTheory from './AnatomyTheory';
 import ResourceConnector from '../../components/ResourceConnector';
-import { usePersistedModuleState } from '../../components/usePersistedModuleState';
 import { DepartmentHeader, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
-import Experiment3DPanel from '../assets-3d/Experiment3DPanel';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 
 const ANATOMY_TABS = [
@@ -24,11 +22,8 @@ const ANATOMY_TABS = [
 ];
 
 export default function AnatomyModule({ initialTab, initialStructureId = null, navNonce = 0 }) {
-  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
-  const [activeTab, setActiveTab] = usePersistedModuleState(
-    'anatomy:activeTab',
-    initialTab || (initialStructureId ? 'explorer' : 'explorer')
-  );
+  const { setWorkspaceSection, recordActivity, openInteractiveExperiments } = useLibraryNavigation();
+  const [activeTab, setActiveTab] = useState(initialTab || (initialStructureId ? 'explorer' : 'explorer'));
   const [activeStructureDetail, setActiveStructureDetail] = useState(null);
   const [deepStructureId, setDeepStructureId] = useState(initialStructureId);
   const [structureJumpNonce, setStructureJumpNonce] = useState(0);
@@ -45,7 +40,7 @@ export default function AnatomyModule({ initialTab, initialStructureId = null, n
     } else if (navNonce > 0) {
       setDeepStructureId(null);
     }
-  }, [initialTab, initialStructureId, navNonce, setActiveTab]);
+  }, [initialTab, initialStructureId, navNonce]);
 
   useEffect(() => {
     const label = ANATOMY_TABS.find((t) => t.id === activeTab)?.label || null;
@@ -75,32 +70,32 @@ export default function AnatomyModule({ initialTab, initialStructureId = null, n
     }
   };
 
-  // Existing Exp 8 & 11 States (persisted across Explorer round-trips)
-  const [dilution, setDilution] = usePersistedModuleState('anatomy:dilution', '20');
+  // Existing Exp 8 & 11 States
+  const [dilution, setDilution] = useState('20');
   const [depth] = useState('0.1');
-  const [squaresCounted, setSquaresCounted] = usePersistedModuleState('anatomy:squaresCounted', '');
-  const [wbcResult, setWbcResult] = usePersistedModuleState('anatomy:wbcResult', null);
+  const [squaresCounted, setSquaresCounted] = useState('');
+  const [wbcResult, setWbcResult] = useState(null);
 
-  const [hbValue, setHbValue] = usePersistedModuleState('anatomy:hbValue', '');
-  const [gender, setGender] = usePersistedModuleState('anatomy:gender', 'male');
-  const [hbResult, setHbResult] = usePersistedModuleState('anatomy:hbResult', null);
+  const [hbValue, setHbValue] = useState('');
+  const [gender, setGender] = useState('male');
+  const [hbResult, setHbResult] = useState(null);
 
   // Exp 1: Compound Microscope Magnification
-  const [eyepiece, setEyepiece] = usePersistedModuleState('anatomy:eyepiece', 10);
-  const [objective, setObjective] = usePersistedModuleState('anatomy:objective', 40);
-  const [selectedScopePart, setSelectedScopePart] = usePersistedModuleState('anatomy:selectedScopePart', 'Objective Lens');
+  const [eyepiece, setEyepiece] = useState(10);
+  const [objective, setObjective] = useState(40);
+  const [selectedScopePart, setSelectedScopePart] = useState('Objective Lens');
 
   // Exp 2 & 3: Histology
-  const [selectedTissue, setSelectedTissue] = usePersistedModuleState('anatomy:selectedTissue', 'Epithelial');
+  const [selectedTissue, setSelectedTissue] = useState('Epithelial');
 
   // Exp 4 & 5: Axial & Appendicular Bones
-  const [boneDivision, setBoneDivision] = usePersistedModuleState('anatomy:boneDivision', 'axial');
+  const [boneDivision, setBoneDivision] = useState('axial');
 
   // Exp 7: Cell Analyser CBC Simulator
-  const [cbcPreset, setCbcPreset] = usePersistedModuleState('anatomy:cbcPreset', 'normal');
+  const [cbcPreset, setCbcPreset] = useState('normal');
 
   // Exp 8b: Differential Leukocyte Count (DLC) 100-cell counter
-  const [dlc, setDlc] = usePersistedModuleState('anatomy:dlc', { Neutrophils: 60, Lymphocytes: 30, Monocytes: 6, Eosinophils: 3, Basophils: 1 });
+  const [dlc, setDlc] = useState({ Neutrophils: 60, Lymphocytes: 30, Monocytes: 6, Eosinophils: 3, Basophils: 1 });
 
   // Exp 9: RBC Count
   const [rbcCells, setRbcCells] = useState(480);
@@ -119,15 +114,15 @@ export default function AnatomyModule({ initialTab, initialStructureId = null, n
   const [esrMm, setEsrMm] = useState(12);
 
   // Exp 14: BP & Pulse
-  const [sbp, setSbp] = usePersistedModuleState('anatomy:sbp', 120);
-  const [dbp, setDbp] = usePersistedModuleState('anatomy:dbp', 80);
-  const [pulseRate, setPulseRate] = usePersistedModuleState('anatomy:pulseRate', 72);
+  const [sbp, setSbp] = useState(120);
+  const [dbp, setDbp] = useState(80);
+  const [pulseRate, setPulseRate] = useState(72);
 
   // Exp 15: ECG Simulator
-  const [ecgRhythm, setEcgRhythm] = usePersistedModuleState('anatomy:ecgRhythm', 'normal');
+  const [ecgRhythm, setEcgRhythm] = useState('normal');
 
   // Exp 17: Case Studies
-  const [selectedCase, setSelectedCase] = usePersistedModuleState('anatomy:selectedCase', 'Anaemia');
+  const [selectedCase, setSelectedCase] = useState('Anaemia');
 
   const calculateWbc = (e) => {
     e.preventDefault();
@@ -636,6 +631,20 @@ export default function AnatomyModule({ initialTab, initialStructureId = null, n
       {/* TAB 4: VITALS, ECG, CVS & INTEGUMENTARY (Exp 14 - 16) */}
       {activeTab === 'cardio' && (
         <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+              <strong className="text-slate-900 dark:text-white">Interactive CVS Physics Engine:</strong> Simulate Frank–Starling preload, TPR, compliance, MAP &amp; aortic Windkessel waveform alongside 3D heart anatomy.
+            </div>
+            <button
+              type="button"
+              onClick={() => openInteractiveExperiments({ experimentId: 'exp_cardiac_hemodynamics' })}
+              className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shrink-0"
+            >
+              <HeartPulse className="w-3.5 h-3.5" />
+              <span>Open Hemodynamics Simulator (P3.7)</span>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Exp 14: BP & Pulse */}
             <div className="lg:col-span-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm dark:shadow-xl space-y-4">
@@ -755,47 +764,10 @@ export default function AnatomyModule({ initialTab, initialStructureId = null, n
         </div>
       )}
 
-      {['hematology', 'microscopy', 'bones', 'cardio'].includes(activeTab) && (
-        <Experiment3DPanel
-          department="anatomy"
-          subjectCode="BP104T"
-          experimentTab={activeTab}
-          experimentId={
-            activeTab === 'hematology'
-              ? 'exp_anat_hematology'
-              : activeTab === 'microscopy'
-              ? 'exp_anat_microscopy'
-              : activeTab === 'bones'
-              ? 'exp_anat_bones'
-              : 'exp_anat_cardio'
-          }
-          activeStepId={
-            activeTab === 'bones'
-              ? boneDivision
-              : activeTab === 'cardio'
-              ? ecgRhythm
-              : activeTab === 'microscopy'
-              ? 'compound_scope'
-              : 'wbc_neubauer'
-          }
-          defaultSearchQuery={
-            activeTab === 'bones'
-              ? `human skeleton ${boneDivision}`
-              : activeTab === 'cardio'
-              ? 'human heart sphygmomanometer'
-              : activeTab === 'microscopy'
-              ? 'compound microscope histology'
-              : 'neubauer hemocytometer microscope'
-          }
-        />
-      )}
-
       {activeTab !== 'diagrams' && activeTab !== 'explorer' && activeTab !== 'practice' && (
         <ResourceConnector
           department="anatomy"
           topic={activeTab === 'cardio' ? 'heart' : activeTab === 'hematology' ? 'microscope' : 'anatomy'}
-          experimentTab={activeTab}
-          hideExperiment3DPanel={['hematology', 'microscopy', 'bones', 'cardio'].includes(activeTab)}
           defaultSearchQuery={
             activeTab === 'cardio'
               ? 'cardiac output ECG'

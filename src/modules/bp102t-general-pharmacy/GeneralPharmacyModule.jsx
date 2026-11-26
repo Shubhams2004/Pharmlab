@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { FlaskConical, Calculator, Scale, Droplet, CheckCircle2, BookOpen, Tag, Package } from 'lucide-react';
 import ResourceConnector from '../../components/ResourceConnector';
-import { usePersistedModuleState } from '../../components/usePersistedModuleState';
 import { DepartmentHeader, ResponsiveTableWrapper, WorkspaceTabBar } from '../../components/WorkspacePrimitives';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
-import Experiment3DPanel from '../assets-3d/Experiment3DPanel';
 import { DEPARTMENT_WORKSPACES } from '../../types/academicArchitecture';
 
 const GENERAL_PHARMACY_TABS = [
@@ -28,15 +26,12 @@ const BP102_UNITS = [
 ];
 
 export default function GeneralPharmacyModule({ initialTab, navNonce }) {
-  const { setWorkspaceSection, recordActivity } = useLibraryNavigation();
-  const [activeTab, setActiveTab] = usePersistedModuleState(
-    'general_pharmacy:activeTab',
-    initialTab || 'experiments'
-  );
+  const { setWorkspaceSection, recordActivity, openInteractiveExperiments } = useLibraryNavigation();
+  const [activeTab, setActiveTab] = useState(initialTab || 'experiments');
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
-  }, [initialTab, navNonce, setActiveTab]);
+  }, [initialTab, navNonce]);
 
   useEffect(() => {
     const label = GENERAL_PHARMACY_TABS.find((t) => t.id === activeTab)?.label || null;
@@ -69,10 +64,10 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
   const [targetAlcohol, setTargetAlcohol] = useState(25);
   const [finalVolumeMl, setFinalVolumeMl] = useState(500);
 
-  const [drugWeight, setDrugWeight] = usePersistedModuleState('general_pharmacy:drugWeight', 1.0);
-  const [displacementValue, setDisplacementValue] = usePersistedModuleState('general_pharmacy:displacementValue', 0.7);
-  const [suppositoryMouldSize, setSuppositoryMouldSize] = usePersistedModuleState('general_pharmacy:suppositoryMouldSize', 2.0);
-  const [numSuppositories, setNumSuppositories] = usePersistedModuleState('general_pharmacy:numSuppositories', 10);
+  const [drugWeight, setDrugWeight] = useState(1.0);
+  const [displacementValue, setDisplacementValue] = useState(0.7);
+  const [suppositoryMouldSize, setSuppositoryMouldSize] = useState(2.0);
+  const [numSuppositories, setNumSuppositories] = useState(10);
 
   const [isoDrugGrams, setIsoDrugGrams] = useState(1.0);
   const [isoVolumeMl, setIsoVolumeMl] = useState(100);
@@ -83,9 +78,9 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
   const [prescribedDose, setPrescribedDose] = useState(500);
 
   // New BP107P Compounding Workbench State
-  const [selectedPrepId, setSelectedPrepId] = usePersistedModuleState('general_pharmacy:selectedPrepId', 'sol_ammonium');
-  const [batchFactor, setBatchFactor] = usePersistedModuleState('general_pharmacy:batchFactor', 1.0);
-  const [completedSteps, setCompletedSteps] = usePersistedModuleState('general_pharmacy:completedSteps', {});
+  const [selectedPrepId, setSelectedPrepId] = useState('sol_ammonium');
+  const [batchFactor, setBatchFactor] = useState(1.0);
+  const [completedSteps, setCompletedSteps] = useState({});
 
   // Posology & Proof Spirit / Ratio Dilution State (BP102T Unit II)
   const [adultDoseMg, setAdultDoseMg] = useState(500);
@@ -509,7 +504,30 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
 
       {/* BP107P COMPOUNDING WORKBENCH */}
       {activeTab === 'experiments' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+              <strong className="text-slate-900 dark:text-white">Interactive Pharmaceutics Simulators (P3.7):</strong> Run dynamic kinetic &amp; transport experiments with 3D apparatus.
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openInteractiveExperiments({ experimentId: 'exp_dissolution_noyes_whitney' })}
+                className="min-h-[34px] px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-xs font-semibold text-emerald-700 dark:text-emerald-300 transition-colors"
+              >
+                USP II Dissolution Kinetics
+              </button>
+              <button
+                type="button"
+                onClick={() => openInteractiveExperiments({ experimentId: 'exp_fick_diffusion_membrane' })}
+                className="min-h-[34px] px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-xs font-semibold text-cyan-700 dark:text-cyan-300 transition-colors"
+              >
+                Fick Membrane Permeation
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm dark:shadow-xl space-y-2 max-h-[680px] overflow-y-auto">
             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 px-2 block pb-1">
               BP107P Official Practicals (15 Formulations)
@@ -613,6 +631,7 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
               <p className="text-sm text-rose-600 dark:text-rose-400 font-bold">{selectedPrep.auxiliaryLabel}</p>
               <p className="text-xs text-slate-600 dark:text-slate-400">Storage: {selectedPrep.storage}</p>
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -945,29 +964,9 @@ export default function GeneralPharmacyModule({ initialTab, navNonce }) {
         </div>
       )}
 
-      {['experiments', 'suppository'].includes(activeTab) && (
-        <Experiment3DPanel
-          department="general_pharmacy"
-          subjectCode="BP102T"
-          experimentTab={activeTab}
-          experimentId={
-            activeTab === 'suppository' ? 'exp_pharm_suppository' : 'exp_pharm_compounding'
-          }
-          activeStepId={activeTab === 'suppository' ? 'mould_calibration' : selectedPrep.id}
-          activeStepTitle={activeTab === 'suppository' ? 'Mould Capacity & Displacement Value Calibration' : `${selectedPrep.code}: ${selectedPrep.name}`}
-          defaultSearchQuery={
-            activeTab === 'suppository'
-              ? 'suppository mould pharmaceutics'
-              : 'mortar pestle compounding glassware'
-          }
-        />
-      )}
-
       <ResourceConnector
         department="general_pharmacy"
         topic="titration"
-        experimentTab={activeTab}
-        hideExperiment3DPanel={['experiments', 'suppository'].includes(activeTab)}
         defaultSearchQuery={
           activeTab === 'posology_proof'
             ? 'posology pediatric proof spirit'

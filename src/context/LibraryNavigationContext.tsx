@@ -79,6 +79,13 @@ export interface AcademicExplorerJumpTarget {
   nonce: number;
 }
 
+export interface InteractiveExperimentsJumpTarget {
+  experimentId?: string | null;
+  stage?: 'intro' | 'apparatus' | 'simulate' | 'observe' | 'compare' | 'conclusion' | null;
+  department?: 'pharmaceutics' | 'inorganic_analysis' | 'pharmacology_pk' | 'anatomy_phys' | 'microbiology' | 'biopharmaceutics' | null;
+  nonce: number;
+}
+
 interface LibraryNavigationContextValue {
   openKnowledgeLibrary: (opts?: Omit<KnowledgeJumpTarget, 'nonce'>) => void;
   openVisualLibrary: (opts?: Omit<VisualJumpTarget, 'nonce'>) => void;
@@ -87,6 +94,7 @@ interface LibraryNavigationContextValue {
   openStudyMode: (opts?: Omit<StudyModeJumpTarget, 'nonce'>) => void;
   openAsset3DEngine: (opts?: Omit<Asset3DJumpTarget, 'nonce'>) => void;
   openAcademicExplorer: (opts?: Omit<AcademicExplorerJumpTarget, 'nonce'>) => void;
+  openInteractiveExperiments: (opts?: Omit<InteractiveExperimentsJumpTarget, 'nonce'>) => void;
   openPythonStudio: (opts?: Omit<PythonStudioJumpTarget, 'nonce'>) => void;
   navigateToModule: (
     moduleId: string,
@@ -112,6 +120,7 @@ export const LibraryNavigationContext = createContext<LibraryNavigationContextVa
   openStudyMode: noop,
   openAsset3DEngine: noop,
   openAcademicExplorer: noop,
+  openInteractiveExperiments: noop,
   openPythonStudio: noop,
   navigateToModule: noop,
   setWorkspaceSection: noop,
