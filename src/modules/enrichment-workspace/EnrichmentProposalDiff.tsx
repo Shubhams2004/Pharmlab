@@ -3,17 +3,48 @@ import {
   AlertTriangle,
   CheckCircle2,
   Edit3,
+  Loader2,
+  RefreshCw,
   RotateCcw,
   ShieldCheck,
   XCircle
 } from 'lucide-react';
 import {
+  ContentQualityReport,
   EnrichedSectionEntry,
+  EnrichmentComparisonTable,
+  EnrichmentDepthLevel,
+  EnrichmentOriginKind,
   EnrichmentProvenance,
   EnrichmentQuestionEntry,
   EnrichmentSourceAttachment
 } from '../study-mode/types';
 import { PROVENANCE_LABELS } from './sectionCatalog';
+
+const ORIGIN_LABELS: Record<EnrichmentOriginKind, { label: string; toneClass: string }> = {
+  source_supported: {
+    label: 'Source-Supported Draft',
+    toneClass: 'text-emerald-700 dark:text-emerald-400'
+  },
+  ai_draft: {
+    label: 'AI-Generated Draft',
+    toneClass: 'text-amber-700 dark:text-amber-300'
+  },
+  user_written: {
+    label: 'User-Written',
+    toneClass: 'text-slate-700 dark:text-slate-300'
+  },
+  needs_verification: {
+    label: 'Needs Verification',
+    toneClass: 'text-sky-700 dark:text-sky-400'
+  }
+};
+
+const DEPTH_LABELS: Record<EnrichmentDepthLevel, string> = {
+  foundation: 'Foundation Depth',
+  standard: 'Standard (B.Pharm) Depth',
+  advanced: 'Advanced Depth'
+};
 
 interface EnrichmentProposalDiffProps {
   sectionLabel: string;
@@ -23,13 +54,19 @@ interface EnrichmentProposalDiffProps {
   proposedProse: string;
   proposedBullets: string[];
   proposedFormulas: string[];
+  proposedComparisonTable?: EnrichmentComparisonTable;
   proposedQuestions: EnrichmentQuestionEntry[];
   proposedProvenance: EnrichmentProvenance;
+  proposedDepth?: EnrichmentDepthLevel;
+  proposedOrigin?: EnrichmentOriginKind;
   proposedAttachments: EnrichmentSourceAttachment[];
+  qualityReport?: ContentQualityReport | null;
   isAiDraft: boolean;
+  regenerating?: boolean;
   onAcceptAndMerge: () => void;
   onModifyInEditor: () => void;
   onRejectProposal: () => void;
+  onRegenerateProposal?: () => void;
   onUndoLastMerge?: () => void;
 }
 
@@ -41,20 +78,36 @@ export default function EnrichmentProposalDiff({
   proposedProse,
   proposedBullets,
   proposedFormulas,
+  proposedComparisonTable,
   proposedQuestions,
   proposedProvenance,
+  proposedDepth,
+  proposedOrigin,
   proposedAttachments,
+  qualityReport,
   isAiDraft,
+  regenerating = false,
   onAcceptAndMerge,
   onModifyInEditor,
   onRejectProposal,
+  onRegenerateProposal,
   onUndoLastMerge
 }: EnrichmentProposalDiffProps) {
   const provMeta = PROVENANCE_LABELS[proposedProvenance];
+  const originMeta = proposedOrigin ? ORIGIN_LABELS[proposedOrigin] : null;
   const hasExisting =
     existingProse.length > 0 ||
     existingBullets.length > 0 ||
-    Boolean(previouslyApproved && (previouslyApproved.prose || previouslyApproved.bullets.length > 0));
+    Boolean(
+      previouslyApproved &&
+        (previouslyApproved.prose ||
+          previouslyApproved.bullets.length > 0 ||
+          previouslyApproved.comparisonTable)
+    );
+
+  const flaggedChecks = qualityReport
+    ? qualityReport.checks.filter((c) => c.status !== 'pass')
+    : [];
 
   return (
     <section
@@ -70,13 +123,18 @@ export default function EnrichmentProposalDiff({
             Compare Existing vs Proposed: {sectionLabel}
           </h3>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className={`font-semibold ${provMeta.toneClass}`}>{provMeta.label}</span>
-          {isAiDraft && (
-            <span className="text-amber-700 dark:text-amber-300 font-semibold">
-              · AI-Assisted Draft (Review Required)
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
+          {proposedDepth && (
+            <span className="font-medium text-slate-600 dark:text-slate-300">
+              {DEPTH_LABELS[proposedDepth]}
             </span>
           )}
+          {originMeta && (
+            <span className={`font-semibold ${originMeta.toneClass}`}>
+              · {originMeta.label}
+            </span>
+          )}
+          <span className={`font-semibold ${provMeta.toneClass}`}>· Target: {provMeta.label}</span>
         </div>
       </div>
 
@@ -88,6 +146,18 @@ export default function EnrichmentProposalDiff({
           </span>
         </div>
       )}
+
+      {!isAiDraft &&
+        proposedOrigin === 'source_supported' &&
+        proposedProvenance === 'needs_verification' &&
+        proposedAttachments.length > 0 && (
+          <div className="px-5 py-3 bg-emerald-500/10 border-b border-emerald-500/25 flex items-start gap-2 text-xs text-emerald-900 dark:text-emerald-200">
+            <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+            <span>
+              Matched {proposedAttachments.length} existing PharmaLab source(s). Review accuracy below, then switch Provenance in the editor to Reference-Supported before merging—or merge as Needs Verification.
+            </span>
+          </div>
+        )}
 
       {proposedProvenance === 'reference_supported' && proposedAttachments.length === 0 && (
         <div className="px-5 py-3 bg-sky-500/10 border-b border-sky-500/25 flex items-start gap-2 text-xs text-sky-900 dark:text-sky-200">
@@ -147,6 +217,12 @@ export default function EnrichmentProposalDiff({
                       ))}
                     </ul>
                   )}
+                  {previouslyApproved.comparisonTable &&
+                    previouslyApproved.comparisonTable.rows.length > 0 && (
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Includes comparison table ({previouslyApproved.comparisonTable.rows.length} rows)
+                      </p>
+                    )}
                 </div>
               )}
             </div>
@@ -193,6 +269,45 @@ export default function EnrichmentProposalDiff({
             </div>
           )}
 
+          {proposedComparisonTable &&
+            proposedComparisonTable.headers.length >= 2 &&
+            proposedComparisonTable.rows.length > 0 && (
+              <div className="space-y-1.5">
+                {proposedComparisonTable.caption && (
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {proposedComparisonTable.caption}
+                  </p>
+                )}
+                <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300">
+                      <tr>
+                        {proposedComparisonTable.headers.map((h, i) => (
+                          <th
+                            key={i}
+                            className="px-3 py-2 font-semibold border-b border-slate-200 dark:border-slate-800"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                      {proposedComparisonTable.rows.map((row, rIdx) => (
+                        <tr key={rIdx} className="text-slate-700 dark:text-slate-300">
+                          {proposedComparisonTable.headers.map((_, cIdx) => (
+                            <td key={cIdx} className="px-3 py-2 align-top">
+                              {row[cIdx] || '—'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
           {proposedQuestions.length > 0 && (
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
               <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
@@ -226,6 +341,52 @@ export default function EnrichmentProposalDiff({
         </div>
       </div>
 
+      {/* Embedded Quality Check Summary */}
+      {qualityReport && (
+        <div className="px-5 py-3.5 bg-slate-50/70 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              Editorial Quality Validation ({qualityReport.checks.length} checks)
+            </span>
+            <span className="tabular-nums text-slate-600 dark:text-slate-400">
+              <strong className="text-emerald-700 dark:text-emerald-400">
+                {qualityReport.passCount} Pass
+              </strong>
+              {' · '}
+              <strong className="text-amber-700 dark:text-amber-400">
+                {qualityReport.warningCount} Warning
+              </strong>
+              {' · '}
+              <strong className="text-rose-700 dark:text-rose-400">
+                {qualityReport.attentionCount} Attention Needed
+              </strong>
+            </span>
+          </div>
+          {flaggedChecks.length > 0 && (
+            <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-400">
+              {flaggedChecks.map((chk) => (
+                <li key={chk.key}>
+                  <span
+                    className={`font-semibold ${
+                      chk.status === 'attention_needed'
+                        ? 'text-rose-700 dark:text-rose-400'
+                        : 'text-amber-700 dark:text-amber-400'
+                    }`}
+                  >
+                    [{chk.status === 'attention_needed' ? 'Attention' : 'Warning'} · {chk.label}]
+                  </span>{' '}
+                  {chk.finding}
+                  {chk.suggestion ? ` — ${chk.suggestion}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            {qualityReport.disclaimer}
+          </p>
+        </div>
+      )}
+
       {/* Review Actions */}
       <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -246,6 +407,22 @@ export default function EnrichmentProposalDiff({
             <Edit3 className="w-4 h-4" />
             <span>Modify in Editor</span>
           </button>
+
+          {onRegenerateProposal && (
+            <button
+              type="button"
+              onClick={onRegenerateProposal}
+              disabled={regenerating}
+              className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-emerald-500/50 disabled:opacity-50 text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+            >
+              {regenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              <span>Regenerate</span>
+            </button>
+          )}
 
           <button
             type="button"

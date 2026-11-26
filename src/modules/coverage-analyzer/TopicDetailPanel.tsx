@@ -157,6 +157,17 @@ export default function TopicDetailPanel({ topic, onClose }: TopicDetailPanelPro
                   <span>{topic.verificationReasons.join(' ')}</span>
                 </div>
               )}
+              {topic.verificationSummary && topic.verificationSummary.totalClaims > 0 && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 tabular-nums">
+                  <strong>Textbook Claim Audit:</strong>{' '}
+                  {topic.verificationSummary.multipleBooksCount +
+                    topic.verificationSummary.textbookSupportedCount}
+                  /{topic.verificationSummary.totalClaims} textbook-supported ·{' '}
+                  {topic.verificationSummary.partiallySupportedCount} partial ·{' '}
+                  {topic.verificationSummary.conflictingCount} conflicting ·{' '}
+                  {topic.verificationSummary.reviewedCount} reviewed
+                </div>
+              )}
             </div>
           </div>
 

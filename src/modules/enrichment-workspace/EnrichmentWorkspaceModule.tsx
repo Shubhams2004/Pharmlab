@@ -12,7 +12,9 @@ import {
   FileCheck2,
   History,
   KeyRound,
+  Layers,
   Link2,
+  ListChecks,
   Loader2,
   Plus,
   RefreshCw,
@@ -20,8 +22,11 @@ import {
   Save,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
+  Table2,
   Trash2,
+  Wand2,
   X
 } from 'lucide-react';
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
@@ -40,6 +45,7 @@ import {
   getAllStoredQuestions,
   getAllSyllabi,
   getAllTopicEnrichments,
+  getAllTopicVerifications,
   saveExamQuestions,
   saveTopicEnrichment
 } from '../study-mode/studyDb';
@@ -48,7 +54,10 @@ import {
   AcquiredTopicResource,
   EnrichedSectionDraft,
   EnrichedSectionEntry,
+  EnrichmentComparisonTable,
+  EnrichmentDepthLevel,
   EnrichmentHistoryEntry,
+  EnrichmentOriginKind,
   EnrichmentProvenance,
   EnrichmentQuestionEntry,
   EnrichmentSectionKey,
@@ -58,21 +67,27 @@ import {
   SyllabusProfile,
   SyllabusSubjectNode,
   SyllabusTopicNode,
-  TopicEnrichmentRecord
+  TopicEnrichmentRecord,
+  TopicVerificationRecord
 } from '../study-mode/types';
+import {
+  analyzeTopicForEnrichment,
+  generateBatchSectionDrafts,
+  generateSectionEnrichmentDraft
+} from './enrichmentEngine';
 import EnrichmentProposalDiff from './EnrichmentProposalDiff';
+import { summarizeTopicVerification } from './claimVerificationEngine';
 import {
   clearOptionalAiKey,
-  generateOptionalAiSectionDraft,
   isOptionalAiReady,
   loadOptionalAiConfig,
   OptionalAiConfig,
   OptionalAiProvider,
   saveOptionalAiConfig
 } from './optionalAiService';
+import { validateEnrichmentQuality } from './qualityValidator';
 import {
   assessEnrichmentSections,
-  ENRICHMENT_BLUEPRINT_MAP,
   PROVENANCE_LABELS,
   SectionAssessmentState
 } from './sectionCatalog';
@@ -81,6 +96,7 @@ import {
   candidateToAttachment,
   loadAttachableSourcesForTopic
 } from './sourceAttachmentService';
+import TextbookVerificationPanel from './TextbookVerificationPanel';
 
 export interface EnrichmentWorkspaceJumpTarget {
   syllabusId?: string | null;
@@ -127,7 +143,9 @@ export default function EnrichmentWorkspaceModule({
   const [syllabi, setSyllabi] = useState<SyllabusProfile[]>([]);
   const [auditReport, setAuditReport] = useState<CoverageAuditReport | null>(null);
   const [enrichmentMap, setEnrichmentMap] = useState<Record<string, TopicEnrichmentRecord>>({});
+  const [verificationMap, setVerificationMap] = useState<Record<string, TopicVerificationRecord>>({});
   const [storedQuestions, setStoredQuestions] = useState<ExamQuestionItem[]>([]);
+  const [workspaceMode, setWorkspaceMode] = useState<'enrich' | 'verify'>('enrich');
 
   const [selectedSyllabusId, setSelectedSyllabusId] = useState<string>(
     OFFICIAL_BPHARM_SEM1_SYLLABUS_ID
@@ -157,15 +175,33 @@ export default function EnrichmentWorkspaceModule({
   const [manualCiteSubtitle, setManualCiteSubtitle] = useState('');
 
   // Working Editor State for the Active Section
+  const [selectedDepth, setSelectedDepth] = useState<EnrichmentDepthLevel>('standard');
   const [proseDraft, setProseDraft] = useState('');
   const [bulletsText, setBulletsText] = useState('');
   const [formulasText, setFormulasText] = useState('');
+  const [comparisonTableDraft, setComparisonTableDraft] = useState<
+    EnrichmentComparisonTable | undefined
+  >(undefined);
   const [questionsDraft, setQuestionsDraft] = useState<EnrichmentQuestionEntry[]>([]);
   const [provenanceDraft, setProvenanceDraft] = useState<EnrichmentProvenance>('reference_supported');
+  const [originDraft, setOriginDraft] = useState<EnrichmentOriginKind>('user_written');
+  const [gapRationaleDraft, setGapRationaleDraft] = useState<string | undefined>(undefined);
   const [attachmentsDraft, setAttachmentsDraft] = useState<EnrichmentSourceAttachment[]>([]);
   const [isAiDraftFlag, setIsAiDraftFlag] = useState(false);
   const [dirtySection, setDirtySection] = useState(false);
   const [autosaveStatus, setAutosaveStatus] = useState<string | null>(null);
+
+  // P4.2.2 Gap-Prioritized Enrichment Engine UI State
+  const [showGapPlan, setShowGapPlan] = useState(true);
+  const [showAllGapTargets, setShowAllGapTargets] = useState(false);
+  const [selectedGapKeys, setSelectedGapKeys] = useState<EnrichmentSectionKey[]>([]);
+  const [generatingLocal, setGeneratingLocal] = useState(false);
+  const [generatingBatch, setGeneratingBatch] = useState(false);
+  const [generatorNotice, setGeneratorNotice] = useState<{
+    note: string;
+    warnings: string[];
+  } | null>(null);
+  const [showQualityChecks, setShowQualityChecks] = useState(true);
 
   // Question builder temp fields
   const [newQPrompt, setNewQPrompt] = useState('');
@@ -192,14 +228,16 @@ export default function EnrichmentWorkspaceModule({
 
   // Initial Load
   const reloadCoreData = useCallback(async () => {
-    const [loadedSyllabi, loadedEnrichments, loadedQs, audit] = await Promise.all([
+    const [loadedSyllabi, loadedEnrichments, loadedVerifications, loadedQs, audit] = await Promise.all([
       getAllSyllabi(),
       getAllTopicEnrichments(),
+      getAllTopicVerifications(),
       getAllStoredQuestions(),
       runSyllabusCoverageAudit()
     ]);
     setSyllabi(loadedSyllabi);
     setEnrichmentMap(loadedEnrichments);
+    setVerificationMap(loadedVerifications);
     setStoredQuestions(loadedQs);
     setAuditReport(audit);
     return { loadedSyllabi, loadedEnrichments, audit };
@@ -376,6 +414,29 @@ export default function EnrichmentWorkspaceModule({
     [sectionStates, activeSectionKey]
   );
 
+  // P4.2.2 Topic-Aware Gap-Prioritized Enrichment Plan
+  const enrichmentPlan = useMemo(() => {
+    if (!activeSyllabus || !activeSubject || !activeTopic || sectionStates.length === 0) {
+      return null;
+    }
+    return analyzeTopicForEnrichment({
+      syllabus: activeSyllabus,
+      subject: activeSubject,
+      topic: activeTopic,
+      sectionStates,
+      coverageReport: activeTopicReport
+    });
+  }, [activeSyllabus, activeSubject, activeTopic, sectionStates, activeTopicReport]);
+
+  // Seed default top-3 prioritized gaps whenever topic changes
+  const lastPlanTopicRef = useRef<string>('');
+  useEffect(() => {
+    if (!enrichmentPlan || lastPlanTopicRef.current === enrichmentPlan.topicId) return;
+    lastPlanTopicRef.current = enrichmentPlan.topicId;
+    setSelectedGapKeys(enrichmentPlan.prioritizedGaps.slice(0, 3).map((g) => g.sectionKey));
+    setGeneratorNotice(null);
+  }, [enrichmentPlan]);
+
   // Hydrate editor fields when switching topic or section
   const hydratedKeyRef = useRef<string>('');
   useEffect(() => {
@@ -388,20 +449,28 @@ export default function EnrichmentWorkspaceModule({
     const approved = activeRecord?.approvedSections?.[activeSectionState.blueprint.key];
 
     if (draft) {
+      setSelectedDepth(draft.depth || 'standard');
       setProseDraft(draft.prose);
       setBulletsText(draft.bullets.join('\n'));
       setFormulasText(draft.formulas.join('\n'));
+      setComparisonTableDraft(draft.comparisonTable);
       setQuestionsDraft(draft.importantQuestions || []);
       setProvenanceDraft(draft.provenance);
+      setOriginDraft(draft.origin || (draft.isAiDraft ? 'ai_draft' : 'user_written'));
+      setGapRationaleDraft(draft.gapRationale);
       setAttachmentsDraft(draft.attachments || []);
       setIsAiDraftFlag(draft.isAiDraft);
       setAutosaveStatus(`Draft resumed (${formatTimeShort(draft.updatedAt)})`);
     } else if (approved) {
+      setSelectedDepth(approved.depth || 'standard');
       setProseDraft(approved.prose);
       setBulletsText(approved.bullets.join('\n'));
       setFormulasText(approved.formulas.join('\n'));
+      setComparisonTableDraft(approved.comparisonTable);
       setQuestionsDraft(approved.importantQuestions || []);
       setProvenanceDraft(approved.provenance);
+      setOriginDraft(approved.origin || 'user_written');
+      setGapRationaleDraft(approved.gapRationale);
       setAttachmentsDraft(approved.attachments || []);
       setIsAiDraftFlag(false);
       setAutosaveStatus(null);
@@ -409,8 +478,11 @@ export default function EnrichmentWorkspaceModule({
       setProseDraft('');
       setBulletsText('');
       setFormulasText('');
+      setComparisonTableDraft(undefined);
       setQuestionsDraft([]);
       setProvenanceDraft('reference_supported');
+      setOriginDraft('user_written');
+      setGapRationaleDraft(undefined);
       setAttachmentsDraft([]);
       setIsAiDraftFlag(false);
       setAutosaveStatus(null);
@@ -418,6 +490,7 @@ export default function EnrichmentWorkspaceModule({
     setDirtySection(false);
     setShowReviewDiff(false);
     setAiError(null);
+    setGeneratorNotice(null);
   }, [activeTopic, activeSectionState, activeRecord]);
 
   const parsedBullets = useMemo(
@@ -438,6 +511,38 @@ export default function EnrichmentWorkspaceModule({
     [formulasText]
   );
 
+  // Live 9-check Quality Validation Report for active section
+  const liveQualityReport = useMemo(() => {
+    if (!activeTopic || !activeSubject || !activeSectionState) return null;
+    return validateEnrichmentQuality({
+      topic: activeTopic,
+      subject: activeSubject,
+      blueprint: activeSectionState.blueprint,
+      depth: selectedDepth,
+      prose: proseDraft,
+      bullets: parsedBullets,
+      formulas: parsedFormulas,
+      comparisonTable: comparisonTableDraft,
+      importantQuestions: questionsDraft,
+      provenance: provenanceDraft,
+      attachments: attachmentsDraft,
+      existingProse: activeSectionState.existingProse,
+      existingBullets: activeSectionState.existingBullets
+    });
+  }, [
+    activeTopic,
+    activeSubject,
+    activeSectionState,
+    selectedDepth,
+    proseDraft,
+    parsedBullets,
+    parsedFormulas,
+    comparisonTableDraft,
+    questionsDraft,
+    provenanceDraft,
+    attachmentsDraft
+  ]);
+
   // Save draft helper
   const persistSectionDraft = useCallback(
     async (silent = false) => {
@@ -446,10 +551,16 @@ export default function EnrichmentWorkspaceModule({
         enrichmentMap[activeTopic.id] || createEmptyRecord(activeTopic, activeSyllabus.id);
 
       const secKey = activeSectionState.blueprint.key;
+      const hasTable = Boolean(
+        comparisonTableDraft &&
+          comparisonTableDraft.headers.length >= 2 &&
+          comparisonTableDraft.rows.length > 0
+      );
       const hasContent =
         proseDraft.trim().length > 0 ||
         parsedBullets.length > 0 ||
         parsedFormulas.length > 0 ||
+        hasTable ||
         questionsDraft.length > 0 ||
         attachmentsDraft.length > 0;
 
@@ -460,9 +571,13 @@ export default function EnrichmentWorkspaceModule({
           prose: proseDraft,
           bullets: parsedBullets,
           formulas: parsedFormulas,
+          comparisonTable: hasTable ? comparisonTableDraft : undefined,
           importantQuestions: questionsDraft,
           isAiDraft: isAiDraftFlag,
           provenance: provenanceDraft,
+          depth: selectedDepth,
+          origin: originDraft,
+          gapRationale: gapRationaleDraft,
           attachments: attachmentsDraft,
           updatedAt: Date.now()
         };
@@ -479,7 +594,8 @@ export default function EnrichmentWorkspaceModule({
               sectionKey: secKey,
               sectionLabel: activeSectionState.blueprint.label,
               action: 'draft_saved',
-              summary: `Saved working draft (${proseDraft.trim().length} chars, ${parsedBullets.length} points).`,
+              depth: selectedDepth,
+              summary: `Saved ${selectedDepth}-depth draft (${proseDraft.trim().length} chars, ${parsedBullets.length} points).`,
               timestamp: Date.now()
             },
             ...base.history
@@ -505,10 +621,14 @@ export default function EnrichmentWorkspaceModule({
       proseDraft,
       parsedBullets,
       parsedFormulas,
+      comparisonTableDraft,
       questionsDraft,
       attachmentsDraft,
       isAiDraftFlag,
-      provenanceDraft
+      provenanceDraft,
+      selectedDepth,
+      originDraft,
+      gapRationaleDraft
     ]
   );
 
@@ -537,14 +657,42 @@ export default function EnrichmentWorkspaceModule({
         ? 'ai_verified'
         : provenanceDraft;
 
+    const finalOrigin: EnrichmentOriginKind =
+      finalProvenance === 'needs_verification'
+        ? 'needs_verification'
+        : finalProvenance === 'reference_supported' || finalProvenance === 'ai_verified'
+        ? attachmentsDraft.length > 0
+          ? 'source_supported'
+          : originDraft
+        : isAiDraftFlag
+        ? 'ai_draft'
+        : 'user_written';
+
+    const hasTable = Boolean(
+      comparisonTableDraft &&
+        comparisonTableDraft.headers.length >= 2 &&
+        comparisonTableDraft.rows.length > 0
+    );
+
     const nextEntry: EnrichedSectionEntry = {
       sectionKey: secKey,
       label: activeSectionState.blueprint.label,
       prose: proseDraft.trim(),
       bullets: parsedBullets,
       formulas: parsedFormulas,
+      comparisonTable: hasTable ? comparisonTableDraft : undefined,
       importantQuestions: questionsDraft,
       provenance: finalProvenance,
+      depth: selectedDepth,
+      origin: finalOrigin,
+      qualitySummary: liveQualityReport
+        ? {
+            passCount: liveQualityReport.passCount,
+            warningCount: liveQualityReport.warningCount,
+            attentionCount: liveQualityReport.attentionCount
+          }
+        : undefined,
+      gapRationale: gapRationaleDraft,
       attachments: attachmentsDraft,
       wasAiAssisted: isAiDraftFlag || Boolean(existingApproved?.wasAiAssisted),
       reviewedByUser: true,
@@ -555,8 +703,11 @@ export default function EnrichmentWorkspaceModule({
             prose: existingApproved.prose,
             bullets: existingApproved.bullets,
             formulas: existingApproved.formulas,
+            comparisonTable: existingApproved.comparisonTable,
             importantQuestions: existingApproved.importantQuestions,
             provenance: existingApproved.provenance,
+            depth: existingApproved.depth,
+            origin: existingApproved.origin,
             attachments: existingApproved.attachments,
             savedAt: existingApproved.updatedAt
           }
@@ -572,8 +723,9 @@ export default function EnrichmentWorkspaceModule({
       sectionLabel: activeSectionState.blueprint.label,
       action: existingApproved ? 'modified' : 'accepted',
       provenance: finalProvenance,
+      depth: selectedDepth,
       wasAiAssisted: isAiDraftFlag,
-      summary: `${existingApproved ? 'Updated' : 'Accepted'} ${activeSectionState.blueprint.label} (${
+      summary: `${existingApproved ? 'Updated' : 'Accepted'} ${activeSectionState.blueprint.label} (${selectedDepth} depth · ${
         nextEntry.prose.length
       } chars, ${nextEntry.bullets.length} bullets, ${nextEntry.attachments.length} source(s)).`,
       timestamp: Date.now()
@@ -603,7 +755,7 @@ export default function EnrichmentWorkspaceModule({
         prompt: q.prompt,
         answerGuidance: q.answerGuidance,
         marks: q.marks,
-        sourceAttribution: 'P4.2.1 Content Enrichment',
+        sourceAttribution: 'P4.2 Content Enrichment',
         createdAt: Date.now()
       }));
       await saveExamQuestions(examItems);
@@ -611,6 +763,7 @@ export default function EnrichmentWorkspaceModule({
 
     setEnrichmentMap((prev) => ({ ...prev, [saved.topicId]: saved }));
     setIsAiDraftFlag(false);
+    setOriginDraft(finalOrigin);
     setDirtySection(false);
     setShowReviewDiff(false);
     setAutosaveStatus(`Approved & merged (${formatTimeShort(saved.updatedAt)})`);
@@ -662,6 +815,7 @@ export default function EnrichmentWorkspaceModule({
         sectionKey: secKey,
         sectionLabel: activeSectionState.blueprint.label,
         action: 'rejected',
+        depth: selectedDepth,
         wasAiAssisted: isAiDraftFlag,
         summary: `Rejected unmerged proposal for ${activeSectionState.blueprint.label}. Existing content untouched.`,
         timestamp: Date.now()
@@ -675,15 +829,20 @@ export default function EnrichmentWorkspaceModule({
     }
 
     const approved = base?.approvedSections?.[secKey];
+    setSelectedDepth(approved?.depth || 'standard');
     setProseDraft(approved?.prose || '');
     setBulletsText(approved?.bullets.join('\n') || '');
     setFormulasText(approved?.formulas.join('\n') || '');
+    setComparisonTableDraft(approved?.comparisonTable);
     setQuestionsDraft(approved?.importantQuestions || []);
     setProvenanceDraft(approved?.provenance || 'reference_supported');
+    setOriginDraft(approved?.origin || 'user_written');
+    setGapRationaleDraft(approved?.gapRationale);
     setAttachmentsDraft(approved?.attachments || []);
     setIsAiDraftFlag(false);
     setDirtySection(false);
     setShowReviewDiff(false);
+    setGeneratorNotice(null);
     setAutosaveStatus('Proposal discarded; baseline preserved');
   };
 
@@ -700,8 +859,11 @@ export default function EnrichmentWorkspaceModule({
       prose: snap.prose,
       bullets: snap.bullets,
       formulas: snap.formulas,
+      comparisonTable: snap.comparisonTable,
       importantQuestions: snap.importantQuestions,
       provenance: snap.provenance,
+      depth: snap.depth,
+      origin: snap.origin,
       attachments: snap.attachments,
       updatedAt: Date.now(),
       previousSnapshot: undefined
@@ -712,6 +874,7 @@ export default function EnrichmentWorkspaceModule({
       sectionKey: secKey,
       sectionLabel: activeSectionState.blueprint.label,
       action: 'undone',
+      depth: snap.depth,
       summary: `Reverted ${activeSectionState.blueprint.label} to snapshot from ${formatTimeShort(
         snap.savedAt
       )}.`,
@@ -728,11 +891,14 @@ export default function EnrichmentWorkspaceModule({
     });
 
     setEnrichmentMap((prev) => ({ ...prev, [saved.topicId]: saved }));
+    setSelectedDepth(restored.depth || 'standard');
     setProseDraft(restored.prose);
     setBulletsText(restored.bullets.join('\n'));
     setFormulasText(restored.formulas.join('\n'));
+    setComparisonTableDraft(restored.comparisonTable);
     setQuestionsDraft(restored.importantQuestions);
     setProvenanceDraft(restored.provenance);
+    setOriginDraft(restored.origin || 'user_written');
     setAttachmentsDraft(restored.attachments);
     setShowReviewDiff(false);
     setAutosaveStatus('Restored previous approved version');
@@ -741,38 +907,244 @@ export default function EnrichmentWorkspaceModule({
     setAuditReport(nextAudit);
   };
 
+  // Offline Scientific Content Synthesizer (Works 100% locally with zero API key)
+  const handleGenerateLocalDraft = async (
+    targetSectionKey?: EnrichmentSectionKey,
+    isRegenerate = false
+  ) => {
+    if (!activeSyllabus || !activeTopic || !activeSubject) return;
+    const targetState = targetSectionKey
+      ? sectionStates.find((s) => s.blueprint.key === targetSectionKey && s.applicable)
+      : activeSectionState;
+    if (!targetState) return;
+
+    const gapMatch = enrichmentPlan?.prioritizedGaps.find(
+      (g) => g.sectionKey === targetState.blueprint.key
+    );
+
+    setGeneratingLocal(true);
+    setAiError(null);
+    try {
+      const result = await generateSectionEnrichmentDraft({
+        syllabus: activeSyllabus,
+        subject: activeSubject,
+        topic: activeTopic,
+        sectionState: targetState,
+        depth: selectedDepth,
+        mode: 'local_engine',
+        attachCandidates,
+        acquiredResources,
+        topicQuestions,
+        gapReason: gapMatch?.gapRationale
+      });
+
+      if (targetSectionKey && targetSectionKey !== activeSectionKey) {
+        hydratedKeyRef.current = `${activeTopic.id}::${targetSectionKey}`;
+        setActiveSectionKey(targetSectionKey);
+      }
+
+      setProseDraft(result.draft.prose);
+      setBulletsText(result.draft.bullets.join('\n'));
+      setFormulasText(result.draft.formulas.join('\n'));
+      setComparisonTableDraft(result.draft.comparisonTable);
+      if (result.draft.importantQuestions.length > 0) {
+        setQuestionsDraft(result.draft.importantQuestions);
+      }
+      setAttachmentsDraft(result.draft.attachments);
+      setProvenanceDraft(result.draft.provenance);
+      setOriginDraft(result.origin);
+      setGapRationaleDraft(gapMatch?.gapRationale);
+      setIsAiDraftFlag(false);
+      setGeneratorNotice({ note: result.generatorNote, warnings: result.warnings });
+      setShowReviewDiff(true);
+
+      const base =
+        enrichmentMap[activeTopic.id] || createEmptyRecord(activeTopic, activeSyllabus.id);
+      const historyEntry: EnrichmentHistoryEntry = {
+        id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        sectionKey: targetState.blueprint.key,
+        sectionLabel: targetState.blueprint.label,
+        action: isRegenerate ? 'regenerated' : 'draft_saved',
+        depth: selectedDepth,
+        summary: `${isRegenerate ? 'Regenerated' : 'Generated'} ${selectedDepth}-depth scientific draft via PharmaLab Offline Engine (${result.draft.prose.length} chars, ${result.draft.bullets.length} points).`,
+        timestamp: Date.now()
+      };
+      const saved = await saveTopicEnrichment({
+        ...base,
+        lastOpenedSection: targetState.blueprint.key,
+        drafts: {
+          ...base.drafts,
+          [targetState.blueprint.key]: result.draft
+        },
+        history: [historyEntry, ...base.history].slice(0, 40)
+      });
+      setEnrichmentMap((prev) => ({ ...prev, [saved.topicId]: saved }));
+      setDirtySection(false);
+      setAutosaveStatus(
+        `${isRegenerate ? 'Regenerated' : 'Synthesized'} ${selectedDepth} draft (${formatTimeShort(
+          saved.updatedAt
+        )})`
+      );
+    } catch (err) {
+      setAiError(
+        err instanceof Error ? err.message : 'Unable to synthesize scientific enrichment draft.'
+      );
+    } finally {
+      setGeneratingLocal(false);
+    }
+  };
+
+  // Batch Draft Selected Prioritized Gaps (Strictly drafts for review, never auto-merges)
+  const handleGenerateBatchGapDrafts = async () => {
+    if (!activeSyllabus || !activeSubject || !activeTopic || selectedGapKeys.length === 0) return;
+    setGeneratingBatch(true);
+    setAiError(null);
+    try {
+      const gapRationales: Partial<Record<EnrichmentSectionKey, string>> = {};
+      enrichmentPlan?.prioritizedGaps.forEach((g) => {
+        gapRationales[g.sectionKey] = g.gapRationale;
+      });
+      const results = await generateBatchSectionDrafts({
+        syllabus: activeSyllabus,
+        subject: activeSubject,
+        topic: activeTopic,
+        sectionStates,
+        targetKeys: selectedGapKeys,
+        depth: selectedDepth,
+        attachCandidates,
+        acquiredResources,
+        topicQuestions,
+        gapRationales
+      });
+      if (results.length === 0) return;
+
+      const base =
+        enrichmentMap[activeTopic.id] || createEmptyRecord(activeTopic, activeSyllabus.id);
+      const nextDrafts = { ...base.drafts };
+      results.forEach((res) => {
+        nextDrafts[res.draft.sectionKey] = res.draft;
+      });
+
+      const firstRes = results[0];
+      const historyEntry: EnrichmentHistoryEntry = {
+        id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        sectionKey: firstRes.draft.sectionKey,
+        sectionLabel: `${results.length} Gap Sections`,
+        action: 'draft_saved',
+        depth: selectedDepth,
+        summary: `Generated ${results.length} ${selectedDepth}-depth gap draft(s) for user review (${results
+          .map((r) => r.draft.sectionKey)
+          .join(', ')}).`,
+        timestamp: Date.now()
+      };
+
+      const saved = await saveTopicEnrichment({
+        ...base,
+        lastOpenedSection: firstRes.draft.sectionKey,
+        drafts: nextDrafts,
+        history: [historyEntry, ...base.history].slice(0, 40)
+      });
+      setEnrichmentMap((prev) => ({ ...prev, [saved.topicId]: saved }));
+
+      // Open the top drafted section immediately in Review Diff
+      hydratedKeyRef.current = `${activeTopic.id}::${firstRes.draft.sectionKey}`;
+      setActiveSectionKey(firstRes.draft.sectionKey);
+      setProseDraft(firstRes.draft.prose);
+      setBulletsText(firstRes.draft.bullets.join('\n'));
+      setFormulasText(firstRes.draft.formulas.join('\n'));
+      setComparisonTableDraft(firstRes.draft.comparisonTable);
+      if (firstRes.draft.importantQuestions.length > 0) {
+        setQuestionsDraft(firstRes.draft.importantQuestions);
+      }
+      setAttachmentsDraft(firstRes.draft.attachments);
+      setProvenanceDraft(firstRes.draft.provenance);
+      setOriginDraft(firstRes.origin);
+      setGapRationaleDraft(firstRes.draft.gapRationale);
+      setIsAiDraftFlag(false);
+      setDirtySection(false);
+      setShowReviewDiff(true);
+      setGeneratorNotice({
+        note: `Created ${results.length} draft(s) at ${selectedDepth} depth. None were auto-merged—review and accept section by section.`,
+        warnings: firstRes.warnings
+      });
+      setAutosaveStatus(`${results.length} gap draft(s) ready for review`);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Unable to generate gap drafts.');
+    } finally {
+      setGeneratingBatch(false);
+    }
+  };
+
   // Optional AI Draft Generator (Client-Side BYOK Only)
-  const handleGenerateAiDraft = async () => {
-    if (!activeTopic || !activeSubject || !activeSectionState) return;
+  const handleGenerateAiDraft = async (isRegenerate = false) => {
+    if (!activeSyllabus || !activeTopic || !activeSubject || !activeSectionState) return;
     if (!isOptionalAiReady(aiConfig)) {
       setAiModalOpen(true);
       return;
     }
+    const gapMatch = enrichmentPlan?.prioritizedGaps.find(
+      (g) => g.sectionKey === activeSectionState.blueprint.key
+    );
     setAiGenerating(true);
     setAiError(null);
     try {
-      const existingSummary = [
-        ...activeSectionState.existingProse,
-        ...activeSectionState.existingBullets
-      ].join('\n');
-      const result = await generateOptionalAiSectionDraft({
-        config: aiConfig,
-        topic: activeTopic,
+      const result = await generateSectionEnrichmentDraft({
+        syllabus: activeSyllabus,
         subject: activeSubject,
-        section: activeSectionState.blueprint,
-        existingContentSummary: existingSummary
+        topic: activeTopic,
+        sectionState: activeSectionState,
+        depth: selectedDepth,
+        mode: 'optional_ai',
+        aiConfig,
+        attachCandidates,
+        acquiredResources,
+        topicQuestions,
+        gapReason: gapMatch?.gapRationale
       });
-      if (result.prose) setProseDraft(result.prose);
-      if (result.bullets.length > 0) setBulletsText(result.bullets.join('\n'));
-      if (result.formulas.length > 0) setFormulasText(result.formulas.join('\n'));
+      if (result.draft.prose) setProseDraft(result.draft.prose);
+      if (result.draft.bullets.length > 0) setBulletsText(result.draft.bullets.join('\n'));
+      if (result.draft.formulas.length > 0) setFormulasText(result.draft.formulas.join('\n'));
+      if (result.draft.comparisonTable) setComparisonTableDraft(result.draft.comparisonTable);
       setIsAiDraftFlag(true);
+      setOriginDraft('ai_draft');
       setProvenanceDraft('needs_verification');
+      setGapRationaleDraft(gapMatch?.gapRationale);
+      setGeneratorNotice({ note: result.generatorNote, warnings: result.warnings });
       setDirtySection(true);
       setShowReviewDiff(true);
+
+      if (isRegenerate) {
+        const base =
+          enrichmentMap[activeTopic.id] || createEmptyRecord(activeTopic, activeSyllabus.id);
+        const historyEntry: EnrichmentHistoryEntry = {
+          id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          sectionKey: activeSectionState.blueprint.key,
+          sectionLabel: activeSectionState.blueprint.label,
+          action: 'regenerated',
+          depth: selectedDepth,
+          wasAiAssisted: true,
+          summary: `Regenerated optional BYOK AI draft for ${activeSectionState.blueprint.label} (${selectedDepth} depth).`,
+          timestamp: Date.now()
+        };
+        const saved = await saveTopicEnrichment({
+          ...base,
+          drafts: { ...base.drafts, [activeSectionState.blueprint.key]: result.draft },
+          history: [historyEntry, ...base.history].slice(0, 40)
+        });
+        setEnrichmentMap((prev) => ({ ...prev, [saved.topicId]: saved }));
+      }
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Unable to generate optional AI draft.');
     } finally {
       setAiGenerating(false);
+    }
+  };
+
+  const handleRegenerateActiveProposal = () => {
+    if (isAiDraftFlag && isOptionalAiReady(aiConfig)) {
+      void handleGenerateAiDraft(true);
+    } else {
+      void handleGenerateLocalDraft(undefined, true);
     }
   };
 
@@ -1073,6 +1445,48 @@ export default function EnrichmentWorkspaceModule({
           </div>
 
           <div className="md:col-span-4 flex flex-wrap items-center justify-end gap-2 text-xs">
+            <div
+              className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs"
+              role="tablist"
+              aria-label="Workspace mode"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={workspaceMode === 'enrich'}
+                onClick={() => setWorkspaceMode('enrich')}
+                className={`px-3 py-1 rounded-lg font-semibold transition-colors whitespace-nowrap ${
+                  workspaceMode === 'enrich'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Author &amp; Enrich
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={workspaceMode === 'verify'}
+                onClick={() => setWorkspaceMode('verify')}
+                className={`px-3 py-1 rounded-lg font-semibold transition-colors whitespace-nowrap inline-flex items-center gap-1.5 ${
+                  workspaceMode === 'verify'
+                    ? 'bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>
+                  Textbook Verification
+                  {verificationMap[activeTopic.id]?.claims?.length
+                    ? ` (${
+                        summarizeTopicVerification(verificationMap[activeTopic.id]).textbookSupportedCount +
+                        summarizeTopicVerification(verificationMap[activeTopic.id]).multipleBooksCount
+                      }/${verificationMap[activeTopic.id].claims.length})`
+                    : ''}
+                </span>
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={() => setShowHistoryDrawer((v) => !v)}
@@ -1146,7 +1560,200 @@ export default function EnrichmentWorkspaceModule({
         </div>
       )}
 
+      {/* P4.2.3 Textbook-First Scientific Verification Mode */}
+      {workspaceMode === 'verify' && (
+        <TextbookVerificationPanel
+          syllabusId={activeSyllabus.id}
+          subject={activeSubject}
+          topic={activeTopic}
+          sectionStates={sectionStates}
+          enrichmentRecord={activeRecord}
+          verificationRecord={verificationMap[activeTopic.id] || null}
+          onVerificationSaved={(saved) => {
+            setVerificationMap((prev) => ({ ...prev, [saved.topicId]: saved }));
+            void runSyllabusCoverageAudit().then(setAuditReport).catch(() => undefined);
+          }}
+          onJumpToSection={(secKey) => {
+            setActiveSectionKey(secKey);
+            setWorkspaceMode('enrich');
+          }}
+        />
+      )}
+
+      {/* P4.2.2 Scientific Enrichment Engine: Depth Control & Gap-Prioritized Plan */}
+      {workspaceMode === 'enrich' && enrichmentPlan && (
+        <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+          <div className="px-5 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800">
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                <Layers className="w-3.5 h-3.5 shrink-0" />
+                <span>Scientific Content Enrichment Engine</span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
+                {enrichmentPlan.hierarchyPath}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div
+                className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs"
+                role="group"
+                aria-label="Enrichment content depth"
+              >
+                {(
+                  [
+                    { id: 'foundation', label: 'Foundation' },
+                    { id: 'standard', label: 'Standard' },
+                    { id: 'advanced', label: 'Advanced' }
+                  ] as const
+                ).map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDepth(d.id);
+                      setDirtySection(true);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-colors whitespace-nowrap ${
+                      selectedDepth === d.id
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowGapPlan((v) => !v)}
+                className="min-h-[34px] px-3 py-1 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 inline-flex items-center gap-1"
+              >
+                <span>
+                  {enrichmentPlan.incompleteCount} Gap{enrichmentPlan.incompleteCount === 1 ? '' : 's'}
+                </span>
+                {showGapPlan ? (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {showGapPlan && (
+            <div className="p-5 space-y-3">
+              {enrichmentPlan.prioritizedGaps.length === 0 ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                  All {enrichmentPlan.applicableCount} applicable academic sections have verified or complete coverage. Select any section below to refine further.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <p className="text-slate-600 dark:text-slate-400">
+                      Topic-aware priority queue from P4.1 Coverage Analyzer (skipped{' '}
+                      {enrichmentPlan.skippedNotApplicable.length} non-applicable section
+                      {enrichmentPlan.skippedNotApplicable.length === 1 ? '' : 's'}). Drafts never overwrite existing text until accepted.
+                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => void handleGenerateBatchGapDrafts()}
+                        disabled={generatingBatch || selectedGapKeys.length === 0}
+                        className="min-h-[34px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                      >
+                        {generatingBatch ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Wand2 className="w-3.5 h-3.5" />
+                        )}
+                        <span>Draft Selected Gaps ({selectedGapKeys.length})</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                    {(showAllGapTargets
+                      ? enrichmentPlan.prioritizedGaps
+                      : enrichmentPlan.prioritizedGaps.slice(0, 5)
+                    ).map((gap) => {
+                      const checked = selectedGapKeys.includes(gap.sectionKey);
+                      const tierTone =
+                        gap.priorityTier === 'critical'
+                          ? 'text-rose-700 dark:text-rose-400'
+                          : gap.priorityTier === 'high'
+                          ? 'text-amber-700 dark:text-amber-400'
+                          : 'text-slate-600 dark:text-slate-400';
+
+                      return (
+                        <div
+                          key={gap.sectionKey}
+                          className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                        >
+                          <label className="flex items-start gap-2.5 min-w-0 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setSelectedGapKeys((prev) =>
+                                  prev.includes(gap.sectionKey)
+                                    ? prev.filter((k) => k !== gap.sectionKey)
+                                    : [...prev, gap.sectionKey]
+                                )
+                              }
+                              className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <div className="min-w-0 space-y-0.5">
+                              <p className="font-semibold text-slate-900 dark:text-white">
+                                <span className="tabular-nums text-slate-400 mr-1.5">
+                                  #{gap.priorityRank}
+                                </span>
+                                {gap.label}
+                                <span className={`ml-2 uppercase text-[11px] font-bold ${tierTone}`}>
+                                  {gap.priorityTier}
+                                </span>
+                              </p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                {gap.gapRationale}
+                              </p>
+                            </div>
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => void handleGenerateLocalDraft(gap.sectionKey, false)}
+                            disabled={generatingLocal}
+                            className="self-start sm:self-center shrink-0 min-h-[30px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1 transition-colors whitespace-nowrap"
+                          >
+                            <Wand2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                            <span>Draft</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {enrichmentPlan.prioritizedGaps.length > 5 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllGapTargets((v) => !v)}
+                      className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                    >
+                      {showAllGapTargets
+                        ? 'Show top 5 priority gaps'
+                        : `Show all ${enrichmentPlan.prioritizedGaps.length} prioritized gaps`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Main Split Workspace: Left Checklist (4 cols) + Active Editor/Review (8 cols) */}
+      {workspaceMode === 'enrich' && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Left Rail: Dynamic Applicable Section Checklist */}
         <aside className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6.5rem)] lg:overflow-y-auto">
@@ -1323,7 +1930,7 @@ export default function EnrichmentWorkspaceModule({
                 )}
               </section>
 
-              {/* Review / Comparison View (When User Clicks Review or Generated Optional AI Draft) */}
+              {/* Review / Comparison View (When User Clicks Review or Generated Draft) */}
               {showReviewDiff && (
                 <EnrichmentProposalDiff
                   sectionLabel={activeSectionState.blueprint.label}
@@ -1333,13 +1940,19 @@ export default function EnrichmentWorkspaceModule({
                   proposedProse={proseDraft}
                   proposedBullets={parsedBullets}
                   proposedFormulas={parsedFormulas}
+                  proposedComparisonTable={comparisonTableDraft}
                   proposedQuestions={questionsDraft}
                   proposedProvenance={provenanceDraft}
+                  proposedDepth={selectedDepth}
+                  proposedOrigin={originDraft}
                   proposedAttachments={attachmentsDraft}
+                  qualityReport={liveQualityReport}
                   isAiDraft={isAiDraftFlag}
+                  regenerating={generatingLocal || aiGenerating}
                   onAcceptAndMerge={handleAcceptAndMerge}
                   onModifyInEditor={() => setShowReviewDiff(false)}
                   onRejectProposal={handleRejectProposal}
+                  onRegenerateProposal={handleRegenerateActiveProposal}
                   onUndoLastMerge={
                     activeSectionState.approvedEntry?.previousSnapshot
                       ? handleUndoLastMerge
@@ -1353,7 +1966,7 @@ export default function EnrichmentWorkspaceModule({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Section Authoring · Non-Destructive Additive Layer
+                      Section Authoring · {selectedDepth.charAt(0).toUpperCase() + selectedDepth.slice(1)} Depth · Non-Destructive Additive Layer
                     </p>
                     <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
                       {activeSectionState.blueprint.label}
@@ -1366,7 +1979,37 @@ export default function EnrichmentWorkspaceModule({
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <button
                       type="button"
-                      onClick={handleGenerateAiDraft}
+                      onClick={() => void handleGenerateLocalDraft(undefined, false)}
+                      disabled={generatingLocal}
+                      className="min-h-[36px] px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-xs font-semibold text-white inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                    >
+                      {generatingLocal ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Wand2 className="w-3.5 h-3.5" />
+                      )}
+                      <span>Generate Scientific Draft</span>
+                    </button>
+
+                    {(proseDraft.trim().length > 0 || parsedBullets.length > 0) && (
+                      <button
+                        type="button"
+                        onClick={handleRegenerateActiveProposal}
+                        disabled={generatingLocal || aiGenerating}
+                        className="min-h-[36px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                      >
+                        <RefreshCw
+                          className={`w-3.5 h-3.5 ${
+                            generatingLocal || aiGenerating ? 'animate-spin' : ''
+                          }`}
+                        />
+                        <span>Regenerate</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerateAiDraft(false)}
                       disabled={aiGenerating}
                       className="min-h-[36px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500/15 text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
                     >
@@ -1377,12 +2020,25 @@ export default function EnrichmentWorkspaceModule({
                       )}
                       <span>
                         {isOptionalAiReady(aiConfig)
-                          ? 'Draft Proposal with AI'
+                          ? 'Draft with BYOK AI'
                           : 'AI Draft (Optional BYOK)'}
                       </span>
                     </button>
                   </div>
                 </div>
+
+                {generatorNotice && (
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 space-y-1">
+                    <p className="font-semibold text-slate-900 dark:text-white">
+                      {generatorNotice.note}
+                    </p>
+                    {generatorNotice.warnings.map((w, idx) => (
+                      <p key={idx} className="text-[11px] text-slate-500 dark:text-slate-400">
+                        · {w}
+                      </p>
+                    ))}
+                  </div>
+                )}
 
                 {isAiDraftFlag && (
                   <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-xs text-amber-900 dark:text-amber-200">
@@ -1622,6 +2278,7 @@ export default function EnrichmentWorkspaceModule({
                         >
                           <div className="min-w-0">
                             <p className="font-semibold text-slate-900 dark:text-white truncate">
+                              {att.priorityTier ? `[P${att.priorityTier}] ` : ''}
                               {att.title}
                             </p>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
@@ -1629,6 +2286,21 @@ export default function EnrichmentWorkspaceModule({
                             </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
+                            {att.bookId && att.pageNumber && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  nav.openKnowledgeLibrary({
+                                    bookId: att.bookId!,
+                                    pageNumber: att.pageNumber!,
+                                    searchQuery: activeTopic?.title
+                                  })
+                                }
+                                className="text-emerald-700 dark:text-emerald-400 hover:underline font-semibold text-[11px]"
+                              >
+                                Open p.{att.pageNumber}
+                              </button>
+                            )}
                             {att.url && (
                               <a
                                 href={att.url}
@@ -1686,7 +2358,12 @@ export default function EnrichmentWorkspaceModule({
                               }`}
                             >
                               <div className="min-w-0">
-                                <p className="font-semibold truncate">{cand.title}</p>
+                                <p className="font-semibold truncate">
+                                  <span className="text-slate-500 dark:text-slate-400 mr-1.5 tabular-nums">
+                                    [P{cand.priorityTier}]
+                                  </span>
+                                  {cand.title}
+                                </p>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                                   {cand.subtitle}
                                 </p>
@@ -1729,6 +2406,249 @@ export default function EnrichmentWorkspaceModule({
                   )}
                 </div>
 
+                {/* Comparison Table Editor / Preview (for comparison/classification sections or when populated) */}
+                {(comparisonTableDraft ||
+                  activeSectionState.blueprint.key === 'advantages_comparisons' ||
+                  activeSectionState.blueprint.key === 'classification_types') && (
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                        <Table2 className="w-3.5 h-3.5" />
+                        <span>Structured Comparison Table</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!comparisonTableDraft ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComparisonTableDraft({
+                                caption: `Comparative Overview: ${activeTopic.title}`,
+                                headers: ['Criterion', 'Option / Class A', 'Option / Class B'],
+                                rows: [
+                                  ['Mechanism / Basis', '', ''],
+                                  ['Pharmaceutical Application', '', '']
+                                ]
+                              });
+                              setDirtySection(true);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-emerald-700 dark:text-emerald-400"
+                          >
+                            + Add Comparison Table
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setComparisonTableDraft((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        rows: [
+                                          ...prev.rows,
+                                          prev.headers.map(() => '')
+                                        ]
+                                      }
+                                    : prev
+                                );
+                                setDirtySection(true);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300"
+                            >
+                              + Row
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setComparisonTableDraft(undefined);
+                                setDirtySection(true);
+                              }}
+                              className="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-700 dark:text-rose-400 hover:bg-rose-500/10"
+                            >
+                              Remove Table
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {comparisonTableDraft && (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={comparisonTableDraft.caption || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setComparisonTableDraft((prev) =>
+                              prev ? { ...prev, caption: val } : prev
+                            );
+                            setDirtySection(true);
+                          }}
+                          placeholder="Table caption..."
+                          className="w-full min-h-[34px] px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-900 dark:text-white"
+                        />
+                        <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900">
+                          <table className="w-full text-xs border-collapse">
+                            <thead className="bg-slate-100 dark:bg-slate-950">
+                              <tr>
+                                {comparisonTableDraft.headers.map((h, cIdx) => (
+                                  <th
+                                    key={cIdx}
+                                    className="p-1.5 border-b border-slate-200 dark:border-slate-800"
+                                  >
+                                    <input
+                                      type="text"
+                                      value={h}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setComparisonTableDraft((prev) => {
+                                          if (!prev) return prev;
+                                          const headers = [...prev.headers];
+                                          headers[cIdx] = val;
+                                          return { ...prev, headers };
+                                        });
+                                        setDirtySection(true);
+                                      }}
+                                      className="w-full px-2 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold text-slate-900 dark:text-white"
+                                    />
+                                  </th>
+                                ))}
+                                <th className="w-8 border-b border-slate-200 dark:border-slate-800" />
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                              {comparisonTableDraft.rows.map((row, rIdx) => (
+                                <tr key={rIdx}>
+                                  {comparisonTableDraft.headers.map((_, cIdx) => (
+                                    <td key={cIdx} className="p-1.5">
+                                      <input
+                                        type="text"
+                                        value={row[cIdx] || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setComparisonTableDraft((prev) => {
+                                            if (!prev) return prev;
+                                            const rows = prev.rows.map((r, i) =>
+                                              i === rIdx
+                                                ? prev.headers.map((__, j) =>
+                                                    j === cIdx ? val : r[j] || ''
+                                                  )
+                                                : r
+                                            );
+                                            return { ...prev, rows };
+                                          });
+                                          setDirtySection(true);
+                                        }}
+                                        className="w-full px-2 py-1 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200"
+                                      />
+                                    </td>
+                                  ))}
+                                  <td className="p-1 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setComparisonTableDraft((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                rows: prev.rows.filter((_, i) => i !== rIdx)
+                                              }
+                                            : prev
+                                        );
+                                        setDirtySection(true);
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-rose-600"
+                                      aria-label="Delete comparison row"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Live 9-Point Content Quality Validation Layer */}
+                {liveQualityReport && (
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowQualityChecks((v) => !v)}
+                      className="w-full flex flex-wrap items-center justify-between gap-2 text-left text-xs"
+                    >
+                      <span className="inline-flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                        <ListChecks className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Content Quality Validation (9 Editorial Checks)</span>
+                      </span>
+                      <span className="tabular-nums text-slate-600 dark:text-slate-400">
+                        <strong className="text-emerald-700 dark:text-emerald-400">
+                          {liveQualityReport.passCount} Pass
+                        </strong>
+                        {' · '}
+                        <strong className="text-amber-700 dark:text-amber-400">
+                          {liveQualityReport.warningCount} Warning
+                        </strong>
+                        {' · '}
+                        <strong className="text-rose-700 dark:text-rose-400">
+                          {liveQualityReport.attentionCount} Attention
+                        </strong>
+                      </span>
+                    </button>
+
+                    {showQualityChecks && (
+                      <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {liveQualityReport.checks.map((chk) => {
+                            const statusStyle =
+                              chk.status === 'pass'
+                                ? 'text-emerald-700 dark:text-emerald-400'
+                                : chk.status === 'warning'
+                                ? 'text-amber-700 dark:text-amber-400'
+                                : 'text-rose-700 dark:text-rose-400';
+                            const statusLabel =
+                              chk.status === 'pass'
+                                ? 'Pass'
+                                : chk.status === 'warning'
+                                ? 'Warning'
+                                : 'Attention Needed';
+                            return (
+                              <div
+                                key={chk.key}
+                                className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs space-y-0.5"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                    {chk.label}
+                                  </span>
+                                  <span className={`font-bold shrink-0 ${statusStyle}`}>
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                                  {chk.finding}
+                                </p>
+                                {chk.suggestion && (
+                                  <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                                    Tip: {chk.suggestion}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {liveQualityReport.disclaimer}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Bottom Action Controls */}
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -1748,6 +2668,7 @@ export default function EnrichmentWorkspaceModule({
                         !proseDraft.trim() &&
                         parsedBullets.length === 0 &&
                         parsedFormulas.length === 0 &&
+                        !comparisonTableDraft &&
                         questionsDraft.length === 0 &&
                         attachmentsDraft.length === 0
                       }
@@ -1819,6 +2740,7 @@ export default function EnrichmentWorkspaceModule({
           )}
         </main>
       </div>
+      )}
 
       {/* Topic Switcher Modal */}
       {showTopicPicker && (

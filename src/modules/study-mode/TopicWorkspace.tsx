@@ -35,6 +35,11 @@ import {
   ENRICHMENT_SECTION_BLUEPRINTS,
   PROVENANCE_LABELS
 } from '../enrichment-workspace/sectionCatalog';
+import { summarizeTopicVerification } from '../enrichment-workspace/claimVerificationEngine';
+import {
+  classifyAcquiredResourcePriority,
+  SOURCE_PRIORITY_META
+} from '../enrichment-workspace/sourcePolicy';
 import { getAllReferences } from '../reference-center/referenceDb';
 import { ReferenceItem } from '../reference-center/types';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
@@ -61,12 +66,15 @@ import {
   createSavedConcept,
   getAcquiredResourcesForTopic,
   getTopicEnrichment,
+  getTopicVerification,
   removeAcquiredResource,
   saveAcquiredResourcesForTopic,
   saveTopicStudyProgress
 } from './studyDb';
 import {
   AcquiredTopicResource,
+  EnrichmentComparisonTable,
+  EnrichmentDepthLevel,
   EnrichmentProvenance,
   EnrichmentQuestionEntry,
   EnrichmentSourceAttachment,
@@ -79,7 +87,8 @@ import {
   SyllabusSubjectNode,
   SyllabusTopicNode,
   TopicEnrichmentRecord,
-  TopicStudyProgress
+  TopicStudyProgress,
+  TopicVerificationRecord
 } from './types';
 
 interface TopicWorkspaceProps {
@@ -214,6 +223,7 @@ export default function TopicWorkspace({
   const [allRefs, setAllRefs] = useState<ReferenceItem[]>([]);
   const [viewerVisual, setViewerVisual] = useState<VisualMediaItem | null>(null);
   const [enrichmentRecord, setEnrichmentRecord] = useState<TopicEnrichmentRecord | null>(null);
+  const [verificationRecord, setVerificationRecord] = useState<TopicVerificationRecord | null>(null);
 
   // Manual source fallback state
   const [showManualForm, setShowManualForm] = useState(false);
@@ -252,18 +262,26 @@ export default function TopicWorkspace({
   useEffect(() => {
     let cancelled = false;
     setEnrichmentRecord(null);
+    setVerificationRecord(null);
     Promise.all([
       getAllVisuals(),
       getAllReferences(),
       getAcquiredResourcesForTopic(topic.id),
-      getTopicEnrichment(topic.id)
+      getTopicEnrichment(topic.id),
+      getTopicVerification(topic.id)
     ])
-      .then(([vis, refs, storedRes, enrichment]) => {
+      .then(([vis, refs, storedRes, enrichment, verification]) => {
         if (cancelled) return;
         setAllVisuals(vis);
         setAllRefs(refs);
         setEnrichmentRecord(enrichment);
-        setBundle((prev) => ({ ...prev, acquiredResources: storedRes }));
+        setVerificationRecord(verification);
+        const sortedRes = [...storedRes].sort(
+          (a, b) =>
+            classifyAcquiredResourcePriority(a) - classifyAcquiredResourcePriority(b) ||
+            b.savedAt - a.savedAt
+        );
+        setBundle((prev) => ({ ...prev, acquiredResources: sortedRes }));
       })
       .catch(() => {
         // ignore storage loading issues
@@ -399,9 +417,11 @@ export default function TopicWorkspace({
       blocks: SectionBlock[];
       bullets: string[];
       formulas: string[];
+      comparisonTables: EnrichmentComparisonTable[];
       enrichedQuestions: EnrichmentQuestionEntry[];
       attachments: EnrichmentSourceAttachment[];
       provenances: EnrichmentProvenance[];
+      depths: EnrichmentDepthLevel[];
     };
 
     const sectionList: RenderedSection[] = topic.recommendedSections.map((key) => {
@@ -536,13 +556,15 @@ export default function TopicWorkspace({
         blocks: blocks.filter((b) => b.body.trim().length > 0),
         bullets: Array.from(new Set(bullets.filter((b) => b.trim().length > 0))),
         formulas: [],
+        comparisonTables: [],
         enrichedQuestions: [],
         attachments: [],
-        provenances: []
+        provenances: [],
+        depths: []
       };
     });
 
-    // Additive non-destructive merge of approved P4.2.1 Enriched Sections
+    // Additive non-destructive merge of approved P4.2.1 / P4.2.2 Enriched Sections
     if (enrichmentRecord?.approvedSections) {
       const sectionMap = new Map<StudySectionKey, RenderedSection>();
       sectionList.forEach((sec) => sectionMap.set(sec.key, sec));
@@ -560,9 +582,11 @@ export default function TopicWorkspace({
             blocks: [],
             bullets: [],
             formulas: [],
+            comparisonTables: [],
             enrichedQuestions: [],
             attachments: [],
-            provenances: []
+            provenances: [],
+            depths: []
           };
           sectionMap.set(targetKey, targetSec);
           sectionList.push(targetSec);
@@ -571,6 +595,9 @@ export default function TopicWorkspace({
         const provMeta = PROVENANCE_LABELS[entry.provenance];
         if (!targetSec.provenances.includes(entry.provenance)) {
           targetSec.provenances.push(entry.provenance);
+        }
+        if (entry.depth && !targetSec.depths.includes(entry.depth)) {
+          targetSec.depths.push(entry.depth);
         }
 
         if (entry.prose.trim()) {
@@ -597,6 +624,14 @@ export default function TopicWorkspace({
           if (clean && !targetSec.formulas.includes(clean)) {
             targetSec.formulas.push(clean);
           }
+        }
+
+        if (
+          entry.comparisonTable &&
+          entry.comparisonTable.headers.length >= 2 &&
+          entry.comparisonTable.rows.length > 0
+        ) {
+          targetSec.comparisonTables.push(entry.comparisonTable);
         }
 
         for (const q of entry.importantQuestions || []) {
@@ -958,6 +993,7 @@ export default function TopicWorkspace({
                 sec.blocks.length === 0 &&
                 sec.bullets.length === 0 &&
                 sec.formulas.length === 0 &&
+                sec.comparisonTables.length === 0 &&
                 sec.enrichedQuestions.length === 0
               ) {
                 return null;
@@ -973,11 +1009,16 @@ export default function TopicWorkspace({
                       <h2 className="text-base font-bold text-slate-900 dark:text-white">
                         {sec.label}
                       </h2>
-                      {sec.provenances.length > 0 && (
+                      {(sec.provenances.length > 0 || sec.depths.length > 0) && (
                         <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                           {sec.provenances
                             .map((prov) => PROVENANCE_LABELS[prov].label)
                             .join(' · ')}
+                          {sec.depths.length > 0
+                            ? ` · ${sec.depths
+                                .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
+                                .join('/')} Depth`
+                            : ''}
                         </p>
                       )}
                     </div>
@@ -1039,6 +1080,47 @@ export default function TopicWorkspace({
                     </div>
                   )}
 
+                  {sec.comparisonTables.length > 0 && (
+                    <div className="space-y-3 pt-1">
+                      {sec.comparisonTables.map((tbl, tIdx) => (
+                        <div key={tIdx} className="space-y-1.5">
+                          {tbl.caption && (
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              {tbl.caption}
+                            </p>
+                          )}
+                          <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+                            <table className="w-full text-left text-xs sm:text-sm border-collapse">
+                              <thead className="bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300">
+                                <tr>
+                                  {tbl.headers.map((h, hIdx) => (
+                                    <th
+                                      key={hIdx}
+                                      className="px-3 py-2 font-semibold border-b border-slate-200 dark:border-slate-800"
+                                    >
+                                      {h}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                {tbl.rows.map((row, rIdx) => (
+                                  <tr key={rIdx} className="text-slate-700 dark:text-slate-300">
+                                    {tbl.headers.map((_, cIdx) => (
+                                      <td key={cIdx} className="px-3 py-2 align-top">
+                                        {row[cIdx] || '—'}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {sec.enrichedQuestions.length > 0 && (
                     <div className="space-y-2 pt-1">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -1069,15 +1151,35 @@ export default function TopicWorkspace({
                   {sec.attachments.length > 0 && (
                     <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Attached Section Sources
+                        Attached Section Sources (Ordered by Priority)
                       </p>
-                      <ul className="space-y-0.5 text-xs text-slate-600 dark:text-slate-400">
-                        {sec.attachments.map((att) => (
-                          <li key={att.id} className="truncate">
-                            · {att.title}
-                            {att.subtitle ? ` (${att.subtitle})` : ''}
-                          </li>
-                        ))}
+                      <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-400">
+                        {[...sec.attachments]
+                          .sort((a, b) => (a.priorityTier || 3) - (b.priorityTier || 3))
+                          .map((att) => (
+                            <li key={att.id} className="flex items-center justify-between gap-2">
+                              <span className="truncate">
+                                · {att.priorityTier ? `[P${att.priorityTier}] ` : ''}
+                                {att.title}
+                                {att.subtitle ? ` (${att.subtitle})` : ''}
+                              </span>
+                              {att.bookId && att.pageNumber && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openKnowledgeLibrary({
+                                      bookId: att.bookId!,
+                                      pageNumber: att.pageNumber!,
+                                      searchQuery: topic.title
+                                    })
+                                  }
+                                  className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline shrink-0"
+                                >
+                                  Open p.{att.pageNumber}
+                                </button>
+                              )}
+                            </li>
+                          ))}
                       </ul>
                     </div>
                   )}
@@ -1184,6 +1286,50 @@ export default function TopicWorkspace({
                 </button>
               </div>
 
+              {verificationRecord && verificationRecord.claims.length > 0 && (() => {
+                const vs = summarizeTopicVerification(verificationRecord);
+                const supported = vs.textbookSupportedCount + vs.multipleBooksCount;
+                return (
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        Textbook Verification
+                      </span>
+                      <span
+                        className={`font-bold tabular-nums ${
+                          vs.conflictingCount > 0
+                            ? 'text-rose-700 dark:text-rose-400'
+                            : supported > 0
+                            ? 'text-emerald-700 dark:text-emerald-400'
+                            : 'text-amber-700 dark:text-amber-400'
+                        }`}
+                      >
+                        {supported}/{vs.totalClaims} claims backed
+                      </span>
+                    </div>
+                    {vs.conflictingCount > 0 && (
+                      <p className="text-[11px] text-rose-700 dark:text-rose-400 font-medium">
+                        {vs.conflictingCount} claim(s) flagged for conflicting textbook evidence.
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openEnrichmentWorkspace({
+                          syllabusId: syllabus.id,
+                          subjectCode: subject.code,
+                          topicId: topic.id,
+                          returnTo: 'study_mode'
+                        })
+                      }
+                      className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+                    >
+                      Inspect Claims &amp; Textbook Passages →
+                    </button>
+                  </div>
+                );
+              })()}
+
               {bundle.localPdfMatches.length > 0 ? (
                 <div className="space-y-2">
                   {bundle.localPdfMatches.map((m, idx) => (
@@ -1200,8 +1346,14 @@ export default function TopicWorkspace({
                       className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 text-left space-y-1"
                     >
                       <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {m.priorityTier ? `[P${m.priorityTier}] ` : ''}
                         {m.bookTitle} · Page {m.pageNumber}
                       </p>
+                      {(m.chapterHeading || m.edition) && (
+                        <p className="text-[10px] text-emerald-700 dark:text-emerald-400 truncate">
+                          {[m.chapterHeading, m.edition].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
                       <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2">
                         {m.snippet}
                       </p>
@@ -1270,7 +1422,7 @@ export default function TopicWorkspace({
                 Discovered Academic Sources &amp; Open References ({bundle.acquiredResources.length})
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Real sources queried from OpenStax, NCBI Bookshelf, Europe PMC, PubMed, PMC, Wikimedia, Crossref, OpenAlex, and Wikipedia REST. Official standards and peer-reviewed texts are separated from open encyclopedic summaries.
+                Ordered strictly by Textbook-First Scientific Source Policy: Priority 1 (Textbooks &amp; Official Standards) → Priority 2 (Academic Monographs / OpenStax / NCBI Bookshelf) → Priority 3 (PubMed / PMC / Europe PMC) → Priority 4 (Supplementary Web / Wikipedia — never overrides textbooks).
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1406,9 +1558,15 @@ export default function TopicWorkspace({
             </div>
           ) : (
             <div className="space-y-3">
-              {bundle.acquiredResources.map((res) => {
+              {[...bundle.acquiredResources]
+                .sort(
+                  (a, b) =>
+                    classifyAcquiredResourcePriority(a) - classifyAcquiredResourcePriority(b)
+                )
+                .map((res) => {
                 const safeUrl = sanitizeHttpUrl(res.sourceUrl);
                 const safePdf = sanitizeHttpUrl(res.pdfUrl);
+                const tier = classifyAcquiredResourcePriority(res);
                 return (
                   <article
                     key={res.id}
@@ -1419,14 +1577,14 @@ export default function TopicWorkspace({
                         <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                           <span
                             className={
-                              res.verificationStatus === 'peer_reviewed' ||
-                              res.verificationStatus === 'open_textbook' ||
-                              res.verificationStatus === 'official_standard'
+                              tier <= 2
                                 ? 'text-emerald-700 dark:text-emerald-400'
+                                : tier === 3
+                                ? 'text-teal-700 dark:text-teal-400'
                                 : 'text-amber-700 dark:text-amber-300'
                             }
                           >
-                            {RESOURCE_BADGE_LABELS[res.verificationStatus]}
+                            {SOURCE_PRIORITY_META[tier].shortLabel} · {RESOURCE_BADGE_LABELS[res.verificationStatus]}
                           </span>
                           {' · '}
                           {res.sourceName}

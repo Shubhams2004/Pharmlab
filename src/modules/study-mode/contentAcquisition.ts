@@ -12,6 +12,8 @@ import { getAttachedResourcesForContext } from '../resource-hub/resourceHubStora
 import { createTimeoutSignal, sanitizeHttpUrl } from '../resource-hub/utils';
 import { resolveAcademicContextForVisual } from '../visual-library/academicRegistry';
 import { getAllVisuals, getVisualsForContext } from '../visual-library/visualDb';
+import { classifyAcquiredResourcePriority } from '../enrichment-workspace/sourcePolicy';
+import { retrieveTextbookContextForTopic } from '../enrichment-workspace/textbookSearchEngine';
 import {
   getAcquiredResourcesForTopic,
   saveAcquiredResourcesForTopic
@@ -19,6 +21,7 @@ import {
 import {
   AcquiredTopicResource,
   ResourceVerificationBadge,
+  SourcePriorityTier,
   StudySectionKey,
   StudyWorkflowStep,
   SyllabusTopicNode
@@ -32,6 +35,11 @@ export interface TopicAcquisitionBundle {
     pageNumber: number;
     snippet: string;
     matchedTerm: string;
+    chapterHeading?: string;
+    priorityTier?: SourcePriorityTier;
+    authors?: string;
+    edition?: string;
+    extractionQuality?: 'pdf_text' | 'ocr_text' | 'unsearchable';
   }>;
   connectedVisualIds: string[];
   connectedReferenceIds: string[];
@@ -288,26 +296,47 @@ export async function runTopicContentAcquisition(
       getAllReferences()
     ]);
 
-    // Connect PDF pages
-    const termsToSearch = Array.from(
-      new Set([searchTerm, ...topic.keywords.slice(0, 2)].filter((t) => t.length >= 3))
-    );
-    for (const term of termsToSearch) {
-      const results = await searchAllBooks(term, topic.bookDepartment, 2).catch(() => []);
-      const fallbackResults =
-        results.length > 0 ? results : await searchAllBooks(term, undefined, 2).catch(() => []);
-      for (const hit of fallbackResults.slice(0, 4)) {
-        const m = hit.matches[0];
-        if (!m) continue;
+    // Connect PDF pages via Textbook-First Verification Search Engine
+    const tbBundle = await retrieveTextbookContextForTopic(topic).catch(() => null);
+    if (tbBundle && tbBundle.hits.length > 0) {
+      for (const hit of tbBundle.hits.slice(0, 6)) {
         localPdfMatches.push({
-          bookId: hit.book.id,
-          bookTitle: hit.book.title,
-          pageNumber: m.pageNumber,
-          snippet: `${m.beforeContext}${m.matchedText}${m.afterContext}`,
-          matchedTerm: term
+          bookId: hit.bookId,
+          bookTitle: hit.bookTitle,
+          pageNumber: hit.pageNumber,
+          snippet: hit.passageExcerpt,
+          matchedTerm: hit.primaryMatchedTerm,
+          chapterHeading: hit.chapterHeading,
+          priorityTier: hit.priorityTier,
+          authors: hit.authors,
+          edition: hit.edition,
+          extractionQuality: hit.extractionQuality
         });
       }
-      if (localPdfMatches.length >= 4) break;
+    } else {
+      const termsToSearch = Array.from(
+        new Set([searchTerm, ...topic.keywords.slice(0, 2)].filter((t) => t.length >= 3))
+      );
+      for (const term of termsToSearch) {
+        const results = await searchAllBooks(term, topic.bookDepartment, 2).catch(() => []);
+        const fallbackResults =
+          results.length > 0 ? results : await searchAllBooks(term, undefined, 2).catch(() => []);
+        for (const hit of fallbackResults.slice(0, 4)) {
+          const m = hit.matches[0];
+          if (!m) continue;
+          localPdfMatches.push({
+            bookId: hit.book.id,
+            bookTitle: hit.book.title,
+            pageNumber: m.pageNumber,
+            snippet: `${m.beforeContext}${m.matchedText}${m.afterContext}`,
+            matchedTerm: term
+          });
+        }
+        if (localPdfMatches.length >= 4) break;
+      }
+    }
+    if (tbBundle?.readiness.limitationNotices.length) {
+      warnings.push(...tbBundle.readiness.limitationNotices);
     }
 
     // Connect Visuals
@@ -405,7 +434,11 @@ export async function runTopicContentAcquisition(
     }
   }
 
-  const finalStored = await getAcquiredResourcesForTopic(topic.id);
+  const finalStored = (await getAcquiredResourcesForTopic(topic.id)).sort(
+    (a, b) =>
+      classifyAcquiredResourcePriority(a) - classifyAcquiredResourcePriority(b) ||
+      b.savedAt - a.savedAt
+  );
 
   steps[6].status = 'done';
   steps[7].status = 'done';
@@ -415,7 +448,7 @@ export async function runTopicContentAcquisition(
 
   return {
     acquiredResources: finalStored,
-    localPdfMatches: localPdfMatches.slice(0, 5),
+    localPdfMatches: localPdfMatches.slice(0, 6),
     connectedVisualIds: Array.from(connectedVisualIds),
     connectedReferenceIds: Array.from(connectedReferenceIds),
     warnings: Array.from(new Set(warnings))

@@ -9,9 +9,15 @@ import { loadResourceHubState } from '../resource-hub/resourceHubStorage';
 import {
   EnrichmentAttachmentKind,
   EnrichmentSourceAttachment,
+  SourcePriorityTier,
   SyllabusTopicNode
 } from '../study-mode/types';
 import { getAllVisuals } from '../visual-library/visualDb';
+import {
+  classifyBookPriority,
+  classifyReferencePriority,
+  sortSourcesByPriority
+} from './sourcePolicy';
 
 export interface AttachableSourceCandidate {
   key: string;
@@ -22,6 +28,8 @@ export interface AttachableSourceCandidate {
   url?: string;
   verified: boolean;
   relevanceScore: number;
+  priorityTier: SourcePriorityTier;
+  bookId?: string;
 }
 
 function tokenizeTopic(topic: SyllabusTopicNode): string[] {
@@ -73,7 +81,9 @@ export async function loadAttachableSourcesForTopic(
       subtitle: `Reference Center · ${r.authors || r.publisher || r.subject || 'Standard Reference'}`,
       url: r.officialUrl,
       verified: true,
-      relevanceScore: scoreMatch(hay, tokens, codeBonus)
+      relevanceScore: scoreMatch(hay, tokens, codeBonus),
+      priorityTier: classifyReferencePriority(r),
+      bookId: r.linkedBookId
     });
   }
 
@@ -83,6 +93,14 @@ export async function loadAttachableSourcesForTopic(
     )
       ? 6
       : 0;
+    const hubTier: SourcePriorityTier =
+      saved.providerId === 'ncbi_bookshelf' || saved.providerId === 'openstax'
+        ? 2
+        : saved.providerId === 'pubmed' ||
+          saved.providerId === 'pmc' ||
+          saved.providerId === 'europepmc'
+        ? 3
+        : 4;
     candidates.push({
       key: `hub_${saved.id}`,
       sourceKind: 'resource_hub',
@@ -91,20 +109,24 @@ export async function loadAttachableSourcesForTopic(
       subtitle: `Resource Hub · ${saved.providerName}`,
       url: saved.url,
       verified: saved.providerId !== 'wikipedia',
-      relevanceScore: scoreMatch(`${saved.title} ${saved.summary || ''}`, tokens, linkedMatch)
+      relevanceScore: scoreMatch(`${saved.title} ${saved.summary || ''}`, tokens, linkedMatch),
+      priorityTier: hubTier
     });
   }
 
   for (const b of books) {
     const deptBonus = b.department === topic.bookDepartment ? 4 : 0;
+    const linkedRef = refs.find((r) => r.linkedBookId === b.id);
     candidates.push({
       key: `book_${b.id}`,
       sourceKind: 'knowledge_pdf',
       itemId: b.id,
       title: b.title,
-      subtitle: `PDF Knowledge Library · ${b.pageCount} pages${b.author ? ` · ${b.author}` : ''}`,
+      subtitle: `PDF Knowledge Library · ${b.pageCount} pages${b.authors ? ` · ${b.authors}` : ''}`,
       verified: true,
-      relevanceScore: scoreMatch(`${b.title} ${b.author || ''}`, tokens, deptBonus)
+      relevanceScore: scoreMatch(`${b.title} ${b.authors || ''}`, tokens, deptBonus),
+      priorityTier: classifyBookPriority(b, linkedRef),
+      bookId: b.id
     });
   }
 
@@ -121,7 +143,8 @@ export async function loadAttachableSourcesForTopic(
         `${v.title} ${v.caption || ''} ${(v.tags || []).join(' ')} ${(v.topics || []).join(' ')}`,
         tokens,
         deptBonus
-      )
+      ),
+      priorityTier: 2
     });
   }
 
@@ -134,7 +157,8 @@ export async function loadAttachableSourcesForTopic(
       title: a.name,
       subtitle: `3D Asset Library · ${a.format.toUpperCase()} · ${a.creator}`,
       verified: true,
-      relevanceScore: scoreMatch(`${a.name} ${a.description || ''} ${(a.tags || []).join(' ')}`, tokens, subjBonus)
+      relevanceScore: scoreMatch(`${a.name} ${a.description || ''} ${(a.tags || []).join(' ')}`, tokens, subjBonus),
+      priorityTier: 2
     });
   }
 
@@ -155,7 +179,8 @@ export async function loadAttachableSourcesForTopic(
         `${sim.title} ${sim.description} ${sim.scientificPrinciple} ${sim.academicContext.topic}`,
         tokens,
         subjBonus
-      )
+      ),
+      priorityTier: 2
     });
   }
 
@@ -168,7 +193,8 @@ export async function loadAttachableSourcesForTopic(
       title: `${exp.code}: ${exp.title}`,
       subtitle: `Lab Experiment · ${exp.subjectCode}`,
       verified: true,
-      relevanceScore: scoreMatch(`${exp.title} ${exp.setupSummary || ''}`, tokens, subjBonus)
+      relevanceScore: scoreMatch(`${exp.title} ${exp.setupSummary || ''}`, tokens, subjBonus),
+      priorityTier: 2
     });
   }
 
@@ -181,11 +207,16 @@ export async function loadAttachableSourcesForTopic(
       title: anat.name,
       subtitle: `Anatomy Catalog #${anat.catalogNumber} · ${anat.system}`,
       verified: true,
-      relevanceScore: scoreMatch(`${anat.name} ${anat.overview || ''} ${anat.system}`, tokens, linkedBonus)
+      relevanceScore: scoreMatch(`${anat.name} ${anat.overview || ''} ${anat.system}`, tokens, linkedBonus),
+      priorityTier: 2
     });
   }
 
-  return candidates.sort((a, b) => b.relevanceScore - a.relevanceScore || a.title.localeCompare(b.title));
+  return sortSourcesByPriority(
+    candidates,
+    (c) => c.priorityTier,
+    (c) => c.relevanceScore
+  );
 }
 
 export function candidateToAttachment(c: AttachableSourceCandidate): EnrichmentSourceAttachment {
@@ -197,6 +228,8 @@ export function candidateToAttachment(c: AttachableSourceCandidate): EnrichmentS
     subtitle: c.subtitle,
     url: c.url,
     verified: c.verified,
-    attachedAt: Date.now()
+    attachedAt: Date.now(),
+    priorityTier: c.priorityTier,
+    bookId: c.bookId
   };
 }

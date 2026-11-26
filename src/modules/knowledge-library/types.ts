@@ -36,12 +36,18 @@ export interface LibraryBookMeta {
   extractionStatus: ExtractionStatus;
   category: DocumentCategory;
   department?: BookDepartmentTag;
+  authors?: string;
+  edition?: string;
+  publisher?: string;
+  isbn?: string;
+  textSourceKind?: 'pdf_text' | 'ocr_text' | 'mixed';
 }
 
 export interface BookPageText {
   bookId: string;
   pageNumber: number;
   text: string;
+  sourceKind?: 'pdf_text' | 'ocr_text';
 }
 
 export interface BookBookmark {

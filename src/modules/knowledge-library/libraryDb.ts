@@ -175,7 +175,12 @@ export async function updateBookReadingProgress(
 
 export async function updateBookMeta(
   bookId: string,
-  patch: Partial<Pick<LibraryBookMeta, 'title' | 'category' | 'department'>>
+  patch: Partial<
+    Pick<
+      LibraryBookMeta,
+      'title' | 'category' | 'department' | 'authors' | 'edition' | 'publisher' | 'isbn' | 'textSourceKind'
+    >
+  >
 ): Promise<LibraryBookMeta | null> {
   const db = await openLibraryDb();
   const tx = db.transaction(STORE_BOOKS, 'readwrite');

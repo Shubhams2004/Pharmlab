@@ -304,6 +304,51 @@ export type EnrichmentProvenance =
   | 'ai_verified'
   | 'needs_verification';
 
+export type EnrichmentDepthLevel = 'foundation' | 'standard' | 'advanced';
+
+export type EnrichmentOriginKind =
+  | 'source_supported'
+  | 'ai_draft'
+  | 'user_written'
+  | 'needs_verification';
+
+export interface EnrichmentComparisonTable {
+  caption?: string;
+  headers: string[];
+  rows: string[][];
+}
+
+export type ContentQualityCheckKey =
+  | 'scientific_relevance'
+  | 'section_completeness'
+  | 'explanation_depth'
+  | 'terminology_consistency'
+  | 'duplicate_content'
+  | 'unsupported_claims'
+  | 'formulas_units'
+  | 'pharmaceutical_relevance'
+  | 'source_attribution';
+
+export type ContentQualityCheckStatus = 'pass' | 'warning' | 'attention_needed';
+
+export interface ContentQualityCheckItem {
+  key: ContentQualityCheckKey;
+  label: string;
+  status: ContentQualityCheckStatus;
+  finding: string;
+  suggestion?: string;
+}
+
+export interface ContentQualityReport {
+  checkedAt: number;
+  depth: EnrichmentDepthLevel;
+  checks: ContentQualityCheckItem[];
+  passCount: number;
+  warningCount: number;
+  attentionCount: number;
+  disclaimer: string;
+}
+
 export type EnrichmentAttachmentKind =
   | 'reference_center'
   | 'resource_hub'
@@ -324,6 +369,10 @@ export interface EnrichmentSourceAttachment {
   url?: string;
   verified: boolean;
   attachedAt: number;
+  priorityTier?: SourcePriorityTier;
+  bookId?: string;
+  pageNumber?: number;
+  chapterHeading?: string;
 }
 
 export interface EnrichmentQuestionEntry {
@@ -338,8 +387,11 @@ export interface EnrichedSectionSnapshot {
   prose: string;
   bullets: string[];
   formulas: string[];
+  comparisonTable?: EnrichmentComparisonTable;
   importantQuestions: EnrichmentQuestionEntry[];
   provenance: EnrichmentProvenance;
+  depth?: EnrichmentDepthLevel;
+  origin?: EnrichmentOriginKind;
   attachments: EnrichmentSourceAttachment[];
   savedAt: number;
 }
@@ -350,8 +402,17 @@ export interface EnrichedSectionEntry {
   prose: string;
   bullets: string[];
   formulas: string[];
+  comparisonTable?: EnrichmentComparisonTable;
   importantQuestions: EnrichmentQuestionEntry[];
   provenance: EnrichmentProvenance;
+  depth?: EnrichmentDepthLevel;
+  origin?: EnrichmentOriginKind;
+  qualitySummary?: {
+    passCount: number;
+    warningCount: number;
+    attentionCount: number;
+  };
+  gapRationale?: string;
   attachments: EnrichmentSourceAttachment[];
   wasAiAssisted: boolean;
   reviewedByUser: boolean;
@@ -365,9 +426,13 @@ export interface EnrichedSectionDraft {
   prose: string;
   bullets: string[];
   formulas: string[];
+  comparisonTable?: EnrichmentComparisonTable;
   importantQuestions: EnrichmentQuestionEntry[];
   isAiDraft: boolean;
   provenance: EnrichmentProvenance;
+  depth?: EnrichmentDepthLevel;
+  origin?: EnrichmentOriginKind;
+  gapRationale?: string;
   attachments: EnrichmentSourceAttachment[];
   updatedAt: number;
 }
@@ -376,8 +441,9 @@ export interface EnrichmentHistoryEntry {
   id: string;
   sectionKey: EnrichmentSectionKey;
   sectionLabel: string;
-  action: 'accepted' | 'modified' | 'rejected' | 'undone' | 'draft_saved';
+  action: 'accepted' | 'modified' | 'rejected' | 'undone' | 'draft_saved' | 'regenerated';
   provenance?: EnrichmentProvenance;
+  depth?: EnrichmentDepthLevel;
   wasAiAssisted?: boolean;
   summary: string;
   timestamp: number;
@@ -395,4 +461,106 @@ export interface TopicEnrichmentRecord {
   createdAt: number;
   updatedAt: number;
 }
+
+// P4.2.3: Textbook-First Scientific Verification Engine Types
+export type SourcePriorityTier = 1 | 2 | 3 | 4;
+
+export type ClaimVerificationStatus =
+  | 'textbook_supported'
+  | 'multiple_textbooks_supported'
+  | 'partially_supported'
+  | 'conflicting_evidence'
+  | 'unsupported_by_books'
+  | 'requires_manual_verification'
+  | 'not_yet_checked';
+
+export interface EvidenceQualityBreakdown {
+  exactTermMatch: boolean;
+  conceptualMatchScore: number; // 0..100 indicator of keyword/concept overlap — NOT certainty
+  contextSufficient: boolean;
+  sourcePriority: SourcePriorityTier;
+  metadataCompleteness: 'complete' | 'partial' | 'minimal';
+  pageAccuracy: 'exact_page' | 'catalog_level' | 'unindexed';
+  extractionQuality: 'pdf_text' | 'ocr_text' | 'unsearchable';
+  indicatorsSummary: string;
+  notCertaintyDisclaimer: string;
+}
+
+export interface TextbookEvidenceLink {
+  id: string;
+  claimId: string;
+  bookId: string;
+  referenceId?: string;
+  bookTitle: string;
+  authors?: string;
+  edition?: string;
+  isbn?: string;
+  priorityTier: SourcePriorityTier;
+  chapterHeading?: string;
+  pageNumber: number | null;
+  passageExcerpt: string;
+  contextBefore?: string;
+  contextAfter?: string;
+  extractionQuality: 'pdf_text' | 'ocr_text' | 'unsearchable';
+  stance: 'supports' | 'partial' | 'contradicts' | 'contextual';
+  relevanceIndicators: EvidenceQualityBreakdown;
+  linkedBy: 'auto_matched' | 'user_linked';
+  matchedTerm?: string;
+  verifiedAt: number;
+}
+
+export interface ScientificClaimRecord {
+  id: string;
+  topicId: string;
+  sectionKey: EnrichmentSectionKey;
+  claimText: string;
+  sourceOrigin: 'approved_enrichment' | 'draft_enrichment' | 'baseline_catalog';
+  status: ClaimVerificationStatus;
+  evidenceLinks: TextbookEvidenceLink[];
+  manualNotes: string;
+  contradictionNotes?: string;
+  reviewedByUser: boolean;
+  reviewedAt?: number;
+  updatedAt: number;
+}
+
+export interface CrossTextbookComparison {
+  claimOrTopicLabel: string;
+  booksComparedCount: number;
+  bookTitles: string[];
+  agreedConcepts: string[];
+  additionalPerspectives: Array<{
+    bookTitle: string;
+    pageNumber: number | null;
+    chapterHeading?: string;
+    note: string;
+  }>;
+  terminologyDifferences: string[];
+  classificationDifferences: string[];
+  conflictingStatements: Array<{
+    summary: string;
+    passages: Array<{
+      bookTitle: string;
+      pageNumber: number | null;
+      excerpt: string;
+    }>;
+  }>;
+  editionDifferences: string[];
+  note: string;
+}
+
+export interface TopicVerificationRecord {
+  topicId: string;
+  syllabusId: string;
+  subjectCode: string;
+  topicTitle: string;
+  claims: ScientificClaimRecord[];
+  lastVerifiedAt: number;
+  bookSnapshotIds: string[];
+  searchableBooksCount: number;
+  unsearchableBooksCount: number;
+  limitationNotices: string[];
+  updatedAt: number;
+}
+
 

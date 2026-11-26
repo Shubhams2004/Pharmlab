@@ -6,7 +6,8 @@ import {
   LearningDomainMode,
   SyllabusProfile,
   TopicEnrichmentRecord,
-  TopicStudyProgress
+  TopicStudyProgress,
+  TopicVerificationRecord
 } from '../study-mode/types';
 import { LibraryBookMeta } from '../knowledge-library/types';
 import { VisualMediaItem } from '../visual-library/types';
@@ -195,6 +196,16 @@ export interface TopicCoverageReport {
     hasStructureLink: boolean;
     hasEngineDetail: boolean;
   }>;
+  verificationSummary?: {
+    totalClaims: number;
+    textbookSupportedCount: number;
+    multipleBooksCount: number;
+    partiallySupportedCount: number;
+    conflictingCount: number;
+    unsupportedByBooksCount: number;
+    requiresManualCount: number;
+    reviewedCount: number;
+  };
   quickActions: GapActionRoute[];
 }
 
@@ -321,6 +332,7 @@ export interface AnalyzerRawInputs {
   assets3d: Asset3DItem[];
   resourceHubSaved: SavedScientificResource[];
   topicEnrichments?: Record<string, TopicEnrichmentRecord>;
+  topicVerifications?: Record<string, TopicVerificationRecord>;
 }
 
 export interface TopicAuditFingerprint {

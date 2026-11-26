@@ -7,11 +7,12 @@ import {
   StudySectionKey,
   SyllabusProfile,
   TopicEnrichmentRecord,
-  TopicStudyProgress
+  TopicStudyProgress,
+  TopicVerificationRecord
 } from './types';
 
 const DB_NAME = 'pharmlab_study_engine_v1';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const STORE_SYLLABI = 'syllabi';
 const STORE_RESOURCES = 'acquiredResources';
@@ -19,10 +20,12 @@ const STORE_PAPERS = 'questionPapers';
 const STORE_QUESTIONS = 'examQuestions';
 const STORE_PROGRESS = 'topicProgress';
 const STORE_ENRICHMENTS = 'topicEnrichments';
+const STORE_VERIFICATIONS = 'topicVerifications';
 
 const LAST_STUDY_TOPIC_KEY = 'pharmlab_p2_last_study_topic';
 const ACTIVE_SYLLABUS_ID_KEY = 'pharmlab_p2_active_syllabus_id';
 const ENRICHMENT_LOCAL_CACHE_KEY = 'pharmlab_enrichment_records_v1';
+const VERIFICATION_LOCAL_CACHE_KEY = 'pharmlab_textbook_verifications_v1';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -61,6 +64,10 @@ function openStudyDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_ENRICHMENTS)) {
         const enrichStore = db.createObjectStore(STORE_ENRICHMENTS, { keyPath: 'topicId' });
         enrichStore.createIndex('bySubjectCode', 'subjectCode', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_VERIFICATIONS)) {
+        const verStore = db.createObjectStore(STORE_VERIFICATIONS, { keyPath: 'topicId' });
+        verStore.createIndex('bySubjectCode', 'subjectCode', { unique: false });
       }
     };
 
@@ -479,4 +486,111 @@ export async function deleteTopicEnrichment(topicId: string): Promise<void> {
     // ignore IndexedDB unavailable
   }
 }
+
+function readLocalVerificationCache(): Record<string, TopicVerificationRecord> {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(VERIFICATION_LOCAL_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, TopicVerificationRecord>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalVerificationCache(map: Record<string, TopicVerificationRecord>): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(VERIFICATION_LOCAL_CACHE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function getAllTopicVerificationsSync(): Record<string, TopicVerificationRecord> {
+  return readLocalVerificationCache();
+}
+
+export async function getAllTopicVerifications(): Promise<Record<string, TopicVerificationRecord>> {
+  const localCache = readLocalVerificationCache();
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_VERIFICATIONS, 'readonly');
+    const items = await wrapReq(
+      tx.objectStore(STORE_VERIFICATIONS).getAll() as IDBRequest<TopicVerificationRecord[]>
+    );
+    const merged: Record<string, TopicVerificationRecord> = { ...localCache };
+    for (const item of items) {
+      const cached = merged[item.topicId];
+      if (!cached || item.updatedAt >= cached.updatedAt) {
+        merged[item.topicId] = item;
+      }
+    }
+    writeLocalVerificationCache(merged);
+    return merged;
+  } catch {
+    return localCache;
+  }
+}
+
+export async function getTopicVerification(
+  topicId: string
+): Promise<TopicVerificationRecord | null> {
+  const localCache = readLocalVerificationCache();
+  const localItem = localCache[topicId] || null;
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_VERIFICATIONS, 'readonly');
+    const item = await wrapReq(
+      tx
+        .objectStore(STORE_VERIFICATIONS)
+        .get(topicId) as IDBRequest<TopicVerificationRecord | undefined>
+    );
+    if (item && (!localItem || item.updatedAt >= localItem.updatedAt)) {
+      return item;
+    }
+    return localItem;
+  } catch {
+    return localItem;
+  }
+}
+
+export async function saveTopicVerification(
+  record: TopicVerificationRecord
+): Promise<TopicVerificationRecord> {
+  const nextRecord: TopicVerificationRecord = {
+    ...record,
+    updatedAt: Date.now()
+  };
+  const cache = readLocalVerificationCache();
+  cache[nextRecord.topicId] = nextRecord;
+  writeLocalVerificationCache(cache);
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_VERIFICATIONS, 'readwrite');
+    tx.objectStore(STORE_VERIFICATIONS).put(nextRecord);
+    await wrapTx(tx);
+  } catch {
+    // localStorage cache still preserves the verification record safely
+  }
+  return nextRecord;
+}
+
+export async function deleteTopicVerification(topicId: string): Promise<void> {
+  const cache = readLocalVerificationCache();
+  if (cache[topicId]) {
+    delete cache[topicId];
+    writeLocalVerificationCache(cache);
+  }
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_VERIFICATIONS, 'readwrite');
+    tx.objectStore(STORE_VERIFICATIONS).delete(topicId);
+    await wrapTx(tx);
+  } catch {
+    // ignore IndexedDB unavailable
+  }
+}
+
 

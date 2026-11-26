@@ -16,13 +16,16 @@ import { getAllBooks } from '../knowledge-library/libraryDb';
 import { getAllReferences } from '../reference-center/referenceDb';
 import { loadResourceHubState } from '../resource-hub/resourceHubStorage';
 import { CURATED_REFERENCE_QUESTIONS } from '../study-mode/examEngine';
+import { summarizeTopicVerification } from '../enrichment-workspace/claimVerificationEngine';
 import {
   getAllAcquiredResources,
   getAllQuestionPapers,
   getAllStoredQuestions,
   getAllSyllabi,
   getAllTopicEnrichments,
-  getAllTopicProgress
+  getAllTopicProgress,
+  getAllTopicVerifications,
+  getAllTopicVerificationsSync
 } from '../study-mode/studyDb';
 import {
   OFFICIAL_BPHARM_SEM1_SYLLABUS_ID
@@ -290,10 +293,16 @@ function analyzeSingleTopic(
 
   const enrichedEntryLength = (entry?: EnrichedSectionEntry): number => {
     if (!entry) return 0;
+    const tableChars = entry.comparisonTable
+      ? (entry.comparisonTable.caption || '').trim().length +
+        entry.comparisonTable.headers.join(' ').trim().length +
+        entry.comparisonTable.rows.map((r) => r.join(' ')).join(' ').trim().length
+      : 0;
     return (
       entry.prose.trim().length +
       entry.bullets.join(' ').trim().length +
       entry.formulas.join(' ').trim().length +
+      tableChars +
       entry.importantQuestions.map((q) => `${q.prompt} ${q.answerGuidance}`).join(' ').trim().length
     );
   };
@@ -721,6 +730,22 @@ function analyzeSingleTopic(
   } else if (unreferencedUserEnrichments.length > 0) {
     verificationReasons.push(
       `${unreferencedUserEnrichments.length} user-authored section(s) lack attached textbook/reference backing.`
+    );
+  }
+
+  const verificationRecord =
+    inputs.topicVerifications?.[topic.id] || getAllTopicVerificationsSync()[topic.id];
+  const verificationSummary = verificationRecord
+    ? summarizeTopicVerification(verificationRecord)
+    : undefined;
+  if (verificationSummary && verificationSummary.conflictingCount > 0) {
+    verificationReasons.push(
+      `Textbook verification flagged ${verificationSummary.conflictingCount} claim(s) with conflicting textbook evidence.`
+    );
+  }
+  if (verificationSummary && verificationSummary.requiresManualCount > 0) {
+    verificationReasons.push(
+      `${verificationSummary.requiresManualCount} scientific claim(s) marked as requiring manual textbook verification.`
     );
   }
 
@@ -1565,6 +1590,22 @@ function analyzeSingleTopic(
     }
   }
 
+  if (verificationSummary && verificationSummary.conflictingCount > 0) {
+    pushGap(
+      'verification_issue',
+      'high',
+      34,
+      'Conflicting statements detected across textbook passages require academic review.',
+      `Conflicting textbook evidence on ${verificationSummary.conflictingCount} claim(s)`,
+      `Inspect flagged claims and resolve textbook passage differences in the Textbook Verification Workspace.`,
+      makeActionRoute('Verify Against Textbooks', 'Enrichment Workspace', 'enrichment_workspace', {
+        syllabusId: syllabus.id,
+        subjectCode: subject.code,
+        topicId: topic.id
+      })
+    );
+  }
+
   const totalLinkedResourceItems = resourceChecks.reduce((sum, r) => sum + r.count, 0);
 
   return {
@@ -1609,6 +1650,7 @@ function analyzeSingleTopic(
       hasStructureLink: Boolean(st.linkedStructureId),
       hasEngineDetail: Boolean(st.linkedSubtopicId && ENGINE_SUBTOPICS[st.linkedSubtopicId])
     })),
+    verificationSummary,
     quickActions
   };
 }
@@ -1686,7 +1728,8 @@ export async function loadAnalyzerInputs(): Promise<AnalyzerRawInputs> {
     books,
     visuals,
     assets3d,
-    topicEnrichments
+    topicEnrichments,
+    topicVerifications
   ] = await Promise.all([
     getAllSyllabi(),
     getAllAcquiredResources(),
@@ -1697,7 +1740,8 @@ export async function loadAnalyzerInputs(): Promise<AnalyzerRawInputs> {
     getAllBooks(),
     getAllVisuals(),
     getAll3DAssets(),
-    getAllTopicEnrichments()
+    getAllTopicEnrichments(),
+    getAllTopicVerifications()
   ]);
 
   return {
@@ -1711,7 +1755,8 @@ export async function loadAnalyzerInputs(): Promise<AnalyzerRawInputs> {
     visuals,
     assets3d,
     resourceHubSaved: resourceHubState.savedRecords || [],
-    topicEnrichments
+    topicEnrichments,
+    topicVerifications
   };
 }
 

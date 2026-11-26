@@ -1,5 +1,11 @@
-import { SyllabusSubjectNode, SyllabusTopicNode } from '../study-mode/types';
+import {
+  EnrichmentComparisonTable,
+  EnrichmentDepthLevel,
+  SyllabusSubjectNode,
+  SyllabusTopicNode
+} from '../study-mode/types';
 import { EnrichmentSectionBlueprint } from './sectionCatalog';
+import { TextbookSearchHit } from './textbookSearchEngine';
 
 export type OptionalAiProvider = 'none' | 'gemini' | 'openai_compatible';
 
@@ -74,22 +80,57 @@ export interface GeneratedSectionProposal {
   prose: string;
   bullets: string[];
   formulas: string[];
+  comparisonTable?: EnrichmentComparisonTable;
   modelUsed: string;
   warnings: string[];
 }
+
+const DEPTH_INSTRUCTIONS: Record<EnrichmentDepthLevel, string> = {
+  foundation:
+    'Target Depth: FOUNDATION — clear beginner-friendly terminology, core definitions, and intuitive cause-and-effect for Semester I entry.',
+  standard:
+    'Target Depth: STANDARD (B.Pharm) — rigorous undergraduate explanation, pathways/mechanisms, official examples, formulas with units, and pharmaceutical significance.',
+  advanced:
+    'Target Depth: ADVANCED — deep mechanistic detail, competing equilibria/feedback, analytical tolerances, equations/pathways, and structured comparison.'
+};
 
 function buildAcademicPrompt(opts: {
   topic: SyllabusTopicNode;
   subject: SyllabusSubjectNode;
   section: EnrichmentSectionBlueprint;
   existingContentSummary: string;
+  depth?: EnrichmentDepthLevel;
+  gapReason?: string;
+  textbookContext?: TextbookSearchHit[];
 }): string {
-  const { topic, subject, section, existingContentSummary } = opts;
+  const {
+    topic,
+    subject,
+    section,
+    existingContentSummary,
+    depth = 'standard',
+    gapReason,
+    textbookContext = []
+  } = opts;
+
+  const textbookSummary =
+    textbookContext.length > 0
+      ? [
+          'Retrieved Priority 1 Textbook Excerpts (use for factual grounding; synthesize originally and DO NOT copy verbatim):',
+          ...textbookContext.slice(0, 3).map(
+            (h) =>
+              `- [${h.bookTitle}, Page ${h.pageNumber}${
+                h.chapterHeading ? `, ${h.chapterHeading}` : ''
+              }]: ${h.passageExcerpt.slice(0, 220)}`
+          )
+        ].join('\n')
+      : '';
+
   return [
     'You are assisting a B.Pharm Semester I academic editor writing concise, university-grade pharmaceutical science content.',
     'STRICT ACCURACY RULES:',
     '- NEVER invent or fabricate references, DOIs, ISBNs, journal names, page numbers, or clinical trial statistics.',
-    '- Only state well-established foundational pharmacy, anatomy, chemistry, pharmacognosy, or biopharmaceutics facts.',
+    '- Prioritize textbook evidence provided below over general memory; do not copy textbook sentences verbatim.',
     '- If a specific pharmacopoeial limit or dosage constant depends on edition/species, write [VERIFY WITH PHARMACOPOEIA/TEXTBOOK] rather than guessing.',
     '- Keep tone clean, structured, academic, and free of hype.',
     '',
@@ -99,13 +140,37 @@ function buildAcademicPrompt(opts: {
     `Subtopics: ${topic.subtopics.map((s) => s.title).join('; ') || 'General topic scope'}`,
     `Target Section: ${section.label}`,
     `Section Objective: ${section.authoringPrompt}`,
+    DEPTH_INSTRUCTIONS[depth],
+    gapReason ? `Identified Gap Priority: ${gapReason}` : '',
+    textbookSummary,
     existingContentSummary
       ? `Existing Content Already Present (expand without repeating verbatim):\n${existingContentSummary.slice(0, 900)}`
       : 'Existing Content: None for this section yet.',
     '',
     'Respond ONLY with valid JSON matching this schema:',
-    '{"prose": "2-4 clear academic paragraphs", "bullets": ["concise bullet 1", "concise bullet 2"], "formulas": ["optional formula or equation if quantitative section"]}'
-  ].join('\n');
+    '{"prose": "2-4 clear academic paragraphs", "bullets": ["concise bullet 1", "concise bullet 2"], "formulas": ["optional formula with units"], "comparisonTable": {"caption": "optional table title", "headers": ["Col 1", "Col 2"], "rows": [["a", "b"]]}}'
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function parseComparisonTable(raw: unknown): EnrichmentComparisonTable | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const obj = raw as { caption?: unknown; headers?: unknown; rows?: unknown };
+  if (!Array.isArray(obj.headers) || !Array.isArray(obj.rows)) return undefined;
+  const headers = obj.headers
+    .filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
+    .map((h) => h.trim());
+  const rows = obj.rows
+    .filter((r): r is unknown[] => Array.isArray(r))
+    .map((r) => r.map((cell) => (typeof cell === 'string' ? cell.trim() : String(cell ?? ''))))
+    .filter((r) => r.some((cell) => cell.length > 0));
+  if (headers.length < 2 || rows.length === 0) return undefined;
+  return {
+    caption: typeof obj.caption === 'string' && obj.caption.trim() ? obj.caption.trim() : undefined,
+    headers,
+    rows
+  };
 }
 
 function parseJsonProposal(rawText: string, modelUsed: string): GeneratedSectionProposal {
@@ -124,6 +189,7 @@ function parseJsonProposal(rawText: string, modelUsed: string): GeneratedSection
       prose?: unknown;
       bullets?: unknown;
       formulas?: unknown;
+      comparisonTable?: unknown;
     };
     const prose = typeof parsed.prose === 'string' ? parsed.prose.trim() : '';
     const bullets = Array.isArray(parsed.bullets)
@@ -132,10 +198,12 @@ function parseJsonProposal(rawText: string, modelUsed: string): GeneratedSection
     const formulas = Array.isArray(parsed.formulas)
       ? parsed.formulas.filter((f): f is string => typeof f === 'string' && f.trim().length > 0).map((f) => f.trim())
       : [];
+    const comparisonTable = parseComparisonTable(parsed.comparisonTable);
     return {
       prose,
       bullets,
       formulas,
+      comparisonTable,
       modelUsed,
       warnings: [
         'AI-generated draft is unverified until you inspect scientific accuracy and attach authoritative references.'
@@ -160,14 +228,25 @@ export async function generateOptionalAiSectionDraft(opts: {
   subject: SyllabusSubjectNode;
   section: EnrichmentSectionBlueprint;
   existingContentSummary: string;
+  depth?: EnrichmentDepthLevel;
+  gapReason?: string;
+  textbookContext?: TextbookSearchHit[];
 }): Promise<GeneratedSectionProposal> {
-  const { config, topic, subject, section, existingContentSummary } = opts;
+  const { config, topic, subject, section, existingContentSummary, depth, gapReason, textbookContext } = opts;
 
   if (!isOptionalAiReady(config)) {
     throw new Error('Optional AI assistance is not configured. Manual editing requires no API key.');
   }
 
-  const prompt = buildAcademicPrompt({ topic, subject, section, existingContentSummary });
+  const prompt = buildAcademicPrompt({
+    topic,
+    subject,
+    section,
+    existingContentSummary,
+    depth,
+    gapReason,
+    textbookContext
+  });
 
   if (config.provider === 'gemini') {
     const model = encodeURIComponent(config.model || 'gemini-2.5-flash');
