@@ -277,3 +277,122 @@ export interface OnlineSyllabusCandidate {
   licenseInfo: string;
   corsReadablePreview: boolean;
 }
+
+export type EnrichmentSectionKey =
+  | 'learning_objectives'
+  | 'definition'
+  | 'overview'
+  | 'core_concepts'
+  | 'detailed_explanation'
+  | 'mechanism_process'
+  | 'classification_types'
+  | 'components_structure'
+  | 'examples_applications'
+  | 'pharmaceutical_relevance'
+  | 'clinical_relevance'
+  | 'advantages_comparisons'
+  | 'formulas_numericals'
+  | 'exam_essentials'
+  | 'important_questions'
+  | 'practical_connections'
+  | 'visual_connections'
+  | 'references';
+
+export type EnrichmentProvenance =
+  | 'reference_supported'
+  | 'user_written'
+  | 'ai_verified'
+  | 'needs_verification';
+
+export type EnrichmentAttachmentKind =
+  | 'reference_center'
+  | 'resource_hub'
+  | 'knowledge_pdf'
+  | 'visual_library'
+  | 'asset_3d'
+  | 'experiment'
+  | 'simulation'
+  | 'anatomy_catalog'
+  | 'manual_citation';
+
+export interface EnrichmentSourceAttachment {
+  id: string;
+  sourceKind: EnrichmentAttachmentKind;
+  itemId: string;
+  title: string;
+  subtitle?: string;
+  url?: string;
+  verified: boolean;
+  attachedAt: number;
+}
+
+export interface EnrichmentQuestionEntry {
+  id: string;
+  prompt: string;
+  answerGuidance: string;
+  category: ExamQuestionCategory;
+  marks?: number;
+}
+
+export interface EnrichedSectionSnapshot {
+  prose: string;
+  bullets: string[];
+  formulas: string[];
+  importantQuestions: EnrichmentQuestionEntry[];
+  provenance: EnrichmentProvenance;
+  attachments: EnrichmentSourceAttachment[];
+  savedAt: number;
+}
+
+export interface EnrichedSectionEntry {
+  sectionKey: EnrichmentSectionKey;
+  label: string;
+  prose: string;
+  bullets: string[];
+  formulas: string[];
+  importantQuestions: EnrichmentQuestionEntry[];
+  provenance: EnrichmentProvenance;
+  attachments: EnrichmentSourceAttachment[];
+  wasAiAssisted: boolean;
+  reviewedByUser: boolean;
+  approvedAt: number;
+  updatedAt: number;
+  previousSnapshot?: EnrichedSectionSnapshot;
+}
+
+export interface EnrichedSectionDraft {
+  sectionKey: EnrichmentSectionKey;
+  prose: string;
+  bullets: string[];
+  formulas: string[];
+  importantQuestions: EnrichmentQuestionEntry[];
+  isAiDraft: boolean;
+  provenance: EnrichmentProvenance;
+  attachments: EnrichmentSourceAttachment[];
+  updatedAt: number;
+}
+
+export interface EnrichmentHistoryEntry {
+  id: string;
+  sectionKey: EnrichmentSectionKey;
+  sectionLabel: string;
+  action: 'accepted' | 'modified' | 'rejected' | 'undone' | 'draft_saved';
+  provenance?: EnrichmentProvenance;
+  wasAiAssisted?: boolean;
+  summary: string;
+  timestamp: number;
+}
+
+export interface TopicEnrichmentRecord {
+  topicId: string;
+  syllabusId: string;
+  subjectCode: string;
+  topicTitle: string;
+  approvedSections: Partial<Record<EnrichmentSectionKey, EnrichedSectionEntry>>;
+  drafts: Partial<Record<EnrichmentSectionKey, EnrichedSectionDraft>>;
+  history: EnrichmentHistoryEntry[];
+  lastOpenedSection?: EnrichmentSectionKey;
+  createdAt: number;
+  updatedAt: number;
+}
+

@@ -22,6 +22,8 @@ import StudyModeModule from './modules/study-mode/StudyModeModule';
 import SyllabusModule from './modules/syllabus/SyllabusModule';
 import VisualLibraryModule from './modules/visual-library/VisualLibraryModule';
 import PythonStudioWorkspace from './modules/python-studio/PythonStudioWorkspace';
+import CoverageAnalyzerModule from './modules/coverage-analyzer/CoverageAnalyzerModule';
+import EnrichmentWorkspaceModule from './modules/enrichment-workspace/EnrichmentWorkspaceModule';
 import { OfflineIndicator } from './components/PWAControls';
 import { DEPARTMENT_WORKSPACES } from './types/academicArchitecture';
 import {
@@ -115,6 +117,20 @@ export default function App() {
     experimentId: null,
     stage: null,
     department: null,
+    nonce: 0
+  });
+  const [coverageJump, setCoverageJump] = useState({
+    subjectCode: null,
+    topicId: null,
+    tab: null,
+    nonce: 0
+  });
+  const [enrichmentJump, setEnrichmentJump] = useState({
+    syllabusId: null,
+    subjectCode: null,
+    topicId: null,
+    sectionKey: null,
+    returnTo: null,
     nonce: 0
   });
   const [explorerReturnModule, setExplorerReturnModule] = useState('assets_3d');
@@ -263,7 +279,9 @@ export default function App() {
         moduleId !== 'interactive_experiments' &&
         moduleId !== 'resource_hub' &&
         moduleId !== 'reference_center' &&
-        moduleId !== 'python_studio'
+        moduleId !== 'python_studio' &&
+        moduleId !== 'coverage_analyzer' &&
+        moduleId !== 'enrichment_workspace'
       ) {
         setLastModule(moduleId);
         try {
@@ -448,6 +466,34 @@ export default function App() {
     [navigateTo]
   );
 
+  const openCoverageAnalyzer = useCallback(
+    (opts = {}) => {
+      setCoverageJump((prev) => ({
+        subjectCode: opts.subjectCode ?? null,
+        topicId: opts.topicId ?? null,
+        tab: opts.tab ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('coverage_analyzer');
+    },
+    [navigateTo]
+  );
+
+  const openEnrichmentWorkspace = useCallback(
+    (opts = {}) => {
+      setEnrichmentJump((prev) => ({
+        syllabusId: opts.syllabusId ?? null,
+        subjectCode: opts.subjectCode ?? null,
+        topicId: opts.topicId ?? null,
+        sectionKey: opts.sectionKey ?? null,
+        returnTo: opts.returnTo ?? null,
+        nonce: prev.nonce + 1
+      }));
+      navigateTo('enrichment_workspace');
+    },
+    [navigateTo]
+  );
+
   const handleOpenRecentItem = useCallback(
     (item) => {
       if (item.kind === 'interactive_sim' && item.experimentSimId) {
@@ -523,6 +569,8 @@ export default function App() {
       openAcademicExplorer,
       openInteractiveExperiments,
       openPythonStudio,
+      openCoverageAnalyzer,
+      openEnrichmentWorkspace,
       navigateToModule: navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -542,6 +590,8 @@ export default function App() {
       openAcademicExplorer,
       openInteractiveExperiments,
       openPythonStudio,
+      openCoverageAnalyzer,
+      openEnrichmentWorkspace,
       navigateTo,
       setWorkspaceSection,
       recordActivity,
@@ -747,6 +797,12 @@ export default function App() {
         {activeModule === 'assets_3d' && <Assets3DModule jumpTarget={asset3dJump} />}
         {activeModule === 'interactive_experiments' && (
           <InteractiveExperimentsModule jumpTarget={experimentJump} />
+        )}
+        {activeModule === 'coverage_analyzer' && (
+          <CoverageAnalyzerModule jumpTarget={coverageJump} />
+        )}
+        {activeModule === 'enrichment_workspace' && (
+          <EnrichmentWorkspaceModule jumpTarget={enrichmentJump} />
         )}
         {activeModule === 'syllabus' && <SyllabusModule />}
       </DashboardLayout>

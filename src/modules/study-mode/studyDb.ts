@@ -6,20 +6,23 @@ import {
   SavedConceptNote,
   StudySectionKey,
   SyllabusProfile,
+  TopicEnrichmentRecord,
   TopicStudyProgress
 } from './types';
 
 const DB_NAME = 'pharmlab_study_engine_v1';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORE_SYLLABI = 'syllabi';
 const STORE_RESOURCES = 'acquiredResources';
 const STORE_PAPERS = 'questionPapers';
 const STORE_QUESTIONS = 'examQuestions';
 const STORE_PROGRESS = 'topicProgress';
+const STORE_ENRICHMENTS = 'topicEnrichments';
 
 const LAST_STUDY_TOPIC_KEY = 'pharmlab_p2_last_study_topic';
 const ACTIVE_SYLLABUS_ID_KEY = 'pharmlab_p2_active_syllabus_id';
+const ENRICHMENT_LOCAL_CACHE_KEY = 'pharmlab_enrichment_records_v1';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -54,6 +57,10 @@ function openStudyDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_PROGRESS)) {
         db.createObjectStore(STORE_PROGRESS, { keyPath: 'topicId' });
+      }
+      if (!db.objectStoreNames.contains(STORE_ENRICHMENTS)) {
+        const enrichStore = db.createObjectStore(STORE_ENRICHMENTS, { keyPath: 'topicId' });
+        enrichStore.createIndex('bySubjectCode', 'subjectCode', { unique: false });
       }
     };
 
@@ -186,6 +193,19 @@ export async function getAcquiredResourcesForTopic(
     const idx = tx.objectStore(STORE_RESOURCES).index('byTopicId');
     const items = await wrapReq(
       idx.getAll(IDBKeyRange.only(topicId)) as IDBRequest<AcquiredTopicResource[]>
+    );
+    return items.sort((a, b) => b.savedAt - a.savedAt);
+  } catch {
+    return [];
+  }
+}
+
+export async function getAllAcquiredResources(): Promise<AcquiredTopicResource[]> {
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_RESOURCES, 'readonly');
+    const items = await wrapReq(
+      tx.objectStore(STORE_RESOURCES).getAll() as IDBRequest<AcquiredTopicResource[]>
     );
     return items.sort((a, b) => b.savedAt - a.savedAt);
   } catch {
@@ -357,3 +377,106 @@ export async function saveExamQuestions(questions: ExamQuestionItem[]): Promise<
   }
   await wrapTx(tx);
 }
+
+function readLocalEnrichmentCache(): Record<string, TopicEnrichmentRecord> {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(ENRICHMENT_LOCAL_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, TopicEnrichmentRecord>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalEnrichmentCache(map: Record<string, TopicEnrichmentRecord>): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(ENRICHMENT_LOCAL_CACHE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function getAllTopicEnrichmentsSync(): Record<string, TopicEnrichmentRecord> {
+  return readLocalEnrichmentCache();
+}
+
+export async function getAllTopicEnrichments(): Promise<Record<string, TopicEnrichmentRecord>> {
+  const localCache = readLocalEnrichmentCache();
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_ENRICHMENTS, 'readonly');
+    const items = await wrapReq(
+      tx.objectStore(STORE_ENRICHMENTS).getAll() as IDBRequest<TopicEnrichmentRecord[]>
+    );
+    const merged: Record<string, TopicEnrichmentRecord> = { ...localCache };
+    for (const item of items) {
+      const cached = merged[item.topicId];
+      if (!cached || item.updatedAt >= cached.updatedAt) {
+        merged[item.topicId] = item;
+      }
+    }
+    writeLocalEnrichmentCache(merged);
+    return merged;
+  } catch {
+    return localCache;
+  }
+}
+
+export async function getTopicEnrichment(topicId: string): Promise<TopicEnrichmentRecord | null> {
+  const localCache = readLocalEnrichmentCache();
+  const localItem = localCache[topicId] || null;
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_ENRICHMENTS, 'readonly');
+    const item = await wrapReq(
+      tx.objectStore(STORE_ENRICHMENTS).get(topicId) as IDBRequest<TopicEnrichmentRecord | undefined>
+    );
+    if (item && (!localItem || item.updatedAt >= localItem.updatedAt)) {
+      return item;
+    }
+    return localItem;
+  } catch {
+    return localItem;
+  }
+}
+
+export async function saveTopicEnrichment(
+  record: TopicEnrichmentRecord
+): Promise<TopicEnrichmentRecord> {
+  const nextRecord: TopicEnrichmentRecord = {
+    ...record,
+    updatedAt: Date.now()
+  };
+  const cache = readLocalEnrichmentCache();
+  cache[nextRecord.topicId] = nextRecord;
+  writeLocalEnrichmentCache(cache);
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_ENRICHMENTS, 'readwrite');
+    tx.objectStore(STORE_ENRICHMENTS).put(nextRecord);
+    await wrapTx(tx);
+  } catch {
+    // localStorage cache still preserves the enrichment record safely
+  }
+  return nextRecord;
+}
+
+export async function deleteTopicEnrichment(topicId: string): Promise<void> {
+  const cache = readLocalEnrichmentCache();
+  if (cache[topicId]) {
+    delete cache[topicId];
+    writeLocalEnrichmentCache(cache);
+  }
+  try {
+    const db = await openStudyDb();
+    const tx = db.transaction(STORE_ENRICHMENTS, 'readwrite');
+    tx.objectStore(STORE_ENRICHMENTS).delete(topicId);
+    await wrapTx(tx);
+  } catch {
+    // ignore IndexedDB unavailable
+  }
+}
+

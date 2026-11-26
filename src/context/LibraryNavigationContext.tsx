@@ -7,6 +7,10 @@ import {
   RecentStudyItem,
   StudyPreferences
 } from '../utils/studyWorkspace';
+import type { CoverageAnalyzerJumpTarget } from '../modules/coverage-analyzer/CoverageAnalyzerModule';
+import type { EnrichmentWorkspaceJumpTarget } from '../modules/enrichment-workspace/EnrichmentWorkspaceModule';
+
+export type { CoverageAnalyzerJumpTarget, EnrichmentWorkspaceJumpTarget };
 
 export interface KnowledgeJumpTarget {
   bookId?: string | null;
@@ -96,6 +100,8 @@ interface LibraryNavigationContextValue {
   openAcademicExplorer: (opts?: Omit<AcademicExplorerJumpTarget, 'nonce'>) => void;
   openInteractiveExperiments: (opts?: Omit<InteractiveExperimentsJumpTarget, 'nonce'>) => void;
   openPythonStudio: (opts?: Omit<PythonStudioJumpTarget, 'nonce'>) => void;
+  openCoverageAnalyzer: (opts?: Omit<CoverageAnalyzerJumpTarget, 'nonce'>) => void;
+  openEnrichmentWorkspace: (opts?: Omit<EnrichmentWorkspaceJumpTarget, 'nonce'>) => void;
   navigateToModule: (
     moduleId: string,
     tab?: string | null,
@@ -122,6 +128,8 @@ export const LibraryNavigationContext = createContext<LibraryNavigationContextVa
   openAcademicExplorer: noop,
   openInteractiveExperiments: noop,
   openPythonStudio: noop,
+  openCoverageAnalyzer: noop,
+  openEnrichmentWorkspace: noop,
   navigateToModule: noop,
   setWorkspaceSection: noop,
   recordActivity: noop,

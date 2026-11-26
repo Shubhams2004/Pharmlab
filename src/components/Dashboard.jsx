@@ -2,12 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowRight,
+  BarChart3,
   Beaker,
   BookOpen,
   Box,
   Clock,
   Code,
   Compass,
+  FilePenLine,
   FileText,
   FlaskConical,
   Globe,
@@ -61,7 +63,9 @@ export default function Dashboard({
     openAsset3DEngine,
     openAcademicExplorer,
     openInteractiveExperiments,
-    openPythonStudio
+    openPythonStudio,
+    openCoverageAnalyzer,
+    openEnrichmentWorkspace
   } = useLibraryNavigation();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -708,6 +712,18 @@ export default function Dashboard({
               sub: 'Quick Practical Index',
               icon: FlaskConical,
               action: onOpenPalette
+            },
+            {
+              label: 'Coverage Analyzer',
+              sub: 'Syllabus & Gap Audit',
+              icon: BarChart3,
+              action: () => openCoverageAnalyzer()
+            },
+            {
+              label: 'Content Enrichment',
+              sub: 'P4.2.1 Topic Authoring',
+              icon: FilePenLine,
+              action: () => openEnrichmentWorkspace()
             },
             {
               label: 'Quick Glossary',

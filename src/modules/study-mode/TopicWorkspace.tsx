@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  FilePenLine,
   FileText,
   FlaskConical,
   Globe,
@@ -30,6 +31,10 @@ import {
 import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
 import { ANATOMY_CATALOG } from '../../data/anatomyCatalog';
 import { ENGINE_SUBTOPICS, ENGINE_TOPICS } from '../../data/academicEngineRegistry';
+import {
+  ENRICHMENT_SECTION_BLUEPRINTS,
+  PROVENANCE_LABELS
+} from '../enrichment-workspace/sectionCatalog';
 import { getAllReferences } from '../reference-center/referenceDb';
 import { ReferenceItem } from '../reference-center/types';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
@@ -55,12 +60,16 @@ import {
   createEmptyTopicProgress,
   createSavedConcept,
   getAcquiredResourcesForTopic,
+  getTopicEnrichment,
   removeAcquiredResource,
   saveAcquiredResourcesForTopic,
   saveTopicStudyProgress
 } from './studyDb';
 import {
   AcquiredTopicResource,
+  EnrichmentProvenance,
+  EnrichmentQuestionEntry,
+  EnrichmentSourceAttachment,
   ExamQuestionItem,
   ExamQuestionPaper,
   ResourceVerificationBadge,
@@ -69,6 +78,7 @@ import {
   SyllabusProfile,
   SyllabusSubjectNode,
   SyllabusTopicNode,
+  TopicEnrichmentRecord,
   TopicStudyProgress
 } from './types';
 
@@ -140,6 +150,7 @@ export default function TopicWorkspace({
     openResourceHub,
     openReferenceCenter,
     openAsset3DEngine,
+    openEnrichmentWorkspace,
     navigateToModule
   } = useLibraryNavigation();
 
@@ -202,6 +213,7 @@ export default function TopicWorkspace({
   const [allVisuals, setAllVisuals] = useState<VisualMediaItem[]>([]);
   const [allRefs, setAllRefs] = useState<ReferenceItem[]>([]);
   const [viewerVisual, setViewerVisual] = useState<VisualMediaItem | null>(null);
+  const [enrichmentRecord, setEnrichmentRecord] = useState<TopicEnrichmentRecord | null>(null);
 
   // Manual source fallback state
   const [showManualForm, setShowManualForm] = useState(false);
@@ -239,11 +251,18 @@ export default function TopicWorkspace({
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getAllVisuals(), getAllReferences(), getAcquiredResourcesForTopic(topic.id)])
-      .then(([vis, refs, storedRes]) => {
+    setEnrichmentRecord(null);
+    Promise.all([
+      getAllVisuals(),
+      getAllReferences(),
+      getAcquiredResourcesForTopic(topic.id),
+      getTopicEnrichment(topic.id)
+    ])
+      .then(([vis, refs, storedRes, enrichment]) => {
         if (cancelled) return;
         setAllVisuals(vis);
         setAllRefs(refs);
+        setEnrichmentRecord(enrichment);
         setBundle((prev) => ({ ...prev, acquiredResources: storedRes }));
       })
       .catch(() => {
@@ -359,7 +378,7 @@ export default function TopicWorkspace({
     [topic, examQuestions, examPapers]
   );
 
-  // Adaptive Section Content Builder (Structured from Syllabus + Anatomy Catalog + Engine + Acquired Open Textbooks)
+  // Adaptive Section Content Builder (Structured from Syllabus + Anatomy Catalog + Engine + Acquired Open Textbooks + P4.2.1 Enrichments)
   const adaptiveSections = useMemo(() => {
     const primaryStruct = linkedStructures[0];
     const primaryEngineSub = linkedEngineSubtopics[0];
@@ -367,8 +386,26 @@ export default function TopicWorkspace({
       .filter((r) => Boolean(r.excerpt))
       .slice(0, 6);
 
-    return topic.recommendedSections.map((key) => {
-      const blocks: Array<{ heading?: string; body: string; sourceTag?: string }> = [];
+    type SectionBlock = {
+      heading?: string;
+      body: string;
+      sourceTag?: string;
+      provenance?: EnrichmentProvenance;
+    };
+
+    type RenderedSection = {
+      key: StudySectionKey;
+      label: string;
+      blocks: SectionBlock[];
+      bullets: string[];
+      formulas: string[];
+      enrichedQuestions: EnrichmentQuestionEntry[];
+      attachments: EnrichmentSourceAttachment[];
+      provenances: EnrichmentProvenance[];
+    };
+
+    const sectionList: RenderedSection[] = topic.recommendedSections.map((key) => {
+      const blocks: SectionBlock[] = [];
       const bullets: string[] = [];
 
       if (key === 'overview') {
@@ -497,9 +534,86 @@ export default function TopicWorkspace({
         key,
         label: SECTION_LABELS[key],
         blocks: blocks.filter((b) => b.body.trim().length > 0),
-        bullets: Array.from(new Set(bullets.filter((b) => b.trim().length > 0)))
+        bullets: Array.from(new Set(bullets.filter((b) => b.trim().length > 0))),
+        formulas: [],
+        enrichedQuestions: [],
+        attachments: [],
+        provenances: []
       };
     });
+
+    // Additive non-destructive merge of approved P4.2.1 Enriched Sections
+    if (enrichmentRecord?.approvedSections) {
+      const sectionMap = new Map<StudySectionKey, RenderedSection>();
+      sectionList.forEach((sec) => sectionMap.set(sec.key, sec));
+
+      for (const blueprint of ENRICHMENT_SECTION_BLUEPRINTS) {
+        const entry = enrichmentRecord.approvedSections[blueprint.key];
+        if (!entry) continue;
+
+        const targetKey = blueprint.studySectionKey;
+        let targetSec = sectionMap.get(targetKey);
+        if (!targetSec) {
+          targetSec = {
+            key: targetKey,
+            label: SECTION_LABELS[targetKey] || entry.label,
+            blocks: [],
+            bullets: [],
+            formulas: [],
+            enrichedQuestions: [],
+            attachments: [],
+            provenances: []
+          };
+          sectionMap.set(targetKey, targetSec);
+          sectionList.push(targetSec);
+        }
+
+        const provMeta = PROVENANCE_LABELS[entry.provenance];
+        if (!targetSec.provenances.includes(entry.provenance)) {
+          targetSec.provenances.push(entry.provenance);
+        }
+
+        if (entry.prose.trim()) {
+          targetSec.blocks.push({
+            heading: entry.label !== targetSec.label ? entry.label : 'Enriched Academic Content',
+            body: entry.prose.trim(),
+            sourceTag:
+              entry.attachments.length > 0
+                ? `${provMeta.label} · ${entry.attachments.map((a) => a.title).slice(0, 2).join('; ')}`
+                : provMeta.label,
+            provenance: entry.provenance
+          });
+        }
+
+        for (const bullet of entry.bullets) {
+          const clean = bullet.trim();
+          if (clean && !targetSec.bullets.includes(clean)) {
+            targetSec.bullets.push(clean);
+          }
+        }
+
+        for (const formula of entry.formulas || []) {
+          const clean = formula.trim();
+          if (clean && !targetSec.formulas.includes(clean)) {
+            targetSec.formulas.push(clean);
+          }
+        }
+
+        for (const q of entry.importantQuestions || []) {
+          if (!targetSec.enrichedQuestions.some((eq) => eq.id === q.id)) {
+            targetSec.enrichedQuestions.push(q);
+          }
+        }
+
+        for (const att of entry.attachments || []) {
+          if (!targetSec.attachments.some((a) => a.id === att.id)) {
+            targetSec.attachments.push(att);
+          }
+        }
+      }
+    }
+
+    return sectionList;
   }, [
     topic,
     subject,
@@ -508,7 +622,8 @@ export default function TopicWorkspace({
     bundle.acquiredResources,
     topicQuestions.length,
     examEvidence.labels,
-    builtInTextbooks
+    builtInTextbooks,
+    enrichmentRecord
   ]);
 
   const handleToggleSectionRead = async (secKey: StudySectionKey) => {
@@ -682,6 +797,22 @@ export default function TopicWorkspace({
               <span>{currentProgress.completed ? 'Completed' : 'Mark Complete'}</span>
             </button>
 
+            <button
+              type="button"
+              onClick={() =>
+                openEnrichmentWorkspace({
+                  syllabusId: syllabus.id,
+                  subjectCode: subject.code,
+                  topicId: topic.id,
+                  returnTo: 'study_mode'
+                })
+              }
+              className="min-h-[42px] px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/60 text-xs sm:text-sm font-semibold text-emerald-700 dark:text-emerald-300 inline-flex items-center gap-1.5 transition-colors"
+            >
+              <FilePenLine className="w-4 h-4" />
+              <span>Enrich Topic</span>
+            </button>
+
             {topic.linkedLabTab && (
               <button
                 type="button"
@@ -823,7 +954,14 @@ export default function TopicWorkspace({
           {/* Left 8 cols: Adaptive Sections */}
           <div className="lg:col-span-8 space-y-4">
             {adaptiveSections.map((sec) => {
-              if (sec.blocks.length === 0 && sec.bullets.length === 0) return null;
+              if (
+                sec.blocks.length === 0 &&
+                sec.bullets.length === 0 &&
+                sec.formulas.length === 0 &&
+                sec.enrichedQuestions.length === 0
+              ) {
+                return null;
+              }
               const isRead = currentProgress.sectionsVisited.includes(sec.key);
               return (
                 <section
@@ -831,13 +969,22 @@ export default function TopicWorkspace({
                   className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-3"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                      {sec.label}
-                    </h2>
+                    <div className="min-w-0 space-y-0.5">
+                      <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                        {sec.label}
+                      </h2>
+                      {sec.provenances.length > 0 && (
+                        <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                          {sec.provenances
+                            .map((prov) => PROVENANCE_LABELS[prov].label)
+                            .join(' · ')}
+                        </p>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleToggleSectionRead(sec.key)}
-                      className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors ${
+                      className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 shrink-0 transition-colors ${
                         isRead
                           ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
                           : 'bg-slate-100 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:text-emerald-600'
@@ -855,7 +1002,7 @@ export default function TopicWorkspace({
                           {blk.heading}
                         </h3>
                       )}
-                      <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                      <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
                         {blk.body}
                       </p>
                       {blk.sourceTag && (
@@ -872,6 +1019,67 @@ export default function TopicWorkspace({
                         <li key={idx}>{b}</li>
                       ))}
                     </ul>
+                  )}
+
+                  {sec.formulas.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Key Formulas &amp; Numericals
+                      </p>
+                      <div className="space-y-1.5">
+                        {sec.formulas.map((f, idx) => (
+                          <div
+                            key={idx}
+                            className="px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-mono text-slate-800 dark:text-slate-200"
+                          >
+                            {f}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {sec.enrichedQuestions.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Important Exam Questions
+                      </p>
+                      <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/70 dark:bg-slate-950/70">
+                        {sec.enrichedQuestions.map((q) => (
+                          <div key={q.id} className="p-3 space-y-1">
+                            <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white">
+                              {q.prompt}
+                              {q.marks ? (
+                                <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400 tabular-nums">
+                                  ({q.marks} marks)
+                                </span>
+                              ) : null}
+                            </p>
+                            {q.answerGuidance && (
+                              <p className="text-xs text-slate-600 dark:text-slate-400">
+                                {q.answerGuidance}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {sec.attachments.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Attached Section Sources
+                      </p>
+                      <ul className="space-y-0.5 text-xs text-slate-600 dark:text-slate-400">
+                        {sec.attachments.map((att) => (
+                          <li key={att.id} className="truncate">
+                            · {att.title}
+                            {att.subtitle ? ` (${att.subtitle})` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </section>
               );
