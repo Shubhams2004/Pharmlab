@@ -33,7 +33,7 @@ import {
 } from './types';
 
 function deptToModuleId(dept: SyllabusAssociation['departmentId']): string {
-  switch (dept) {
+  switch (dept as string) {
     case 'anatomy':
       return 'anatomy';
     case 'pharmaceutics':
@@ -46,6 +46,7 @@ function deptToModuleId(dept: SyllabusAssociation['departmentId']): string {
       return 'pharmacognosy';
     case 'clinical_pharmacy':
       return 'psychology';
+    case 'research':
     case 'biostatistics':
       return 'python';
     default:

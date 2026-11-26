@@ -76,6 +76,17 @@ export type Asset3DLibraryCollection =
   | 'recent_imported'
   | 'recent_viewed';
 
+export type ExperimentAssetRole =
+  | 'apparatus'
+  | 'glassware'
+  | 'instrument'
+  | 'setup'
+  | 'component'
+  | 'specimen'
+  | 'molecule'
+  | 'anatomy'
+  | 'reference';
+
 export interface SyllabusAssociation {
   id: string;
   course: string;
@@ -93,6 +104,12 @@ export interface SyllabusAssociation {
   learningObjective?: string;
   experimentId?: string;
   experimentTitle?: string;
+  experimentTab?: string;
+  experimentRole?: ExperimentAssetRole;
+  stepId?: string;
+  stepTitle?: string;
+  setupNote?: string;
+  focusComponentName?: string;
   structureId?: string;
   structureName?: string;
 }
@@ -389,6 +406,18 @@ export const IMPORT_STATUS_3D_LABELS: Record<Asset3DImportStatus, string> = {
   user_uploaded: 'User Uploaded (Offline)',
   linked_url: 'External Model URL',
   external_reference: 'External Repository Record'
+};
+
+export const EXPERIMENT_ROLE_LABELS: Record<ExperimentAssetRole, string> = {
+  apparatus: 'Primary Apparatus',
+  glassware: 'Volumetric & Glassware',
+  instrument: 'Analytical Instrument',
+  setup: 'Complete Assembly / Setup',
+  component: 'Sub-Assembly / Component',
+  specimen: 'Biological / Botanical Specimen',
+  molecule: 'Molecular / Chemical Structure',
+  anatomy: 'Anatomical Reference',
+  reference: 'Reference Model'
 };
 
 export function normalizeCustomCategoryId(label: string): string {

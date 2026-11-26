@@ -57,7 +57,10 @@ import {
   Wrench,
   X
 } from 'lucide-react';
-import { useLibraryNavigation } from '../../context/LibraryNavigationContext';
+import {
+  AcademicExplorerJumpTarget,
+  useLibraryNavigation
+} from '../../context/LibraryNavigationContext';
 import { sanitizeHttpUrl } from '../resource-hub/utils';
 import { getAllSyllabi } from '../study-mode/studyDb';
 import { SyllabusProfile } from '../study-mode/types';
@@ -124,13 +127,7 @@ import {
   ViewerRenderSettings
 } from './types';
 
-export interface AcademicExplorerJumpTarget {
-  assetId?: string | null;
-  subjectCode?: string | null;
-  topicId?: string | null;
-  structureName?: string | null;
-  nonce: number;
-}
+export type { AcademicExplorerJumpTarget };
 
 interface Academic3DExplorerModuleProps {
   jumpTarget?: AcademicExplorerJumpTarget;
@@ -255,10 +252,23 @@ export default function Academic3DExplorerModule({
           return;
         }
       }
-      if (jumpTarget.topicId || jumpTarget.subjectCode || jumpTarget.structureName) {
+      if (
+        jumpTarget.topicId ||
+        jumpTarget.subjectCode ||
+        jumpTarget.structureName ||
+        jumpTarget.experimentId ||
+        jumpTarget.experimentTitle ||
+        jumpTarget.experimentTab ||
+        jumpTarget.stepId
+      ) {
         const match = assets.find((a) =>
           a.syllabusLinks.some(
             (l) =>
+              (jumpTarget.stepId && l.stepId === jumpTarget.stepId) ||
+              (jumpTarget.experimentId && l.experimentId === jumpTarget.experimentId) ||
+              (jumpTarget.experimentTab && l.experimentTab === jumpTarget.experimentTab) ||
+              (jumpTarget.experimentTitle &&
+                l.experimentTitle?.toLowerCase() === jumpTarget.experimentTitle.toLowerCase()) ||
               (jumpTarget.topicId && l.topicId === jumpTarget.topicId) ||
               (jumpTarget.subjectCode &&
                 l.subjectCode?.toLowerCase() === jumpTarget.subjectCode.toLowerCase()) ||
@@ -3391,7 +3401,7 @@ export default function Academic3DExplorerModule({
                         <div className="space-y-1.5">
                           {academicContext.relatedExperiments.map((exp) => (
                             <button
-                              key={`${exp.moduleId}_${exp.id}`}
+                              key={`${exp.moduleId}_${exp.id}_${exp.stepTitle || ''}`}
                               type="button"
                               onClick={() => navigateToModule(exp.moduleId, exp.tab)}
                               className="w-full p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 text-left flex items-center justify-between gap-2"
@@ -3399,6 +3409,7 @@ export default function Academic3DExplorerModule({
                               <div className="min-w-0">
                                 <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
                                   {exp.code} · {exp.title}
+                                  {exp.stepTitle ? ` · ${exp.stepTitle}` : ''}
                                 </p>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                   {exp.departmentLabel} Lab

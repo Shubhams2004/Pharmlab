@@ -506,7 +506,10 @@ export function getSyllabusAssociationFingerprint(association: SyllabusAssociati
     normAssocText(association.topicId) || normAssocText(association.topicTitle),
     normAssocText(association.subtopicId) || normAssocText(association.subtopicTitle),
     normAssocText(association.learningObjective),
-    normAssocText(association.experimentId) || normAssocText(association.experimentTitle),
+    normAssocText(association.experimentId) ||
+      normAssocText(association.experimentTitle) ||
+      normAssocText(association.experimentTab),
+    normAssocText(association.stepId) || normAssocText(association.stepTitle),
     normAssocText(association.structureId) || normAssocText(association.structureName)
   ].join('|');
 }
@@ -523,7 +526,13 @@ export function isSameSyllabusAssociation(
     sameAssocSlot(a.topicId, a.topicTitle, b.topicId, b.topicTitle) &&
     sameAssocSlot(a.subtopicId, a.subtopicTitle, b.subtopicId, b.subtopicTitle) &&
     normAssocText(a.learningObjective) === normAssocText(b.learningObjective) &&
-    sameAssocSlot(a.experimentId, a.experimentTitle, b.experimentId, b.experimentTitle) &&
+    sameAssocSlot(
+      a.experimentId || a.experimentTab,
+      a.experimentTitle,
+      b.experimentId || b.experimentTab,
+      b.experimentTitle
+    ) &&
+    sameAssocSlot(a.stepId, a.stepTitle, b.stepId, b.stepTitle) &&
     sameAssocSlot(a.structureId, a.structureName, b.structureId, b.structureName)
   );
 }

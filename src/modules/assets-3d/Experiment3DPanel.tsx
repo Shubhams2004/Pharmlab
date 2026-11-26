@@ -84,7 +84,7 @@ function mapDeptToBPharm(dept: DepartmentId | BPharmDepartmentId): BPharmDepartm
       return 'clinical_pharmacy';
     case 'python':
     case 'pandas':
-      return 'biostatistics';
+      return 'research';
     default:
       return dept as BPharmDepartmentId;
   }
@@ -730,7 +730,7 @@ export default function Experiment3DPanel({
                           selectedComponentIds={selectedCompId ? [selectedCompId] : []}
                           onSelectComponents={(ids) => setSelectedCompId(ids[0] || null)}
                           isolatedComponentIds={isolatedCompIds}
-                          onIsolateChangeMulti={setIsolatedCompIds}
+                          onIsolateComponentsChange={setIsolatedCompIds}
                           onComponentsChange={handleComponentsChange}
                           className={compact ? 'h-[250px]' : 'h-[320px]'}
                         />
@@ -807,7 +807,7 @@ export default function Experiment3DPanel({
 
                         <button
                           type="button"
-                          onClick={() => viewerRef.current?.fitToViewport(false)}
+                          onClick={() => viewerRef.current?.fitToViewport()}
                           className="min-h-[32px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
